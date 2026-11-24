@@ -1,9 +1,9 @@
 import { PLACES } from '../game/data.ts';
 import type { PlaceId } from '../game/types.ts';
 import { button, el, svg } from './dom.ts';
-import { icon } from './icons.ts';
 
-const shortNames: Record<PlaceId, string> = {
+
+export const shortNames: Record<PlaceId, string> = {
   home: '자취방', school: '드론학과', airfield: '실습장', exam: '시험장', town: '시내', shop: '드론 상점',
   garage: '정비소', bank: '은행', farm: '농경지', site: '건설 현장', bridge: '대교', windfarm: '풍력 단지',
   studio: '촬영장', coast: '해안', office: '내 사무실', hq: '본사 사옥', academy: '교육원', assoc: '협회 회관',
@@ -174,43 +174,64 @@ function landscape(): SVGSVGElement {
 
 export type Scene = { element: HTMLElement; move: (place: PlaceId) => void; select: (place: PlaceId | null) => void };
 
-export function createScene(available: Set<PlaceId>, current: PlaceId, onPlace?: (id: PlaceId) => void): Scene {
-  const element = el('section', 'scene');
-  element.setAttribute('aria-label', '마을 지도');
-  const top = el('div', 'scene-top');
-  const heading = el('span', 'scene-caption', '우리 동네 비행 지도');
-  heading.prepend(icon('map'));
-  const weather = el('span', 'scene-weather', '오늘도, 비행하기 좋은 날');
-  weather.prepend(icon('sun'));
-  top.append(heading, weather);
+export function createScene(available: Set<PlaceId>, current: PlaceId, level: number, onPlace?: (id: PlaceId) => void): Scene {
+  const element = el('div', 'scene');
+  element.setAttribute('aria-label', '마을 비행 지도');
   const canvas = el('div', 'map-canvas');
   const art = landscape();
+  art.setAttribute('preserveAspectRatio', 'none');
+  canvas.append(art);
   const controls = new Map<PlaceId, HTMLButtonElement>();
-  for (const id of Object.keys(PLACES) as PlaceId[]) {
-    const place = PLACES[id];
-    const active = available.has(id);
-    const site = svg('g', { transform: `translate(${place.x * 10} ${place.y * 10})`, class: active ? 'site is-available' : 'site is-unavailable' });
-    if (active && onPlace) site.append(svg('ellipse', { cx: 0, cy: 8, rx: 60, ry: 46, fill: '#faf3cf', opacity: .8 }));
-    site.append(building(id));
-    art.append(site);
-    if (onPlace) {
-      const target = button('', `map-place ${active ? 'available' : 'unavailable'}`, () => onPlace(id));
-      target.style.left = `${place.x}%`;
-      target.style.top = `${place.y}%`;
-      target.disabled = !active;
-      target.setAttribute('aria-label', `${place.name}${active ? ' 선택지 보기' : ' · 현재 활동 없음'}`);
-      target.setAttribute('aria-pressed', 'false');
-      target.append(el('span', 'place-label', shortNames[id]));
-      controls.set(id, target);
-      canvas.append(target);
-    } else {
-      const label = el('span', 'preview-place', shortNames[id]);
-      label.style.left = `${place.x}%`;
-      label.style.top = `${place.y + 5}%`;
-      canvas.append(label);
+  // Spread the landmarks over three flight lanes on a short phone map. Their
+  // drawings keep their proportions while the terrain fills the available space.
+  const lanes: PlaceId[][] = [
+    ['school', 'airfield', 'academy', 'exam', 'assoc', 'windfarm'],
+    ['bank', 'town', 'shop', 'garage', 'site', 'farm'],
+    ['home', 'office', 'studio', 'bridge', 'hq', 'coast'],
+  ];
+  // Under a long choice summary use two lanes. Keep full touch widths for
+  // active buildings and leave smaller plots for scenery-only landmarks.
+  const byNorth = lanes.flat().sort((a, b) => PLACES[a].y - PLACES[b].y);
+  const compact = new Map<PlaceId, { x: number; y: number; width: number }>();
+  const activeIds = byNorth.filter(id => available.has(id));
+  const scenery = byNorth.filter(id => !available.has(id));
+  for (const lane of [0, 1]) {
+    const half = (ids: PlaceId[]) => lane ? ids.slice(Math.ceil(ids.length / 2)) : ids.slice(0, Math.ceil(ids.length / 2));
+    const sites = [...half(activeIds), ...half(scenery)].sort((a, b) => PLACES[a].x - PLACES[b].x);
+    const width = (id: PlaceId) => available.has(id) ? 44 : 16;
+    const total = sites.reduce((sum, id) => sum + width(id), 0);
+    let left = 0;
+    for (const id of sites) {
+      const share = 100 * width(id) / total;
+      compact.set(id, { x: left + share / 2, y: 25 + 50 * lane, width: share });
+      left += share;
     }
   }
-  canvas.prepend(art);
+  function position(node: HTMLElement, id: PlaceId) {
+    const plot = compact.get(id)!;
+    node.style.setProperty('--cx', plot.x + '%');
+    node.style.setProperty('--cy', plot.y + '%');
+    node.style.setProperty('--cw', plot.width + '%');
+    const row = lanes.findIndex(lane => lane.includes(id));
+    node.style.setProperty('--x', PLACES[id].x + '%');
+    node.style.setProperty('--y', PLACES[id].y + '%');
+    node.style.setProperty('--mx', (lanes[row].indexOf(id) + .5) / 6 * 100 + '%');
+    node.style.setProperty('--my', (row + .5) / 3 * 100 + '%');
+  }
+  for (const id of Object.keys(PLACES) as PlaceId[]) {
+    const active = available.has(id) && !!onPlace;
+    const site = active ? button('', 'map-place available', () => onPlace(id)) : el('div', 'map-place');
+    position(site, id);
+    const drawing = svg('svg', { viewBox: '-68 -54 136 108', class: 'landmark', 'aria-hidden': 'true' });
+    drawing.append(building(id));
+    site.append(drawing);
+    if (site instanceof HTMLButtonElement) {
+      site.setAttribute('aria-label', PLACES[id].name + ' 선택지 보기');
+      site.append(el('span', 'place-label', shortNames[id]));
+      controls.set(id, site);
+    }
+    canvas.append(site);
+  }
   const drone = el('div', 'drone-position');
   drone.setAttribute('aria-hidden', 'true');
   const droneArt = svg('svg', { viewBox: '0 0 100 100', class: 'player-drone' });
@@ -226,21 +247,18 @@ export function createScene(available: Set<PlaceId>, current: PlaceId, onPlace?:
   rect(droneBody, 37, 32, 26, 37, '#fffbed', 9);
   rect(droneBody, 43, 36, 14, 12, '#d8b46a', 4);
   circle(droneBody, 50, 61, 4, '#537c72');
+  if (level > 0) rect(droneBody, 36, 53, 28, 8, '#e8a14a');
+  if (level >= 2) circle(droneBody, 50, 65, 8, '#71bdb7');
+  if (level >= 3) path(droneBody, 'M32 39v24m36-24v24', 'none', '#284c48', 5);
+  if (level >= 4) rect(droneBody, 42, 27, 16, 9, '#e37943');
+  drone.style.setProperty('--drone-scale', String(1 + .13 * level));
   droneArt.append(droneBody);
-  drone.append(el('span', 'drone-shadow'), droneArt);
+  drone.append(droneArt);
   canvas.append(drone);
-  const compass = el('div', 'map-compass', '북');
-  compass.append(el('span', '', '↑'));
-  canvas.append(compass);
-  const bottom = el('div', 'scene-bottom');
-  bottom.append(el('span', 'map-legend', onPlace ? '빛나는 장소를 눌러 이동하세요' : '작은 마을에서 시작되는 커다란 꿈'), el('span', 'map-scale', '나의 비행 구역'));
-  element.append(top, canvas, bottom);
-  const move = (place: PlaceId) => {
-    drone.style.left = `${PLACES[place].x}%`;
-    drone.style.top = `${PLACES[place].y}%`;
-  };
+  element.append(canvas);
+  const move = (place: PlaceId) => position(drone, place);
   move(current);
-  return { element, move, select: (place) => {
+  return { element, move, select: place => {
     controls.forEach((target, id) => {
       target.classList.toggle('selected', id === place);
       target.setAttribute('aria-pressed', String(id === place));

@@ -1,12 +1,11 @@
-import { ITEMS, PLACES, STAGES, STAT_LABEL } from '../game/data.ts';
-import { derived, num } from '../game/engine.ts';
-import type { GameState, ItemKind, OptionView, PlaceId, Result, Stat } from '../game/types.ts';
-import { optionCard } from './cards.ts';
-import { button, el, reducedMotion } from './dom.ts';
+import { PLACES, STAGES, STAT_LABEL } from '../game/data.ts';
+import type { EventDef, OptionView, Result, Stat } from '../game/types.ts';
+import { commitButton, outcomes, price } from './cards.ts';
+import { button, el, meter, reducedMotion } from './dom.ts';
 import { icon } from './icons.ts';
-import { signed, statValue, upkeepList } from './hud.ts';
+import { signed, statValue } from './hud.ts';
 
-type Sheet = { dialog: HTMLDialogElement; body: HTMLElement; close: () => void; open: () => void };
+type Sheet = { dialog: HTMLDialogElement; body: HTMLElement; close: () => void; open: () => void; disableBackground: () => void };
 let activeSheet: Sheet | null = null;
 let sheetId = 0;
 
@@ -14,9 +13,23 @@ export function closeSheet() {
   activeSheet?.close();
 }
 
+export function refreshModalBackground() {
+  activeSheet?.disableBackground();
+}
+
 export function createSheet(root: HTMLElement, title: string, dismissible = true): Sheet {
   closeSheet();
   const previous = document.activeElement;
+  // Modal background controls are also disabled for non-pointer input and pagers.
+  const behind = new Set<HTMLButtonElement>();
+  function disableBackground() {
+    for (const target of root.querySelectorAll<HTMLButtonElement>('button:enabled')) {
+      if (target.closest('dialog')) continue;
+      behind.add(target);
+      target.disabled = true;
+    }
+  }
+  disableBackground();
   const dialog = el('dialog', 'sheet');
   const header = el('div', 'sheet-header');
   const heading = el('h2', '', title);
@@ -30,6 +43,7 @@ export function createSheet(root: HTMLElement, title: string, dismissible = true
     closed = true;
     dialog.close();
     dialog.remove();
+    for (const target of behind) target.disabled = false;
     document.body.classList.remove('sheet-open');
     if (activeSheet?.dialog === dialog) activeSheet = null;
     if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
@@ -51,60 +65,15 @@ export function createSheet(root: HTMLElement, title: string, dismissible = true
   });
   dialog.append(header, body);
   root.append(dialog);
-  const sheet = { dialog, body, close, open: () => {
+  const sheet = { dialog, body, close, disableBackground, open: () => {
     document.body.classList.add('sheet-open');
     dialog.showModal();
-    // Focus the title first so a long result or stat sheet opens at its beginning.
+    // Announce the popup before its actions receive keyboard focus.
     heading.tabIndex = -1;
     heading.focus({ preventScroll: true });
   } };
   activeSheet = sheet;
   return sheet;
-}
-
-export function showServices(root: HTMLElement, state: GameState, choices: OptionView[], onChoose: (id: string) => void) {
-  const sheet = createSheet(root, '비행을 위한 준비');
-  sheet.dialog.classList.add('services-sheet');
-  sheet.body.append(el('p', 'sheet-intro', '장비를 갖추고, 기체를 돌보고, 다음 비행을 준비하세요. 분기는 지나가지 않아요.'));
-  const d = derived(state);
-  const balance = el('div', 'service-balance');
-  balance.append(icon('coin'), el('span', '', '사용 가능한 자금'), el('strong', '', `${num(state.s.money)}만원`));
-  sheet.body.append(balance);
-  const tabs = el('div', 'segmented-tabs');
-  tabs.setAttribute('aria-label', '시설 선택');
-  const content = el('div', 'service-content');
-  const buttons = new Map<PlaceId, HTMLButtonElement>();
-  const render = (place: PlaceId) => {
-    buttons.forEach((tab, id) => {
-      tab.classList.toggle('active', id === place);
-      tab.setAttribute('aria-pressed', String(id === place));
-    });
-    content.replaceChildren();
-    if (place === 'shop') {
-      const inventory = el('div', 'inventory');
-      for (const kind of ['drone', 'gear', 'car'] as ItemKind[]) {
-        const row = el('div');
-        row.append(el('span', '', ITEMS[kind].label), el('strong', '', d.items[kind].name));
-        inventory.append(row);
-      }
-      content.append(inventory);
-    }
-    const list = choices.filter((option) => option.free && option.place === place);
-    if (!list.length) {
-      const message = place === 'garage' ? (state.s.drone ? '기체 상태가 완벽해요. 다음 비행을 기다리고 있어요.' : '아직 정비할 기체가 없어요. 자격증을 딴 뒤 첫 드론을 만나 보세요.') : state.stage === 'student' ? '자격증 취득 후 드론과 장비를 구입할 수 있어요.' : '모든 장비를 최고 단계까지 갖췄어요!';
-      content.append(el('p', 'empty-state', message));
-    }
-    for (const option of list) content.append(optionCard(option, (id) => { sheet.close(); onChoose(id); }));
-  };
-  for (const [place, label] of [['shop', '상점'], ['garage', '정비'], ['bank', '은행']] as [PlaceId, string][]) {
-    const tab = button(label, '', () => render(place));
-    tab.prepend(icon(place === 'shop' ? 'bag' : place === 'garage' ? 'tool' : 'bank'));
-    buttons.set(place, tab);
-    tabs.append(tab);
-  }
-  sheet.body.append(tabs, content);
-  render('shop');
-  sheet.open();
 }
 
 export function showResult(root: HTMLElement, result: Result, onContinue: () => void) {
@@ -123,7 +92,7 @@ export function showResult(root: HTMLElement, result: Result, onContinue: () => 
     live.replaceChildren(el('p', `result-status ${result.roll?.success === false ? 'negative' : 'positive'}`, result.roll ? result.roll.success ? '성공! 잘 날았어요.' : '실패, 그래도 경험은 남아요.' : '선택을 마쳤어요.'), el('p', 'result-text', result.text));
     const chips = el('div', 'delta-chips');
     for (const [stat, value] of Object.entries(result.deltas) as [Stat, number][]) {
-      if (!value || ['flights', 'wins', 'losses', 'crashes', 'overdue'].includes(stat)) continue; // counters, not rewards
+      if (!value) continue;
       const beneficial = stat === 'debt' ? value < 0 : value > 0;
       chips.append(el('span', `delta-chip ${beneficial ? 'positive' : 'negative'}`, `${STAT_LABEL[stat]} ${value > 0 ? '+' : ''}${statValue(stat, value)}`));
     }
@@ -136,7 +105,13 @@ export function showResult(root: HTMLElement, result: Result, onContinue: () => 
       reveal.append(stage);
     }
     if (result.upkeep) {
-      reveal.append(el('h3', 'subheading', '이번 분기 결산'), upkeepList(result.upkeep.lines, result.upkeep.total));
+      const ledger = el('div', 'ledger');
+      const {lines, total} = result.upkeep;
+      ledger.append(el('b', '', '이번 분기 결산'));
+      for (const line of lines.length <= 3 ? lines : [{ label: '합계', amount: total }]) {
+        ledger.append(el('p', '', line.label + ' ' + signed(line.amount) + '만원'));
+      }
+      reveal.append(ledger);
     }
     if (result.eventId) reveal.append(el('p', 'event-notice', '새로운 소식이 도착했어요. 계속해서 확인해 보세요.'));
     continueButton.disabled = false;
@@ -169,7 +144,7 @@ export function showResult(root: HTMLElement, result: Result, onContinue: () => 
     const started = performance.now();
     const animate = (now: number) => {
       if (!sheet.dialog.isConnected) return;
-      const progress = reducedMotion() ? 1 : Math.min(1, (now - started) / 900);
+      const progress = reducedMotion() ? 1 : Math.max(0, Math.min(1, (now - started) / 900));
       const eased = 1 - Math.pow(1 - progress, 3);
       const degrees = eased * (1080 + roll.value / 100 * 360);
       number.textContent = progress < 1 ? String(Math.floor(degrees / 3.6) % 100).padStart(2, '0') : String(roll.value).padStart(2, '0');
@@ -193,7 +168,22 @@ export function confirmNewRun(root: HTMLElement, onConfirm: () => void) {
   sheet.open();
 }
 
-export function serviceSummary(state: GameState): string {
-  const d = derived(state);
-  return `다음 분기 예상 수입 · 지출 ${signed(d.upkeep.total)}만원`;
+export function showEvent(root: HTMLElement, event: EventDef, choices: OptionView[], choose: (id: string) => void) {
+  const sheet = createSheet(root, event.title, false);
+  sheet.dialog.classList.add('event-sheet');
+  const place = el('p','eyebrow',PLACES[event.place].name + ' · 이벤트');
+  place.prepend(icon('flag'));
+  sheet.body.append(place, el('p','event-text',event.text));
+  const answers = el('div','event-choices');
+  for (const o of choices) {
+    const answer = commitButton(o, '', choose);
+    answer.className = 'answer';
+    answer.removeAttribute('aria-label');
+    answer.replaceChildren(el('strong','',o.title),el('small','',price(o)));
+    if (o.roll) answer.append(el('b','',`성공 ${o.roll.chance}%`),meter(o.roll.chance,100,'성공 확률'));
+    answer.append(outcomes(o));
+    answers.append(answer);
+  }
+  sheet.body.append(answers);
+  sheet.open();
 }

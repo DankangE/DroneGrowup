@@ -27,3 +27,17 @@ export function icon(name: IconName, className = ''): SVGSVGElement {
   node.append(svg('path', { d: paths[name] }));
   return node;
 }
+
+// Enamel wings, chevrons and a crown share one silhouette across the pilot's career.
+export function emblem(tier = 0): SVGSVGElement {
+  const node = svg('svg', { viewBox: '0 0 88 64', class: 'emblem', 'aria-hidden': 'true' });
+  const shape = (d: string, fill: string) => node.append(svg('path', { d, fill, stroke: '#294f47', 'stroke-width': 2.7, 'stroke-linejoin': 'round' }));
+  for (const d of ['M33 24 4 16 8 28 17 32 10 32 17 41 32 46Z','M55 24 84 16 80 28 71 32 78 32 71 41 56 46Z']) shape(d, tier >= 2 ? '#ffcf70' : '#dcebd8');
+  shape('M44 8 61 18 59 40 44 55 29 40 27 18Z', '#f9cc70');
+  shape('M44 14 55 21 54 37 44 47 34 37 33 21Z', '#427767');
+  shape('m44 20 3 7 7 1-5 5 1 7-6-4-6 4 1-7-5-5 7-1Z', '#fff4c5');
+  if (tier >= 1) shape('m31 44 13 10 13-10-2 8-11 8-11-8Z', '#eaa552');
+  if (tier >= 2) for (const x of [16,72]) shape(`m${x} 19 2 4 5 1-4 3 1 4-4-2-4 2 1-4-4-3 5-1Z`, '#fff9dc');
+  if (tier >= 3) shape('m32 11-2-9 9 5 5-7 5 7 9-5-2 10Z', '#ffb34c');
+  return node;
+}

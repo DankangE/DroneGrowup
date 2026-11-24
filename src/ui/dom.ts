@@ -41,3 +41,33 @@ export function focusHeading(root: HTMLElement) {
     heading.focus({ preventScroll: true });
   }
 }
+
+export function countNumber(node: HTMLElement, from: number, to: number, format: (n: number) => string, duration = 480) {
+  node.textContent = format(to);
+  if (from === to || reducedMotion()) return;
+  const start = performance.now();
+  function frame(now: number) {
+    if (!node.isConnected) return;
+    const progress = reducedMotion() ? 1 : Math.max(0, Math.min(1, (now - start) / duration));
+    node.textContent = format(Math.round(from + (to - from) * (1 - (1 - progress) ** 3)));
+    if (progress < 1) requestAnimationFrame(frame);
+  }
+  node.textContent = format(from);
+  requestAnimationFrame(frame);
+}
+
+/** Pack whole rows using their wrapped heights at the current width. The caller
+ * attaches the list before measuring and installs just the requested page afterwards. */
+export function paginateRows(list: HTMLElement, items: HTMLElement[], columns: number, height: number): HTMLElement[][] {
+  const pages: HTMLElement[][] = [[]];
+  for (let i = 0; i < items.length; i += columns) {
+    const row = items.slice(i, i + columns);
+    list.append(...row);
+    const current = pages[pages.length - 1];
+    if (current.length && list.offsetHeight > height) {
+      pages.push(row);
+      list.replaceChildren(...row);
+    } else current.push(...row);
+  }
+  return pages;
+}
