@@ -1,7 +1,7 @@
 // Turns raw generations into the web files under public/art and the archive copies under docs/art-raw.
 // Usage: node scripts/art-export.mjs <dir with raw PNGs> [name ...]
 //   scene-<id>.png      -> public/art/scene-<id>.webp (1344x896, under 300 KB)
-//   sheet-<name>.png    -> four public/art/<portrait>.webp (384x384, under 60 KB), one per quadrant (see SHEETS)
+//   sheet-<name>.png / chibi-sheet<n>.png -> four public/art/<portrait>.webp (384x384, under 60 KB), one per quadrant (see SHEETS)
 //   portrait-*.png / ending-*.png (single 1:1 image) -> public/art/<same name>.webp
 // Needs `cwebp` (brew install webp). See docs/art-pipeline.md.
 import { execFileSync } from 'node:child_process';
@@ -21,6 +21,8 @@ export const SHEETS = {
   'sheet-endings1': ['ending-ceo', 'ending-chairman', 'ending-academy', 'ending-solo'],
   'sheet-endings2': ['ending-debtor', 'ending-smallbiz', 'ending-director', 'ending-instructor'],
   'sheet-endings3': ['ending-employee', 'ending-pilot', 'ending-student', 'portrait-examiner'],
+  'chibi-sheet1': ['chibi-student', 'chibi-pilot', 'chibi-employee', 'chibi-instructor'],
+  'chibi-sheet2': ['chibi-solo', 'chibi-academy', 'chibi-company', 'chibi-director'],
 };
 
 const cwebp = (args) => execFileSync('cwebp', ['-quiet', ...args]);

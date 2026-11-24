@@ -56,6 +56,45 @@ export const STAGES: Record<Stage, { name: string; living: number; salary: numbe
   director: { name: '파일럿 협회 임원', living: 35, salary: 80, salaryPerRank: 60, credit: 3000, jobPct: 100, ranks: ['이사', '부회장'], timeout: 'director' },
 };
 
+// ---------------------------------------------------------------- display only: career ladder and letter grades
+// Nothing below is read by engine.ts, so it cannot change a roll, a payout or an ending. career.ts reads it.
+
+/**
+ * The rungs of each career. `level` is the big number on the rank card and orders every rung of the game:
+ * a move to a higher level is a rank-up. Stars count the rungs inside one career. The rung a run stands on
+ * comes from the state (직급, 평가관 자격, 교육원 규모, 투자 라운드); see `careerRank` in career.ts.
+ */
+export const CAREER: Record<Stage, { title: string; level: number }[]> = {
+  student: [{ title: '드론학과 학생', level: 1 }],
+  pilot: [{ title: '프리랜서 파일럿', level: 2 }],
+  employee: [{ title: '사원', level: 3 }, { title: '대리', level: 4 }, { title: '과장', level: 5 }, { title: '팀장', level: 6 }],
+  instructor: [{ title: '전속 교관', level: 3 }, { title: '실기평가 교관', level: 4 }],
+  solo: [{ title: '1인 사업자', level: 4 }],
+  academy: [{ title: '교육원 원장', level: 5 }, { title: '제2 실습장 원장', level: 6 }, { title: '종합 교육센터 원장', level: 7 }],
+  company: [{ title: '창업 대표', level: 5 }, { title: '1차 투자 유치 대표', level: 6 }, { title: '2차 투자 유치 대표', level: 7 }, { title: '상장 준비 대표', level: 8 }],
+  director: [{ title: '이사', level: 7 }, { title: '부회장', level: 8 }],
+};
+/** The level shown for a rung that ends the run with an achievement ending. */
+export const CAREER_TOP_LEVEL = 9;
+
+export const GRADES = ['G', 'F', 'E', 'D', 'C', 'B', 'A', 'S'] as const;
+/**
+ * The lowest value of each grade from F up to S; anything below the first number is G.
+ * Every `need.min` gate on one of these stats is one of its numbers, so "등급이 같거나 높다" and "조건을 채웠다"
+ * always agree (tests/career.test.ts). 체력 also lines up with its bands: below 20 탈진 (G), below 40 지침 (F), 80 쌩쌩 (A).
+ */
+export const GRADE_STEPS: Partial<Record<Stat, number[]>> = {
+  stamina: [20, 40, 50, 60, 70, 80, 95],
+  theory: [30, 60, 90, 150, 180, 240, 320],
+  skill: [20, 45, 90, 150, 225, 270, 330],
+  xp: [100, 210, 270, 420, 480, 630, 870],
+  rep: [15, 60, 75, 105, 120, 150, 180],
+  teach: [30, 60, 105, 150, 240, 300, 400],
+  biz: [30, 60, 105, 150, 200, 260, 330],
+  net: [30, 60, 100, 150, 200, 260, 330],
+  support: [15, 30, 45, 60, 75, 85, 95],
+};
+
 export const STAT_LABEL: Record<Stat, string> = {
   money: '자금', debt: '빚', stamina: '체력', theory: '이론', skill: '조종 실력', xp: '경험치', rep: '평판', biz: '사업 감각', teach: '교육 경력', net: '인맥',
   drone: '드론 등급', gear: '장비 등급', car: '차량 등급', cond: '기체 상태',

@@ -19,6 +19,7 @@ test('art files exist and fit their budgets', () => {
   for (const id of SCENE_IDS) within('scene-' + id, 300_000);
   for (const id of SPEAKER_IDS) within('portrait-' + id, 60_000);
   for (const id of ENDING_IDS) within('ending-' + id, 60_000);
+  for (const stage of Object.keys(STAGES)) within('chibi-' + stage, 60_000);
 });
 
 test('every place at every stage has a scene, and the company visibly grows', () => {

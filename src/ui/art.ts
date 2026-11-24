@@ -61,3 +61,5 @@ export const eventSpeaker = (eventId: string): SpeakerId => EVENT_SPEAKER[eventI
 export const speakerArt = (id: SpeakerId) => file('portrait-' + id);
 export const eventPortrait = (eventId: string) => speakerArt(eventSpeaker(eventId));
 export const endingPortrait = (id: EndingId) => file('ending-' + id);
+/** The player as a full-body chibi in the outfit of a career stage: rank cards, the board piece, the player plate. The file's background is the flat cream #fdf5e6. */
+export const chibiArt = (stage: Stage) => file('chibi-' + stage);
