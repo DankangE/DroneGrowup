@@ -51,7 +51,7 @@ const EVENT_SPEAKER: Record<string, SpeakerId> = {
   neglect: 'mechanic', typhoon: 'anchor', used_deal: 'broker', theft: 'friend', bird: 'mechanic',
   scholarship: 'professor', senior: 'senior', club: 'senior', cram: 'examiner',
   illegal: 'broker', regular: 'client', grant: 'banker', expo: 'client', friend: 'friend',
-  restructure: 'manager', scout: 'investor', taskforce: 'manager',
+  restructure: 'manager', scout: 'manager', taskforce: 'manager',
   trainee_crash: 'trainee', best_instructor: 'examiner', rival_academy: 'trainee', inspection: 'inspector',
   tax: 'inspector', subcontract: 'manager', key_staff: 'engineer', angel: 'investor', dumping: 'client',
   hearing: 'inspector', audit: 'banker', advisor: 'professor',

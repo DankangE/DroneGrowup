@@ -17,7 +17,7 @@ mkdirSync(out, { recursive: true });
 function one(name) {
   return new Promise((resolve) => {
     const body = prompts[name];
-    if (!body) { console.log(`FAIL ${name} (no prompt)`); return resolve(); }
+    if (!body) { process.exitCode = 1; console.log(`FAIL ${name} (no prompt)`); return resolve(); }
     const prompt = (prompts._style?.[name.split('-')[0]] ?? '') + body + (prompts._tail?.[name.split('-')[0]] ?? '');
     const dir = join(tmpdir(), 'art-generate', `${name}-${Date.now()}`);
     mkdirSync(dir, { recursive: true });
@@ -30,7 +30,7 @@ function one(name) {
     child.on('close', (code) => {
       const png = readdirSync(dir).find((f) => f.endsWith('.png'));
       if (png) { copyFileSync(join(dir, png), join(out, `${name}.png`)); console.log(`OK ${name}`); }
-      else console.log(`FAIL ${name} exit=${code} ${log.slice(-400).replace(/\s+/g, ' ')}`);
+      else process.exitCode = 1; console.log(`FAIL ${name} exit=${code} ${log.slice(-400).replace(/\s+/g, ' ')}`);
       resolve();
     });
   });
