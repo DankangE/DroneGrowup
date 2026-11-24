@@ -58,8 +58,10 @@ export function hud(state: GameState, choices: OptionView[], numbers: boolean, o
     strip.dataset.grades = numbers ? 'numbers' : 'letters';
     strip.setAttribute('aria-pressed', String(numbers));
     const stats = el('span', 'plate-grades');
+    const spoken: string[] = [];
     for (const stat of plateStats(state.stage)) {
       const held = grade(stat, state.s[stat])!;
+      spoken.push(shortLabel(stat) + ' ' + held.letter + ' ' + num(state.s[stat]));
       const cell = el('span', 'grade-cell');
       const name = el('span', 'grade-name', shortLabel(stat));
       const badge = gradeBadge(state, stat, numbers);
@@ -104,7 +106,7 @@ export function hud(state: GameState, choices: OptionView[], numbers: boolean, o
     gear.append(flip);
     strip.title = '등급과 수치 전환';
     strip.append(stats, gear);
-    strip.setAttribute('aria-label', [numbers ? '등급 글자로 보기' : '정확한 수치 보기', stats.textContent, gear.textContent].join(' · '));
+    strip.setAttribute('aria-label', [numbers ? '등급 글자로 보기' : '정확한 수치 보기', ...spoken, gear.textContent].join(' · '));
   }
   drawGrades(true);
   status.append(identity, time, accounts, strip);

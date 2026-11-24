@@ -357,7 +357,7 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
 .result-title,.event-story h3,.ladder-detail h3 { font-size: 20px; }
 .result-sheet .sheet-header { background: #ffdf8d; }
 .result-details,.result-live,.ladder-detail,.rank-next,.rank-pages { display: grid; gap: 5px; }
-.result-details:empty,.result-live:empty { display: none; }
+.result-details:empty { display: none; }
 .result-status { font: 400 29px/1.12 var(--display); }
 .result-text,.event-text { font-size: 14px; }
 .delta-chips,.standing-grades { display: flex; flex-wrap: wrap; gap: 4px; }
