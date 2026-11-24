@@ -3,6 +3,8 @@ import { derived, endingInfo, num } from '../game/engine.ts';
 import type { EndingId, GameState } from '../game/types.ts';
 import type { Meta } from '../save.ts';
 import { button, countNumber, el, meter } from './dom.ts';
+import { endingPortrait } from './art.ts';
+import { portrait } from './images.ts';
 import { icon, type IconName } from './icons.ts';
 import coverUrl from '/art/cover.webp?url';
 
@@ -12,12 +14,6 @@ const endingHints: Record<EndingId, string> = {
   director: '협회 · 업계의 목소리', instructor: '교육 · 조종기를 건네는 손', employee: '회사 · 꾸준함의 가치',
   pilot: '비행 · 현장에서 찾은 내 길', student: '시작 · 아직 끝나지 않은 꿈',
 };
-const endingIcons: Record<EndingId, IconName> = {
-  ceo: 'flag', chairman: 'star', academy: 'book', solo: 'drone', debtor: 'coin', smallbiz: 'home',
-  director: 'bank', instructor: 'map', employee: 'bag', pilot: 'compass', student: 'bolt',
-};
-
-
 function pill(symbol: IconName, text: string) {
   const node = el('span','pill',text);
   node.prepend(icon(symbol));
@@ -78,14 +74,9 @@ export function titleScreen(meta: Meta, saved: GameState | null, actions: TitleA
   return main;
 }
 
-function patch(id: EndingId, found = true) {
-  const badge = el('span', 'patch patch-' + id + (found ? '' : ' silhouette'));
-  badge.append(icon(endingIcons[id]));
-  return badge;
-}
 export function galleryScreen(meta: Meta, onTitle: () => void) {
   const main = el('main','gallery-screen frame');
-  const head = el('header','album-head');
+  const head = el('header','window-title album-head');
   head.append(el('h1','','엔딩 도감'),pill('book',`${meta.gallery.length} / ${ENDINGS.length}`));
   const detail = el('section','album-detail');
   detail.setAttribute('aria-live','polite');
@@ -95,18 +86,20 @@ export function galleryScreen(meta: Meta, onTitle: () => void) {
     const found = meta.gallery.includes(ending.id);
     const copy = el('div','album-story');
     copy.append(el('small','',ending.main ? '대표 엔딩' : '커리어 엔딩'),el('h2','',found ? ending.title : '???'),el('p','',found ? ending.text : endingHints[ending.id]));
-    detail.replaceChildren(patch(ending.id,found),copy);
+    detail.replaceChildren(portrait(found ? endingPortrait(ending.id) : undefined, true),copy);
     [...grid.children].forEach((b,i) => b.setAttribute('aria-pressed', String(i === index)));
   };
   ENDINGS.forEach((ending,i) => {
     const found = meta.gallery.includes(ending.id);
     const tile = button('','tile',() => select(i));
     tile.setAttribute('aria-label',found ? ending.title : `미발견 엔딩 ${i + 1}`);
-    tile.append(patch(ending.id,found),el('b','',found ? ending.title : '???'));
+    tile.append(portrait(found ? endingPortrait(ending.id) : undefined, true),el('b','',found ? ending.title : '???'));
     grid.append(tile);
   });
   select(Math.max(0, ENDINGS.findIndex(e => meta.gallery.includes(e.id))));
-  main.append(head,meter(meta.gallery.length, ENDINGS.length, '발견한 엔딩'),detail,grid,button('타이틀','secondary',onTitle,'title'));
+  const body = el('div', 'album-body');
+  body.append(meter(meta.gallery.length, ENDINGS.length, '발견한 엔딩'),detail,grid,button('타이틀','secondary',onTitle,'title'));
+  main.append(head, body);
   return main;
 }
 
@@ -118,7 +111,7 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   const badges = el('div','records');
   if (record.firstTime) badges.append(pill('book','새 엔딩'));
   if (record.newBest) badges.append(pill('star',`최고 기록 ${num(state.score)}점`));
-  story.append(patch(ending.id));
+  story.append(portrait(endingPortrait(ending.id)));
   if (badges.childElementCount) story.append(badges);
   story.append(el('h1','',ending.title), el('p','',ending.text));
   const report = el('section','ending-report');
@@ -136,6 +129,10 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   const controls = el('div','ending-controls');
   controls.append(button('다시 하기','primary',onRetry,'retry'),button('엔딩 도감','secondary',onGallery,'gallery'),button('타이틀','secondary',onTitle,'title'));
   report.append(score,facts,controls);
-  main.append(story,report);
+  const title = el('header', 'window-title');
+  title.append(icon('flag'), '비행 경력 결산');
+  const body = el('div', 'ending-body');
+  body.append(story, report);
+  main.append(title, body);
   return main;
 }

@@ -43,6 +43,9 @@ export function pager(page: number, total: number, change: (page: number) => voi
 
 export function createPanel(state: GameState, choices: OptionView[], choose: (id: string) => void, initial: Nav, onTitle: () => void) {
   const panel = el('section', 'panel');
+  const caption = el('h2', 'window-title', '이번 분기 할 일');
+  const body = el('div', 'panel-body');
+  panel.append(caption, body);
   const nav = el('nav', 'nav-bar');
   nav.setAttribute('aria-label','게임 메뉴');
   let view = initial, tab: Tab = 'all', place: PlaceId | null = null;
@@ -110,15 +113,16 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
   }
 
   function fit() {
-    panel.replaceChildren();
+    body.replaceChildren();
     panel.style.height = '';
     const desktop = matchMedia('(min-width: 900px)').matches;
     const deck = panel.parentElement!;
     const scene = deck.querySelector<HTMLElement>('.scene')!;
     const mapReserve = Math.max(200, Math.min(320, 200 + (deck.clientHeight - 740) * .8));
     const budget = panel.clientHeight + (desktop ? 0 : scene.clientHeight - mapReserve);
-    const style = getComputedStyle(panel);
-    const frame = 44 + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2 * parseFloat(style.rowGap);
+    const style = getComputedStyle(body);
+    const chrome = panel.offsetHeight - body.clientHeight;
+    const frame = chrome + 44 + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2 * parseFloat(style.rowGap);
 
     // Measure at the real column width. A long locked choice only reduces
     // capacity on the page containing it.
@@ -127,7 +131,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     const samples = actions.map(option => ({ option, row: pickRow(option, false), detail: detailFor(option) }));
     rows.append(...samples.map(sample => sample.row));
     probe.append(rows, ...samples.map(sample => sample.detail));
-    panel.append(probe);
+    body.append(probe);
     rowGap = parseFloat(getComputedStyle(rows).rowGap);
     for (const { option, row, detail } of samples) {
       sizes.set(option, { row: row.getBoundingClientRect().height, detail: detail.getBoundingClientRect().height });
@@ -141,25 +145,28 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
       const first = actionPages(actions)[0];
       const needed = Math.max(pageHeight(first), ...actions.map(o => pageHeight([o])));
       listRoom = actions.length ? Math.ceil(needed) : listRoom;
-      panel.style.height = (frame + listRoom + parseFloat(style.borderTopWidth)) + 'px';
+      panel.style.height = (frame + listRoom) + 'px';
     }
     render();
   }
   function render() {
     const focusKey = panel.contains(document.activeElement) ? Object.entries((document.activeElement as HTMLElement).dataset)[0] : undefined;
-    panel.replaceChildren();
+    body.replaceChildren();
     for (const [key,b] of navButtons) b.setAttribute('aria-pressed',String(key === view));
     panel.dataset.view = view;
+    const [,label,symbol] = navigation.find(([key]) => key === view)!;
+    caption.replaceChildren(icon(symbol), view === 'home' ? '이번 분기 할 일' : label);
     const header = el('div', 'panel-head');
-    panel.append(header);
+    body.append(header);
     function pageControl(total: number) {
       page = Math.min(page, total - 1);
       header.append(pager(page, total, i => { page = i; picked = ''; render(); }));
     }
     function pagedGrid(grid: HTMLElement, items: HTMLElement[], columns: number) {
-      panel.append(grid);
-      const bottom = parseFloat(getComputedStyle(panel).paddingBottom);
-      const room = panel.getBoundingClientRect().bottom - grid.getBoundingClientRect().top - bottom;
+      body.append(grid);
+      const style = getComputedStyle(body);
+      const bottom = parseFloat(style.paddingBottom) + parseFloat(style.borderBottomWidth);
+      const room = body.getBoundingClientRect().bottom - grid.getBoundingClientRect().top - bottom;
       const pages = paginateRows(grid, items, columns, room);
       pageControl(pages.length);
       grid.replaceChildren(...pages[page]);
@@ -187,31 +194,28 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
       if (current) {
         picked = current.id;
         const rows = el('div', 'action-rows');
-        rows.style.setProperty('--page-rows', String(items.length));
         rows.append(...items.map(o => pickRow(o, o === current)));
-        panel.append(rows, detailFor(current));
+        body.append(rows, detailFor(current));
       } else if (tab === 'place' && place && choices.some(o => o.free && o.place === place)) {
         const bankHere = place === 'bank';
         const facility = empty(bankHere ? 'bank' : 'bag', PLACES[place].desc);
         facility.append(button(bankHere ? '은행 이용하기' : '상점 · 정비 이용하기', 'secondary', () => switchView(bankHere ? 'bank' : 'shop')));
-        panel.append(facility);
+        body.append(facility);
       } else if (state.phase !== 'event') {
         const message = tab === 'job' ? '이번 분기에 받은 일감이 없어요.' : '이곳에는 이번 분기 활동이 없어요.';
-        panel.append(empty('map', message));
+        body.append(empty('map', message));
       }
     } else {
-      const [,label,symbol] = navigation.find(([key]) => key === view)!;
-      const title = el('h2','panel-title',label);
-      title.prepend(icon(symbol));
-      header.append(title);
       if (view === 'shop' || view === 'bank') {
         const list = view === 'shop' ? shop : bank;
         const note = el('div','service-note','분기 소모 없음');
         note.prepend(icon('check'));
         if (view === 'bank') {
-          note.append(el('b','',`빚 ${num(state.s.debt)} / ${num(d.creditLimit)}만원`),meter(state.s.debt,d.creditLimit,'대출 한도'));
+          const balance = el('div', 'bank-balance');
+          balance.append(el('b','',`빚 ${num(state.s.debt)} / ${num(d.creditLimit)}만원`),meter(state.s.debt,d.creditLimit,'대출 한도'));
+          body.append(balance);
         }
-        panel.append(note);
+        header.append(note);
         const grid = el('div','service-grid');
         const cards = list.map(o => {
           const card = el('article','service-card' + (o.enabled ? '' : ' locked'));
@@ -224,7 +228,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
         if (cards.length) pagedGrid(grid, cards, 2);
         else {
           pageControl(1);
-          panel.append(empty('bag', state.stage === 'student' ? '자격증을 취득하면 장비 상점이 열려요.' : '현재 이용할 업그레이드나 정비가 없어요.'));
+          body.append(empty('bag', state.stage === 'student' ? '자격증을 취득하면 장비 상점이 열려요.' : '현재 이용할 업그레이드나 정비가 없어요.'));
         }
       } else if (view === 'info') {
         header.append(button('타이틀', 'return-title', onTitle, 'title'));
@@ -235,13 +239,14 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
         });
         pagedGrid(el('dl', 'fact-grid'), facts, 2);
       } else {
+        header.append(el('span', 'log-count', `최근 기록 ${logs.length}건`));
         const entries = logs.map(entry => {
           const row = el('li', entry.tone);
           row.append(el('b', '', `${entry.turn + 1}분기`), el('p', '', entry.text));
           return row;
         });
         pagedGrid(el('ol', 'journal'), entries, 1);
-        if (!logs.length) panel.append(empty('book', '첫 선택을 마치면 비행 기록이 쌓여요.'));
+        if (!logs.length) body.append(empty('book', '첫 선택을 마치면 비행 기록이 쌓여요.'));
       }
     }
     if (focusKey) {

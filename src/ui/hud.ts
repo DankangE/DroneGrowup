@@ -34,7 +34,7 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
     }
     return pill;
   }
-  const top = el('header', 'top-bar');
+  const status = el('footer', 'status-bar');
   const level = Object.keys(STAGES).indexOf(state.stage) + 1;
   const badge = el('div', 'career-emblem');
   badge.append(emblem(level));
@@ -46,9 +46,14 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
   identity.append(rank, el('h1', '', d.stageName));
   const debt = counter('debt', '빚 / 한도', 'bank');
   debt.classList.toggle('near-limit', state.s.debt >= d.creditLimit * .85);
-  top.append(badge, identity, counter('money', '자금 · 만원', 'coin'), debt);
+  const careerPlate = el('div', 'career-plate');
+  careerPlate.append(badge, identity);
+  const accounts = el('div', 'accounts');
+  accounts.append(counter('money', '자금 (만원)', 'coin'), debt);
   const time = el('div', 'time-strip');
   time.append(icon('sun'), el('strong', '', `${d.age}세 ${d.quarter}분기`), meter(state.turn, RULES.maxTurns, '비행 경력'), el('span', '', `남은 ${d.turnsLeft}분기`));
+
+  status.append(careerPlate, time, accounts);
 
   const next = choices.find(o => o.roll?.success.stage || o.sure?.stage);
   const goal = next ? button('', 'goal', () => onGoal(next.id)) : el('div', 'goal');
@@ -71,19 +76,23 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
     const chip = counter(stat, label, symbol);
     chip.title = d.items[stat].name;
     if (stat === 'drone') {
-      chip.title += ` · 기체 상태 ${state.s.cond}%`;
-      const condition = meter(state.s.cond, 100, '기체 상태');
-      if (previous && previous.s.cond !== state.s.cond && !reducedMotion()) {
-        condition.firstElementChild?.animate([{width: previous.s.cond + '%'}, {width: state.s.cond + '%'}], 480);
-        const pop = el('span', 'gain', signed(state.s.cond - previous.s.cond) + '%');
-        pop.addEventListener('animationend', () => pop.remove(), {once:true});
-        chip.classList.add('changed');
-        chip.append(pop);
+      const current = state.s.drone ? state.s.cond : 0;
+      const prior = previous?.s.drone ? previous.s.cond : 0;
+      if (state.s.drone) chip.title += ` · 기체 상태 ${current}%`;
+      const condition = meter(current, 100, '기체 상태');
+      if (previous && prior !== current && !reducedMotion()) {
+        condition.firstElementChild?.animate([{width: prior + '%'}, {width: current + '%'}], 480);
+        if (previous.s.drone === state.s.drone) {
+          const pop = el('span', 'gain', signed(current - prior) + '%');
+          pop.addEventListener('animationend', () => pop.remove(), {once:true});
+          chip.classList.add('changed');
+          chip.append(pop);
+        }
       }
       chip.append(condition);
     }
     equipment.append(chip);
   }
   strip.append(gauges, equipment);
-  return {top, time, goal, strip};
+  return {status, goal, strip};
 }

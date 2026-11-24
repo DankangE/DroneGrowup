@@ -4,6 +4,7 @@ import { choose, currentEvent, newGame, num, options } from './game/engine.ts';
 import type { GameState, OptionView, PlaceId } from './game/types.ts';
 import { clearRun, loadMeta, loadRun, recordEnding, saveRun } from './save.ts';
 import { PLATFORM, bootPlatform, fetchLeaderboard, nickname, openNicknamePage, runStatus, sessionOk } from './platform.ts';
+import { STAGE_PLACE } from './ui/art.ts';
 import { createPanel, pager, type Nav } from './ui/cards.ts';
 import { button, el, focusHeading, paginateRows } from './ui/dom.ts';
 import { hud } from './ui/hud.ts';
@@ -28,7 +29,7 @@ function seed(): number {
 }
 
 let state = loadRun() ?? newGame(seed());
-let dronePlace: PlaceId = 'school';
+let dronePlace: PlaceId = STAGE_PLACE[state.stage];
 let stageView: 'field' | 'map' = 'field';
 let startedAt = performance.now();
 let endingRecord: EndingRecord | null = null;
@@ -93,7 +94,7 @@ function startRun() {
   startedAt = performance.now();
   endingRecord = null;
   choosing = false;
-  dronePlace = currentEvent(state)?.place ?? 'school';
+  dronePlace = currentEvent(state)?.place ?? STAGE_PLACE[state.stage];
   renderPlay('home');
 }
 
@@ -119,7 +120,7 @@ function renderPlay(nav: Nav, previous?: GameState) {
     heading.replaceChildren(icon(field ? 'sun' : 'map'), field ? '비행 현장' : '비행 지도');
     stage.querySelector('.scene')?.remove();
     if (field) {
-      ui.strip.before(fieldScene(dronePlace));
+      ui.strip.before(fieldScene(dronePlace, state));
     } else {
       map ??= createScene(new Set(choices.map(o => o.place)), dronePlace, state.s.drone, id => {
         dronePlace = id;
@@ -133,11 +134,15 @@ function renderPlay(nav: Nav, previous?: GameState) {
   const fieldButton = button('현장', '', () => updateStage('field'));
   const mapButton = button('지도', '', () => updateStage('map'));
   toggle.append(fieldButton, mapButton);
-  header.append(heading, ui.goal, toggle);
+  header.append(heading, ui.goal);
   stage.append(header, ui.strip);
   updateStage(stageView);
   const shell = el('main', 'flight-deck');
-  shell.append(ui.top, ui.time, stage, panel.panel, panel.nav);
+  const toolbar = el('header', 'toolbar');
+  fieldButton.prepend(icon('sun'));
+  mapButton.prepend(icon('map'));
+  toolbar.append(panel.nav, toggle);
+  shell.append(toolbar, stage, panel.panel, ui.status);
   setScreen('play', shell);
   activePanel = panel;
   root.dataset.phase = state.phase;

@@ -1,13 +1,12 @@
-import { PLACES, STAGES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
+import { PLACES, RULES, STAGES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
 import type { EventDef, GameState, OptionView, Result, Stat } from '../game/types.ts';
 import { commitButton, outcomes, price } from './cards.ts';
 import { button, el, meter, reducedMotion } from './dom.ts';
 import { icon } from './icons.ts';
 import { signed, statValue } from './hud.ts';
-import seniorPortrait from '/art/portrait-senior.webp?url';
-
-// Every event in this sample falls back to the senior portrait.
-const EVENT_PORTRAIT: Record<string, string> = {};
+import { derived, num } from '../game/engine.ts';
+import { eventPortrait } from './art.ts';
+import { portrait } from './images.ts';
 
 type Sheet = { dialog: HTMLDialogElement; body: HTMLElement; close: () => void; open: () => void; disableBackground: () => void };
 let activeSheet: Sheet | null = null;
@@ -174,27 +173,36 @@ export function confirmNewRun(root: HTMLElement, onConfirm: () => void) {
 
 function eventProfile(event: EventDef, state: GameState) {
   const profile = el('div', 'event-profile');
-  const portrait = el('img', 'event-portrait');
-  portrait.src = EVENT_PORTRAIT[event.id] ?? seniorPortrait;
-  portrait.alt = '';
-  portrait.decoding = 'async';
+  const chartBox = el('section', 'chart-box');
+  chartBox.append(el('h3', '', '현재 상태'));
   const chart = el('dl', 'event-chart');
-  chart.setAttribute('aria-label', '현재 능력치');
-  for (const [stat, label] of [['xp', '경험치'], ['rep', '평판'], ['drone', '드론'], ['gear', '장비'], ['car', '차량']] as const) {
+  chart.setAttribute('aria-label', '현재 상태');
+  const { creditLimit, turnsLeft } = derived(state);
+  const { money, debt, xp, rep, drone, cond } = state.s;
+  const steps = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000];
+  const scale = (value: number, max: number) => Math.min(steps.find(step => step >= value) ?? max, max);
+  for (const [stat, label, value, max, share] of [
+    ['money', '자금', money, scale(money, STAT_MAX.money!), false],
+    ['credit', '신용', Math.max(0, creditLimit - debt), creditLimit, true],
+    ['xp', '경험', xp, scale(xp, STAT_MAX.xp!), false],
+    ['rep', '평판', rep, scale(rep, STAT_MAX.rep!), false],
+    ['cond', '기체', drone ? cond : 0, 100, true],
+    ['time', '시간', turnsLeft, RULES.maxTurns, true],
+  ] as const) {
     const column = el('div', 'chart-column chart-' + stat);
-    const value = state.s[stat];
     const track = el('span', 'chart-track');
     track.setAttribute('aria-hidden', 'true');
     const fill = el('i');
-    const percent = value / STAT_MAX[stat]! * 100;
-    fill.style.height = value ? `max(1px, ${percent}%)` : '0';
+    const percent = Math.max(0, Math.min(100, value / max * 100));
+    fill.style.height = percent + '%';
     track.append(fill);
-    const reading = el('dd', '', String(value));
+    const reading = el('dd', '', share ? Math.round(percent) + '%' : num(value));
     reading.append(track);
     column.append(el('dt', '', label), reading);
     chart.append(column);
   }
-  profile.append(portrait, chart);
+  chartBox.append(chart);
+  profile.append(portrait(eventPortrait(event.id)), chartBox);
   return profile;
 }
 

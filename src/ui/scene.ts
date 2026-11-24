@@ -1,8 +1,8 @@
 import { PLACES } from '../game/data.ts';
-import type { PlaceId } from '../game/types.ts';
+import type { GameState, PlaceId } from '../game/types.ts';
 import { button, el, svg } from './dom.ts';
-import officeArt from '/art/scene-office.webp?url';
-
+import { sceneArt } from './art.ts';
+import { artImage } from './images.ts';
 
 export const shortNames: Record<PlaceId, string> = {
   home: '자취방', school: '드론학과', airfield: '실습장', exam: '시험장', town: '시내', shop: '상점',
@@ -10,16 +10,16 @@ export const shortNames: Record<PlaceId, string> = {
   studio: '촬영장', coast: '해안', office: '사무실', hq: '본사', academy: '교육원', assoc: '협회',
 };
 
-// Only the office has sample art; every other place uses the office as its backdrop.
-const SCENE_ART: Partial<Record<PlaceId, string>> = { office: officeArt };
-
-export function fieldScene(place: PlaceId) {
+export function fieldScene(place: PlaceId, state: GameState) {
   const scene = el('div', 'scene field-scene');
-  const art = el('img');
-  art.src = SCENE_ART[place] ?? officeArt;
-  art.alt = '';
-  art.decoding = 'async';
-  scene.append(art, el('span', 'place-plate', shortNames[place]));
+  const model = svg('svg', { viewBox: '-70 -62 140 124', class: 'field-model', 'aria-hidden': 'true' });
+  model.append(building(place));
+  const pad = el('div', 'field-pad');
+  pad.append(model);
+  scene.append(pad);
+  const art = artImage(sceneArt(place, state));
+  if (art) scene.append(art);
+  scene.append(el('span', 'place-plate', PLACES[place].name));
   return scene;
 }
 

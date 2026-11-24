@@ -3,8 +3,8 @@
 The UI is a thin layer over the rules in `src/game/`. It renders what the engine reports and sends back one
 option id per tap. It never computes odds, payouts, requirements or endings itself.
 
-The layout follows the patterns in `docs/ui-references.md` (idle / raising game home screens): one fixed
-screen with a resource bar, a stage, an action panel and a bottom tab bar. **Nothing scrolls, anywhere.**
+The game runs inside a fixed steel-blue tycoon window. The toolbar and status bar span its width, with
+the stage and action window between them. **Nothing scrolls, anywhere.**
 
 ## Files the UI owns
 
@@ -87,25 +87,27 @@ with paged rows.
 
 ### 2. Play (`data-screen="play"`, `data-phase="action | event | result"`)
 
-Phone (portrait), top to bottom:
+On phones the four regions stack vertically. At widths of 900 px and above, the stage and the 420 px
+action window share the middle row. The toolbar and status bar span both columns.
 
-1. **Top bar** (about 52 px). Left: the career emblem (see Growth) with the stage name and rank. Right:
-   resource pills with an icon: 자금, 빚 (`debt / creditLimit`; red when debt is near or over the limit).
-2. **Time strip** (about 24 px). "23세 2분기", a thin progress bar of the 72 quarters, "남은 54분기".
-3. **Stage** (takes all remaining height, `data-clip-ok`). The bevelled header holds the goal chip and two
-   pressed-state buttons, "현장" and "지도". The initial 현장 view fills the stage with isometric place art and
-   a short place-name plate. This sample uses the office image for every place. 지도 shows the SVG town map.
-   Tapping an available place flies the drone there and selects its "장소" tab. The selected view persists
-   across play-screen renders. Both views keep:
-   - top: the **goal chip** "다음 목표" (see Growth),
-   - bottom: a **stat strip**: gauges for 경험치 and 평판, the career stat that matters in this stage when
-     it is above zero, and chips for the drone (level + condition bar), gear and car levels.
-4. **Panel** (fixed height; its content depends on the bottom tab):
+1. **Top icon toolbar.** Five bevelled buttons switch between 홈, 상점, 은행, 내 정보 and 기록. The active
+   button looks pressed. A dot marks 상점 or 은행 when an option there is enabled. The 현장 / 지도 buttons
+   switch the stage view independently. All seven controls are at least 44 px square.
+2. **Stage.** The run opens at the pending event's place, or the career stage's home place from
+   `STAGE_PLACE`. 현장 shows the place and career-specific art from `sceneArt(place, state)`. A dark
+   isometric tile grid and the place's map landmark sit beneath it during loading or if the image is
+   unavailable. A solid plate identifies the place. 지도 shows the SVG town map. Choosing an available
+   landmark moves the drone and opens that place's actions. The view persists across play-screen renders.
+   The raised goal plate stays above the scene. Inset instruments below it show experience, reputation,
+   the stage's active specialty, equipment levels and drone condition.
+3. **Action window.** The pinstriped navy title bar names the active view, including “이번 분기 할 일”
+   for 홈. The cream body contains the selected tab's controls and a measured page of content.
    - **홈** — the quarter's actions (options with `free === false`). A tab row: "전체", "일감" (kind `job`),
      "활동" (kind `action`), and "장소: <name>" when a place is selected on the map; the pager sits at the right
      end of the tab row ("1 / 4" between "이전" and "다음" icon buttons). Below it a list of compact rows
-     (4 to 6 per page, at least 44 px each): place icon, title, cost, and the chance as a small badge ("66%")
-     or "확정" for a sure outcome; disabled rows are dimmed with a lock icon. Below the list a **detail strip**
+     (up to six per page, each at least 44 px tall): place icon, title, cost, and the chance as a percentage ("66%")
+     or "확정" for a sure outcome. Rows alternate pale backgrounds. The selected row uses white text on navy,
+     and locked rows carry a lock icon. Below the list a **detail strip**
      for the picked row: title, description, for a roll "성공: …" and "실패: …" (the `summary` strings) and
      "추락 위험 25%" when `crashPct` is set, for a sure outcome its `summary`, for a disabled option its
      `locks`; and one large primary button "실행" with the cost on it. The first enabled row of a page is
@@ -117,15 +119,21 @@ Phone (portrait), top to bottom:
    - **내 정보** — every non-zero stat with its `STAT_LABEL` as a compact grid, net worth, and the next
      quarter's upkeep lines. Paged if it does not fit.
    - **기록** — the recent log (`state.log`), newest first, paged.
-5. **Bottom tab bar** (about 56 px + safe area): 홈, 상점, 은행, 내 정보, 기록, each an icon over a label.
-   The active tab is marked. A dot on 상점 / 은행 when one of its options is enabled.
+4. **Bottom status bar.** At the left, the career emblem accompanies the stage name and rank. The middle
+   shows the age and quarter, completed quarters out of 72, and “남은 N분기”. Two sunken LCD readouts on
+   the right show 자금 in 만원 and 빚 / 한도. Debt near or over the limit turns the readout red. The
+   readouts stack on narrow screens and retain the count-up and floating change animations.
 
 Event, result, confirmation and ranking popups share a centred steel-blue window with a two-pixel bevel,
 a pinstriped blue title bar with white text, and a cream inset body. Each fits inside the viewport.
 
 - **Event** (`data-phase="event"`): shown as soon as `state.phase === 'event'`; it must be answered. A framed
-  portrait sits beside a five-bar chart of current experience, reputation, drone, gear and car levels,
-  scaled to their engine maxima. All sample events use the senior portrait. Below are the place name,
+  portrait from `eventPortrait(event.id)` sits beside the six-colour **현재 상태** chart (a labelled
+  `<dl>`). A CSS silhouette fills the frame when the file is unavailable. 자금, 경험 and 평판 show
+  their actual values, each scaled to the smallest enclosing step of a fixed 50, 100, 200, 500, …
+  ladder capped at the stat maximum. 신용 shows remaining credit divided by the limit, 기체 shows
+  condition (0% without a drone), and 시간 shows the share of quarters remaining. Each column has
+  its value or percentage above the bar and a name below. Below are the place name,
   inset event text and the event's choices (two at most) as large buttons. Each button carries the
   choice title, cost, the chance ("성공 66%") with a small bar, and the success / fail (or sure) summaries.
   Disabled choices show their locks.
@@ -135,28 +143,25 @@ a pinstriped blue title bar with white text, and a cream inset body. Each fits i
   upkeep as one compact line per entry or a single total when there are many, and a stage-up banner when
   `stageTo !== stageFrom`. One "계속" button. With `prefers-reduced-motion` the animation is skipped.
 
-Desktop (width 900 px and up): the same pieces in two columns. Left: the stage, as large as the height
-allows. Right (about 420 px): top bar, time strip, panel and the tab bar at its bottom. The stat strip and
-goal chip stay on the stage. Popups stay centred and at most 480 px wide. The tab bar must never cover the
-panel or a card (the old 1280 px overlap).
-
 ### 3. Ending (`data-screen="ending"`)
 
-One screen: the ending emblem, title and text (`endingInfo`), the score counting up, a 3 x 2 grid of run
+A pinstriped “비행 경력 결산” window with a cream body holds the framed portrait from
+`endingPortrait(id)`, title and text (`endingInfo`), the score counting up, a 3 x 2 grid of run
 facts (age, net worth, flights, wins, losses, crashes), "새 엔딩" / "최고 기록" badges, and the buttons "다시
 하기" (primary), "엔딩 도감", "타이틀". Platform build: the `runStatus.text` line and the "닉네임 설정" button
 fit on the same screen.
 
 ### 4. Ending gallery (`data-screen="gallery"`)
 
-An album: a fixed detail panel on top (title, text, "대표 엔딩" mark for `main`; "???" and a career hint for
+A bevelled album window with a navy title bar, discovery meter and fixed detail panel on top (title, text, "대표 엔딩" mark for `main`; "???" and a career hint for
 an ending not found yet) and all 11 endings as tiles in a grid below (3 columns on a phone, 6 on desktop).
-Tapping a tile shows it in the detail panel. Found tiles show an emblem and the title, the rest a dark
-silhouette. A "타이틀" button. No scroll with all 11 found.
+Tapping a tile shows it in the detail panel. Found tiles show lazy-loaded, asynchronously decoded portrait thumbnails and the title. Undiscovered
+tiles and details use a dark CSS silhouette and never request that ending’s portrait. A neutral silhouette
+fills any discovered portrait frame whose art is unavailable. A "타이틀" button. No scroll with all 11 found.
 
 ## Growth and feedback
 
-- **Career emblem**: an original SVG badge in the top bar that gains a tier per career stage (wings, stars,
+- **Career emblem**: an original SVG badge in the bottom status bar that gains a tier per career stage (wings, stars,
   a crown for the top stages) and shows the rank. It pulses when the stage changes.
 - **The drone on the map** is drawn larger and better equipped as the drone level rises.
 - **Goal chip**: the next goal is the first option, in the engine's order, whose outcome moves the career to
@@ -164,7 +169,7 @@ silhouette. A "타이틀" button. No scroll with all 11 found.
   `OptionView`, not the Korean text). The chip shows "다음 목표 · <title>" and, when it is locked, its first
   lock reason; when it is enabled, "도전 가능". Tapping it shows that option in the 홈 list. Without such
   an option the chip shows the quarters left until retirement.
-- **Numbers move**: when a result is confirmed, the changed pills and gauges count / fill to the new value
+- **Numbers move**: when a result is confirmed, the changed readouts and gauges count / fill to the new value
   and a small "+200" / "-150" pop floats up from them. Popups scale in. The primary button has a pressed
   state. All of it is off under `prefers-reduced-motion: reduce`.
 
@@ -179,7 +184,7 @@ silhouette. A "타이틀" button. No scroll with all 11 found.
   - the root element carries `data-screen="title | play | ending | gallery"` and, on the play screen,
     `data-phase="action | event | result"`;
   - title / ending buttons: `data-action="new | continue-run | gallery | title | retry"`;
-  - bottom tab bar buttons: `data-nav="home | shop | bank | info | log"`;
+  - top toolbar navigation buttons: `data-nav="home | shop | bank | info | log"`;
   - tab rows inside a view: `data-tab="<name>"`; choosing a tab or a nav entry shows its first page;
   - pagers: `data-action="page-prev"` and `data-action="page-next"`, with the `disabled` attribute at the ends;
   - a list row that only selects an option: `data-pick="<option id>"`;
@@ -190,5 +195,5 @@ silhouette. A "타이틀" button. No scroll with all 11 found.
   - with `?debug=1` in the URL only: `window.__game = { state: () => GameState, options: () => OptionView[] }`.
 - Every option the engine offers is reachable through those hooks without the map, so the game is playable
   with a keyboard and a screen reader: real `<button>`s, visible focus, `aria-live="polite"` on the result text.
-- No `console.error` in normal play. No network requests in the default build.
+- No `console.error` in normal play. The default build requests only its own assets.
 - `npm run layout` (the no-scroll check) and `npm run playtest` must pass.
