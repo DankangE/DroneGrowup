@@ -7,7 +7,8 @@
 //
 // Fails on: a console error or page error, a request to another origin, horizontal scroll at 390 px, a
 // choice button smaller than a fingertip, fewer than three different endings, a save that does not survive
-// a reload. Screenshots go to docs/screenshots/.
+// a reload. Screenshots go to docs/screenshots/playtest/ (not committed; the committed before / after sets come
+// from scripts/layout-check.mjs).
 //
 //   npm run playtest
 //   CHROME_PATH=/path/to/chrome npm run playtest
@@ -20,9 +21,10 @@ import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
 import { choose, options } from '../src/game/engine.ts';
+import { revealOption } from './ui-driver.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const shots = join(root, 'docs/screenshots');
+const shots = join(root, 'docs/screenshots/playtest');
 mkdirSync(shots, { recursive: true });
 
 // policy, seed: chosen so the four runs end in four different careers (checked below, not assumed).
@@ -67,20 +69,16 @@ async function noSideScroll(page, where) {
 
 /** Every visible choice button is at least a fingertip tall and inside the viewport's width. */
 async function tappable(page, where) {
-  const bad = await page.evaluate((min) => [...document.querySelectorAll('[data-option]')]
-    .map((b) => ({ id: b.getAttribute('data-option'), r: b.getBoundingClientRect() }))
+  const bad = await page.evaluate((min) => [...document.querySelectorAll('[data-option], [data-pick]')]
+    .map((b) => ({ id: b.getAttribute('data-option') ?? b.getAttribute('data-pick'), r: b.getBoundingClientRect() }))
     .filter(({ r }) => r.width > 0 && (r.height < min || r.left < 0 || r.right > window.innerWidth + 0.5))
     .map(({ id, r }) => `${id} ${Math.round(r.width)}x${Math.round(r.height)} at x=${Math.round(r.left)}`), MIN_TAP);
   assert.deepEqual(bad, [], `${where}: choice buttons too small or off-screen`);
 }
 
-/** Taps the button of one option the way a player reaches it: the 전체 list, or the 상점 · 정비 · 은행 sheet. */
+/** Taps the button of one option the way a player reaches it (tabs, pages, bottom navigation). */
 async function tapOption(page, option) {
-  const target = page.locator(`[data-option="${option.id}"]:visible`).first();
-  if (!(await target.count())) {
-    await page.locator(option.free ? '[data-action="services"]' : '[data-action="all"]').first().click();
-  }
-  await target.waitFor({ state: 'visible', timeout: 5000 });
+  const target = await revealOption(page, option);
   assert.equal(await target.isDisabled(), false, `${option.id} is enabled in the engine but disabled in the UI`);
   await target.click();
 }
@@ -115,7 +113,6 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
     for (const [name, at] of Object.entries(shotsAt)) {
       if (at === 'event' ? state.phase === 'event' : at === 'roll' ? !!option.roll && option.kind === 'job' : state.turn === at && state.phase === 'action') {
         if (at === 0) await shot(page, `${name}-map`);
-        await page.evaluate(() => document.querySelector('#choices')?.scrollIntoView());
         await noSideScroll(page, name);
         await tappable(page, name);
         await shot(page, name);

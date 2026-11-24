@@ -8,7 +8,8 @@
 //   - an element cuts its content off (overflow hidden with more content than room; mark deliberate clipping,
 //     such as the map stage, with data-clip-ok),
 //   - a button is smaller than a fingertip (44 px), or text is smaller than 11 px.
-// Every tab ([data-tab]) and every pager page ([data-action="page-next"]) of a view is visited.
+// On the play screen every bottom-navigation tab ([data-nav]) is opened, and in every view every tab
+// ([data-tab]) and every pager page ([data-action="page-next"]) is visited.
 //
 //   npm run layout                              check only
 //   LAYOUT_SHOTS=docs/screenshots/after npm run layout     also write one screenshot per view and size
@@ -22,7 +23,7 @@ import { chromium } from 'playwright-core';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
 import { ENDING_IDS } from '../src/game/data.ts';
 import { choose, newGame, options } from '../src/game/engine.ts';
-import { eachTabAndPage, revealOption } from './ui-driver.mjs';
+import { eachTabAndPage, names, revealOption } from './ui-driver.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SIZES = [[390, 844], [360, 740], [1280, 800], [1366, 768]];
@@ -153,19 +154,13 @@ for (const [width, height] of SIZES) {
     await page.locator('[data-action="continue-run"]').click();
     await screenIs('play');
   };
-  /** Opens one of the play screen's sheets if this UI has it. */
-  const open = async (action) => {
-    const button = page.locator(`[data-action="${action}"]:visible`).first();
-    if (!(await button.count())) return false;
-    await button.click();
-    return true;
-  };
+  /** The play screen for this run: what it opens on, then every bottom-navigation tab. */
   const playViews = async (name, run) => {
     await resume(run);
     await check(name);
-    for (const sheet of ['all', 'services', 'details']) {
-      await resume(run);
-      if (await open(sheet)) await check(`${name}-${sheet}`);
+    for (const nav of await names(page, 'data-nav')) {
+      await page.locator(`[data-nav="${nav}"]:visible`).first().click();
+      await check(`${name}-${nav}`);
     }
   };
   const tap = async ({ option }) => (await revealOption(page, option)).click();
