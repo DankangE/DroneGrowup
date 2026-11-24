@@ -92,9 +92,8 @@ Needed in NalidaGame, one line:
 - add `'stamina', 'theory', 'skill'` to `STATS` in `apps/api/src/games/pilotgrowup.js` (the existing
   `±STAT_LIMIT` clamp is enough; the client clamps to the ranges above on restore).
 
-Not needed: no `v` bump, no SQL change, no change to `scorePlay`, `detail` keys or `MAX_SCORE`. The
-simulation maximum after this update is 25,455 over 11,000 bot runs (was 28,736), still under the ~30,000
-note next to `MAX_SCORE = 150_000`.
+Not needed for these three stats: no `v` bump, no SQL change, no new `detail` keys. The seasons update
+below does change `scorePlay` and the turn bounds; see [Seasons update](#seasons-update).
 
 Old local saves (no such keys) are migrated the same way by `restore`; `tests/engine.test.ts` covers it.
 
@@ -143,4 +142,54 @@ wanted later, the run is deterministic: `seed` plus the ordered option ids repro
 
 ## Seasons update
 
-TODO
+A run now lasts 120 seasons (age 20 to 50) instead of 72 quarters (age 20 to 38), and one season holds
+several actions. `turn` is still the index of the three-month step, so `age = 20 + floor(turn / 4)` and the
+season is `turn % 4` exactly as before; only the upper bound moved.
+
+### What changed in the payloads
+
+Progress (`PUT /progress`):
+
+| field | before | now |
+|---|---|---|
+| `run.turn` | 0..72 | 0..120 |
+| `run.s.acts` | absent | integer 0..99: actions taken in the current season, back to 0 when the season changes |
+| `run.seen[*]`, `run.log[*].turn` | 0..72 | 0..120 |
+
+Play record (`POST /plays`): same keys, wider values.
+
+| field | before | now |
+|---|---|---|
+| `detail.turns` | 1..72 | 1..120 |
+| `detail.age` | 20..38 | 20..50 |
+| `detail.wins + detail.losses` | at most about 2 per turn | up to 7 per turn (six action rolls and one event roll) |
+| `detail.flights` | at most 1 per turn | up to 5 per turn |
+| `score` | simulation maximum 23,626 | simulation maximum 65,606 |
+
+No new keys in `detail`, `"v"` stays 1, no SQL change.
+
+### What must change in NalidaGame (`apps/api/src/games/pilotgrowup.js`)
+
+1. `MAX_TURNS = 72` becomes `120`. Everything derived from it follows: the `cleanRun` clamps on `turn`,
+   `seen` and log turns; `DETAIL_RANGE.turns` `[1, 120]`; the rule that endings other than `ceo`, `chairman`,
+   `academy` and `debtor` need `turns === MAX_TURNS`; and the early bonus `(MAX_TURNS - turns) * 50`.
+2. `DETAIL_RANGE.age` becomes `[20, 50]`. `age === 20 + floor(turns / 4)` is unchanged.
+3. Add `'acts'` to `STATS` (together with `'stamina', 'theory', 'skill'` from the section above).
+4. In `scorePlay`, loosen the two per-turn bounds: `wins + losses <= 2 * turns + 10` becomes
+   `wins + losses <= 8 * turns + 10`, and `flights <= turns` becomes `flights <= 5 * turns`. The cheapest
+   rolled action costs 15 stamina and the cheapest flight 20, against at most 100 stamina a season.
+5. `MAX_SCORE = 150_000` can stay (the highest of 3,300 bot runs is 65,606). The comment beside it that
+   mentions about 30,000 is out of date.
+6. Re-record the test fixtures for the hook with a 120-season run.
+
+Until NalidaGame has these changes: a finished run longer than 72 seasons is rejected by `scorePlay` (the
+score is not recorded; the game itself keeps working), and a run reloaded from the server comes back with
+`turn` clamped to 72 and without `acts`. So the flagged build should not be pointed at production NalidaGame
+before the hook is updated.
+
+### Old saves
+
+A version 1 save from before this update loads as is: its quarter index is the season index, so the age and
+season shown do not change, and a missing `acts` is read as 0. Requirements for licences and promotions were
+tripled in the rebalance, so an old character is further from the next gate than it was; nothing is lost and
+the run stays playable. `tests/engine.test.ts` covers the load.
