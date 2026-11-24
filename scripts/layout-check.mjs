@@ -87,7 +87,9 @@ function audit({ minTap, minFont }) {
     const style = getComputedStyle(el);
     // The part of the element that can be seen: its box cut by every clipping ancestor below <body>.
     let { left, top, right, bottom } = box;
-    for (let up = el.parentElement; up && up !== document.body; up = up.parentElement) {
+    // An open modal dialog is in the top layer: nothing above it in the DOM clips it.
+    const topLayer = el.closest('dialog[open]');
+    for (let up = el === topLayer ? null : el.parentElement; up && up !== document.body; up = up === topLayer ? null : up.parentElement) {
       const s = getComputedStyle(up);
       const b = up.getBoundingClientRect();
       if (clips(s.overflowX)) { left = Math.max(left, b.left); right = Math.min(right, b.right); }
@@ -136,6 +138,14 @@ for (const [width, height] of SIZES) {
       for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) failures.push(`${where}: ${problem}`);
       if (first && shotDir) await page.screenshot({ path: join(shotDir, `${size}-${view}.png`) });
       first = false;
+      // Picking a row changes the detail strip: every row of the page has to fit, not only the default one.
+      for (const pick of await names(page, 'data-pick')) {
+        await page.locator(`[data-pick="${pick}"]:visible`).first().click();
+        await page.waitForTimeout(40);
+        const picked = await page.locator(`[data-option="${pick}"]:visible`).count();
+        if (!picked) failures.push(`${where} pick ${pick}: no commit button for the picked row`);
+        for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) failures.push(`${where} pick ${pick}: ${problem}`);
+      }
     });
   };
   /** Fresh page with this saved run and record; lands on the title. */
