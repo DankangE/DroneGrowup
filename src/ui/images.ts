@@ -1,12 +1,8 @@
 import { el } from './dom.ts';
 
-// Vite expands the filenames at build time. Checking the inventory makes a
-// partial art release render silently, even on a host with strict 404s.
-declare const __SHIPPED_ART__: string[];
-const shipped = new Set(__SHIPPED_ART__);
-
+// An image that fails to load removes itself, so the drawn fallback behind it (SVG building, empty frame) shows.
+// tests/art.test.ts checks that every file the game names is in public/art.
 export function artImage(url: string, lazy = false) {
-  if (!shipped.has(url.slice(url.lastIndexOf('/') + 1))) return null;
   const image = el('img');
   image.alt = '';
   image.decoding = 'async';

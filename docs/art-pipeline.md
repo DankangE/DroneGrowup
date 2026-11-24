@@ -1,7 +1,9 @@
 # 파일럿 키우기 — art pipeline
 
 How the raster art is made, what was tried, and the exact prompts, so any image can be regenerated or extended
-in the same style. Status: **sample pass** (one cover, one scene, one portrait). The full set is not made yet.
+in the same style. Status: **full set shipped** (2026-11-24): 1 cover, 18 scenes, 14 speaker portraits,
+11 ending portraits. 26 generations in all (3 in the sample pass, 23 for the full set), no retries needed,
+the subscription's image limit was not reached.
 
 ## Pipeline in use
 
@@ -15,7 +17,11 @@ in the same style. Status: **sample pass** (one cover, one scene, one portrait).
 | Seeds | The built-in tool exposes no seed and no sampler settings. Reproduction is by prompt only; expect a different image of the same kind. Keep the raw PNG of every image that ships. |
 | Licence | OpenAI's terms of use assign the output to the user, commercial use included. The prompts name no artist, game or brand, and the images copy no character, composition, logo or UI from the reference screenshots. |
 | Data sent out | Only the art prompts below (generic descriptions). No project, user or repo details. |
-| Web export | `cwebp -q 82` (cover), `cwebp -q 80 -resize 1344 896` (scene), `cwebp -q 84 -resize 384 384` (portrait). |
+| Batch | `node scripts/art-generate.mjs docs/art-prompts.json <out dir> <name> ...` runs the command above for each named prompt, four at a time, each bounded by `timeout 420`. `FORCE=1` regenerates a name that already has a PNG. |
+| Portrait sheets | To spend a quarter of the generations and keep one drawing hand, portraits are generated four at a time: one 1:1 image that is a strict 2x2 grid of busts. `scripts/art-export.mjs` cuts each sheet into four 384x384 portraits (its `SHEETS` table says which cell is who). |
+| Web export | `node scripts/art-export.mjs <dir with raw PNGs> [name ...]`: `cwebp` at 1344x896 (scenes) or 384x384 (portraits), quality stepped down from 80 until the file fits its budget (scene 300 KB, portrait 60 KB; cover 400 KB). It also writes a q95 WebP of every raw generation to `docs/art-raw/` (the 3 to 4 MB PNGs are not kept in git). |
+| Wiring | `src/ui/art.ts` maps place and career stage to a scene, event to a speaker, ending to a portrait. An `<img>` is created only when its view is shown, so a run downloads just the scenes it visits; an image that fails to load removes itself and the drawn SVG fallback shows. `tests/art.test.ts` checks every named file exists and fits its budget. |
+| In-game check | `npm run build && node scripts/art-shots.mjs docs/screenshots/art-final` opens every scene in the real play screen at 390x844 and 1280x800. |
 | Lettering | Never generated. The title is real text in Bagel Fat One (SIL OFL 1.1, `public/fonts/OFL-BagelFatOne.txt`), subset to the glyphs of "파일럿 키우기" with `pyftsubset --text="파일럿 키우기" --flavor=woff2` (3.6 KB). Every prompt ends with a "no text, letters, logos" clause. |
 
 ## Files
@@ -23,20 +29,46 @@ in the same style. Status: **sample pass** (one cover, one scene, one portrait).
 | Shipped file | Size | Raw generation | Used for |
 | --- | --- | --- | --- |
 | `public/art/cover.webp` | 261 KB | `docs/art-raw/cover-v2.png` | Title screen key visual |
-| `public/art/scene-office.webp` | 271 KB | `docs/art-raw/scene-office-v1.png` | Play stage "현장" view (sample: shown for every place) |
-| `public/art/portrait-senior.webp` | 19 KB | `docs/art-raw/portrait-senior-v1.png` | Event popup portrait (sample: shown for every event) |
+| `public/art/scene-office.webp` | 271 KB | `docs/art-raw/scene-office-v1.png` | Small company office |
+| `public/art/scene-<id>.webp` x 17 | 214 to 293 KB each | `docs/art-raw/scene-<id>.webp` | Play stage "현장" view, see the scene table below |
+| `public/art/portrait-senior.webp` | 19 KB | `docs/art-raw/portrait-senior-v1.png` | Event popup portrait: senior |
+| `public/art/portrait-<id>.webp` x 13 | under 60 KB each | `docs/art-raw/sheet-speakers1..3.webp`, `sheet-endings3.webp` (examiner) | Event popup portraits |
+| `public/art/ending-<id>.webp` x 11 | under 60 KB each | `docs/art-raw/sheet-endings1..3.webp` | Ending screen and ending gallery |
 | `public/fonts/bagel-fat-one-title.woff2` | 3.6 KB | Google Fonts repo, `ofl/bagelfatone` | Title lettering |
 
-## Sample screenshots
+`public/art` is 5.5 MB in 44 files; the whole build (`dist/`) is 6.3 MB. A first visit loads the cover and
+one scene (about 0.6 MB of art); the rest arrives as places, events and endings come up.
 
-`docs/screenshots/art-samples/`: `390x844-title.png`, `1280x800-title.png` (cover), `390x844-play-start.png`,
-`1280x800-play-start.png` (scene in the stage's "현장" view), `390x844-play-event.png`,
-`1280x800-play-event.png` (window popup with portrait and stat chart). Written by
-`LAYOUT_SHOTS=<dir> npm run layout`.
+### Scenes
 
-Known gaps of the sample: the office is shown for every place and the senior for every event; the action panel
-on the right still has the old pastel look; the stat chart is empty at the start of a run because every value
-is zero.
+| Scene | Shown for |
+| --- | --- |
+| `home`, `school`, `airfield`, `town`, `shop`, `garage`, `bank`, `farm`, `site`, `bridge`, `windfarm`, `studio`, `coast`, `academy`, `assoc` | The place of the same name (`airfield` also stands for the exam ground) |
+| `solo` | "내 사무실" while the player works alone: a one-desk studio room with a van outside |
+| `office` | The company office once a company exists (fewer than 6 staff, before the second funding round); also the "본사" place while the player still works alone |
+| `hq` | The company at 6 or more staff or from the second round, and the employer's office during the employee career |
+
+The play screen opens on the home place of the career stage (student: school, pilot: airfield, employee: hq,
+instructor: academy, solo: office, company: hq, director: association hall) and follows the place of the
+current event and of the last action taken.
+
+### Portraits
+
+Speakers (one per recurring kind of person; `EVENT_SPEAKER` in `src/ui/art.ts` assigns every event to one):
+senior, mechanic, professor, broker, client, banker, manager, engineer, trainee, inspector, anchor, friend,
+investor, examiner. Endings: ceo, chairman, academy, solo, debtor, smallbiz, director, instructor, employee,
+pilot, student. An ending not yet reached shows an empty frame in the gallery and its image is not requested.
+
+## Screenshots
+
+`docs/screenshots/art-final/` (WebP, 390x844 and 1280x800): `title`, `play-start`, `play-event` (window popup
+with portrait and stat chart), `play-busy-shop`, `play-result`, `ending`, `gallery-full`, and `scene-<id>` for
+all 18 scenes. The first group comes from `LAYOUT_SHOTS=<dir> npm run layout`, the scenes from
+`scripts/art-shots.mjs`. `docs/screenshots/art-samples/` holds the earlier sample pass.
+
+Notes from the visual check of the full set: no stray glyphs, no broken hands or faces, no style drift between
+sheets. The `home`, `solo` and `bank` scenes are dioramas with dark corners rather than edge-to-edge floors;
+they were kept because they read well in the frame.
 
 ## What was checked and rejected (2026-11-24)
 
@@ -58,6 +90,10 @@ is zero.
   (knees-up, overlapping group, sticker background).
 
 ## Prompts
+
+The prompts of the full set (17 scenes, 6 portrait sheets) are in `docs/art-prompts.json`: `_style.scene` and
+`_style.sheet` are the shared first sentences, `_tail` the shared closing clause, and each other key is one
+image. The three sample-pass prompts follow here in full.
 
 ### Cover v2 (shipped)
 
@@ -129,10 +165,8 @@ is zero.
 - Check each image for hands, faces, stray glyphs and anything that resembles the reference screenshots before
   it ships; regenerate rather than retouch.
 
-## Estimated size of the full set
+## Cost of the full set
 
-1 cover, 6 to 8 scenes with growth variants (about 14 images), 5 to 8 portraits, so about 25 images, or about
-60 to 75 generations with retries. On the subscription route that is about one to two hours of generation and
-no extra cost, subject to the plan's image limits. If those limits get in the way, the paid fallback is the
-same model through the OpenAI API (high quality 1536x1024 is on the order of 0.2 to 0.3 USD per image, so
-roughly 15 to 25 USD for the whole set including retries; check the current price list before deciding).
+Estimated before the run: about 25 images and 60 to 75 generations with retries. Actual: 43 shipped images
+from 26 generations (portrait sheets, and every generation was usable first time), no extra cost, no image
+limit reached.
