@@ -120,6 +120,7 @@ async function attempt() {
     user = me;
     const server = cleanProgress(saved.data);
     adoptServerProgress(server, String(me.id), Number(saved.progressAt) || 0);
+    known = syncedAt();
     // Choices or an ending that never reached the server (tab closed before the upload) go up now.
     const local = localProgress();
     if (JSON.stringify(local) !== JSON.stringify(server)) pushProgress(local);
@@ -162,6 +163,8 @@ let pending: Progress | null = null;
 let saveTimer = 0;
 let saveWait = 0;
 let saving = false;
+/** The server `progressAt` this tab last read or wrote. Kept per tab: the stored marker is shared by every tab. */
+let known = 0;
 
 /** Queues the latest progress; saves are debounced and run one at a time, newest wins. Never throws. */
 export function pushProgress(progress: Progress) {
@@ -178,14 +181,15 @@ async function flush() {
   const sending = pending;
   try {
     const cur = await timed(sdk.progress.get());
-    if ((Number(cur.progressAt) || 0) > syncedAt()) {
-      // Another device saved since this page last synced: its record stands, this page must reload onto it.
+    if ((Number(cur.progressAt) || 0) > known) {
+      // Another device or tab saved since this page last synced: its record stands, this page must reload onto it.
       pending = null;
       lost = 'moved';
       return;
     }
     const body: Progress = { run: sending.run, meta: mergeMeta(sending.meta, cleanProgress(cur.data).meta) };
     const stamp = Math.max(Date.now(), (Number(cur.progressAt) || 0) + 1);
+    known = stamp;
     markSynced(stamp); // before the request: a reload while it is in flight must not mistake it for another device
     const r = await timed(sdk.progress.put(body, stamp));
     if (r.conflict) throw err('conflict');
