@@ -123,8 +123,8 @@ export function showResult(root: HTMLElement, result: Result, onContinue: () => 
     live.replaceChildren(el('p', `result-status ${result.roll?.success === false ? 'negative' : 'positive'}`, result.roll ? result.roll.success ? '성공! 잘 날았어요.' : '실패, 그래도 경험은 남아요.' : '선택을 마쳤어요.'), el('p', 'result-text', result.text));
     const chips = el('div', 'delta-chips');
     for (const [stat, value] of Object.entries(result.deltas) as [Stat, number][]) {
-      if (!value) continue;
-      const beneficial = ['debt', 'overdue', 'crashes', 'losses'].includes(stat) ? value < 0 : value > 0;
+      if (!value || ['flights', 'wins', 'losses', 'crashes', 'overdue'].includes(stat)) continue; // counters, not rewards
+      const beneficial = stat === 'debt' ? value < 0 : value > 0;
       chips.append(el('span', `delta-chip ${beneficial ? 'positive' : 'negative'}`, `${STAT_LABEL[stat]} ${value > 0 ? '+' : ''}${statValue(stat, value)}`));
     }
     reveal.append(chips);
