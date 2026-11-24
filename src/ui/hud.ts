@@ -1,5 +1,5 @@
 import { RULES, STAGES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
-import { derived, num } from '../game/engine.ts';
+import { derived, num, staminaBand } from '../game/engine.ts';
 import type { GameState, OptionView, Stage, Stat } from '../game/types.ts';
 import { button, countNumber, el, meter, reducedMotion } from './dom.ts';
 import { emblem, icon, type IconName } from './icons.ts';
@@ -68,7 +68,12 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
   if (next) goal.append(el('small', 'goal-lock', next.enabled ? '도전 가능' : '잠김'), icon('arrow'));
   const strip = el('div', 'stat-strip');
   const gauges = el('div', 'gauges');
-  gauges.append(counter('xp', '경험치', 'bolt', STAT_MAX.xp), counter('rep', '평판', 'star', STAT_MAX.rep));
+  const band = staminaBand(state);
+  const words = { fresh: '쌩쌩', normal: '', tired: '지침', exhausted: '탈진' };
+  const stamina = counter('stamina', ['체력', words[band]].filter(Boolean).join(' · '), 'bolt', STAT_MAX.stamina);
+  stamina.dataset.staminaBand = band;
+  gauges.append(stamina, counter('theory', '이론', 'book'), counter('skill', '조종', 'drone'),
+    counter('xp', '경험', 'bolt', STAT_MAX.xp), counter('rep', '평판', 'star', STAT_MAX.rep));
   const career = specialty[state.stage];
   if (state.s[career]) gauges.append(counter(career, STAT_LABEL[career], 'flag'));
   const equipment = el('div', 'equipment');

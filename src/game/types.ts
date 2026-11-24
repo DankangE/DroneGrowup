@@ -9,6 +9,7 @@ export type EndingId =
 /** Every number of a run lives in one flat record, so conditions and effects in data.ts can name any of them. */
 export type Stat =
   | 'money' | 'debt' | 'xp' | 'rep' | 'biz' | 'teach' | 'net'
+  | 'stamina' | 'theory' | 'skill'
   | 'drone' | 'gear' | 'car' | 'cond'
   | 'rank' | 'staff' | 'contracts' | 'value' | 'round' | 'students' | 'level' | 'support'
   | 'overdue' | 'flights' | 'crashes' | 'wins' | 'losses';
@@ -55,6 +56,8 @@ export type Choice = {
   need?: Cond;
   /** 만원, paid up front whatever the outcome. */
   cost?: number;
+  /** 체력 spent up front whatever the outcome. An action is disabled while stamina is below it. Actions only: event choices put stamina in their effects. */
+  tire?: number;
   roll?: Roll;
   effect?: Effect;
 };
@@ -131,12 +134,13 @@ export type OptionView = {
   /** Free options (shop, repair, bank) do not spend the turn. */
   free: boolean;
   cost: number;
+  tire: number;
   enabled: boolean;
   /** Korean reasons, one per unmet requirement; empty when enabled. */
   locks: string[];
   /** The same requirements as data, for bots. `money` is listed when the cost is not covered. */
   missing: { stat: Stat; need: number }[];
-  roll?: { chance: number; success: OutcomeView; fail: OutcomeView; crashPct?: number };
+  roll?: { chance: number; staminaPct: number; success: OutcomeView; fail: OutcomeView; crashPct?: number };
   sure?: OutcomeView;
 };
 

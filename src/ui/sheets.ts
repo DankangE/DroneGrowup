@@ -1,4 +1,4 @@
-import { PLACES, RULES, STAGES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
+import { PLACES, STAGES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
 import type { EventDef, GameState, OptionView, Result, Stat } from '../game/types.ts';
 import { commitButton, outcomes, price } from './cards.ts';
 import { button, el, meter, reducedMotion } from './dom.ts';
@@ -177,17 +177,19 @@ function eventProfile(event: EventDef, state: GameState) {
   chartBox.append(el('h3', '', '현재 상태'));
   const chart = el('dl', 'event-chart');
   chart.setAttribute('aria-label', '현재 상태');
-  const { creditLimit, turnsLeft } = derived(state);
-  const { money, debt, xp, rep, drone, cond } = state.s;
+  const { creditLimit } = derived(state);
+  const { money, debt, stamina, theory, skill, xp, rep, drone, cond } = state.s;
   const steps = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000];
   const scale = (value: number, max: number) => Math.min(steps.find(step => step >= value) ?? max, max);
   for (const [stat, label, value, max, share] of [
     ['money', '자금', money, scale(money, STAT_MAX.money!), false],
     ['credit', '신용', Math.max(0, creditLimit - debt), creditLimit, true],
+    ['stamina', '체력', stamina, STAT_MAX.stamina!, false],
+    ['theory', '이론', theory, scale(theory, STAT_MAX.theory!), false],
+    ['skill', '조종', skill, scale(skill, STAT_MAX.skill!), false],
     ['xp', '경험', xp, scale(xp, STAT_MAX.xp!), false],
     ['rep', '평판', rep, scale(rep, STAT_MAX.rep!), false],
     ['cond', '기체', drone ? cond : 0, 100, true],
-    ['time', '시간', turnsLeft, RULES.maxTurns, true],
   ] as const) {
     const column = el('div', 'chart-column chart-' + stat);
     const track = el('span', 'chart-track');

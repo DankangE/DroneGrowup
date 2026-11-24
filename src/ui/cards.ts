@@ -1,4 +1,4 @@
-import { PLACES, STAT_LABEL } from '../game/data.ts';
+import { PLACES, RULES, STAT_LABEL } from '../game/data.ts';
 import { derived, num } from '../game/engine.ts';
 import type { GameState, OptionView, PlaceId, Stat } from '../game/types.ts';
 import { button, el, meter, paginateRows } from './dom.ts';
@@ -10,10 +10,17 @@ export type Nav = 'home' | 'shop' | 'bank' | 'info' | 'log';
 type Tab = 'all' | 'job' | 'action' | 'place';
 const navigation: [Nav, string, IconName][] = [['home','홈','home'], ['shop','상점','bag'], ['bank','은행','bank'], ['info','내 정보','drone'], ['log','기록','book']];
 const symbols: Record<PlaceId,IconName> = { home:'home', school:'book', airfield:'drone', exam:'flag', town:'bag', shop:'bag', garage:'tool', bank:'bank', farm:'sun', site:'tool', bridge:'map', windfarm:'bolt', studio:'drone', coast:'map', office:'home', hq:'bank', academy:'book', assoc:'flag' };
-export const price = (o: OptionView) => o.cost ? num(o.cost) + '만원' : '무료';
+export const price = (o: OptionView) => (o.cost ? num(o.cost) + '만원' : '무료') + (o.tire ? ` · 체력 -${o.tire}` : '');
+function staminaReason(o: OptionView) {
+  const pct = o.roll?.staminaPct;
+  if (!pct) return '';
+  const reason = pct > 0 ? '체력 여유' : pct === -RULES.stamina.exhaustedPenalty ? '탈진' : '피로';
+  return `${reason} ${signed(pct)}%p`;
+}
 export function outcomes(o: OptionView) {
   const body = el('span', 'outcomes');
   if (o.roll) {
+    if (o.roll.staminaPct) body.append(el('span', 'stamina-reason', staminaReason(o)));
     body.append(el('span', 'success', '성공: ' + o.roll.success.summary), el('span', 'failure', '실패: ' + o.roll.fail.summary));
     if (o.roll.crashPct !== undefined) body.append(el('span', 'risk', `실패 시 추락 위험 ${o.roll.crashPct}%`));
   } else if (o.sure) body.append(el('span', 'success', '확정 · ' + o.sure.summary));
@@ -56,7 +63,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
   const bank = choices.filter(o => o.kind === 'bank');
   const statEntries: [string,string][] = [['순자산', num(d.netWorth) + '만원']];
   for (const stat of Object.keys(STAT_LABEL) as Stat[]) {
-    if (state.s[stat]) statEntries.push([STAT_LABEL[stat], statValue(stat, state.s[stat])]);
+    if (state.s[stat] || ['stamina', 'theory', 'skill'].includes(stat)) statEntries.push([STAT_LABEL[stat], statValue(stat, state.s[stat])]);
   }
   for (const line of d.upkeep.lines) statEntries.push(['다음 분기 · ' + line.label, signed(line.amount) + '만원']);
   statEntries.push(['다음 분기 합계', signed(d.upkeep.total) + '만원']);
@@ -86,7 +93,9 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     row.setAttribute('aria-pressed', String(selected));
     const patch = el('span', 'row-icon');
     patch.append(icon(o.enabled ? symbols[o.place] : 'lock'));
-    row.append(patch, el('strong', '', o.title), el('small', 'row-price', price(o)),
+    const title = el('strong', '', o.title);
+    if (o.roll?.staminaPct) title.append(el('small', 'row-reason', staminaReason(o)));
+    row.append(patch, title, el('small', 'row-price', price(o)),
       el('b', o.roll ? 'odds' : 'odds sure', o.roll ? o.roll.chance + '%' : '확정'));
     return row;
   }

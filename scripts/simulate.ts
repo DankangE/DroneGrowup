@@ -2,7 +2,6 @@
 // Fails (exit 1) on a softlock, an unreachable ending, or an ending share outside the allowed band.
 //   npm run simulate            # 300 seeds per policy
 //   SIM_RUNS=2000 npm run simulate
-//   SIM_VERBOSE=1 npm run simulate   # adds the per-policy breakdown
 import { ENDINGS, RULES } from '../src/game/data.ts';
 import { POLICIES, pick, botRandom } from '../src/game/bots.ts';
 import { choose, newGame, options } from '../src/game/engine.ts';
@@ -16,10 +15,13 @@ const table: Record<string, Record<string, number>> = {};
 const scores: Record<string, number[]> = {};
 const turns: Record<string, number[]> = {};
 const problems: string[] = [];
+const activity: Record<string, { rest: number; turns: number }> = {};
+let highest = 0;
 let total = 0;
 
 for (const name of names) {
   table[name] = {};
+  const counts = activity[name] = { rest: 0, turns: 0 };
   for (let seed = 1; seed <= runs; seed++) {
     let state = newGame(seed * 7919 + names.indexOf(name));
     const rand = botRandom(seed);
@@ -28,7 +30,13 @@ for (const name of names) {
       const open = options(state).filter((o) => o.enabled);
       if (!open.length || (state.phase === 'action' && !open.some((o) => !o.free))) { problems.push(`softlock: ${name} seed ${seed} turn ${state.turn}`); break; }
       if (++steps > 3000) { problems.push(`no end: ${name} seed ${seed}`); break; }
-      state = choose(state, pick(POLICIES[name], state, rand)).state;
+      const id = pick(POLICIES[name], state, rand);
+      const next = choose(state, id).state;
+      if (next.turn > state.turn) {
+        counts.turns++;
+        if (id === 'rest') counts.rest++;
+      }
+      state = next;
     }
     if (state.phase !== 'ended') continue;
     if (state.turn > RULES.maxTurns) problems.push(`over the turn limit: ${name} seed ${seed}`);
@@ -37,6 +45,7 @@ for (const name of names) {
     table[name][id] = (table[name][id] ?? 0) + 1;
     (scores[id] ??= []).push(state.score);
     (turns[id] ??= []).push(state.turn);
+    highest = Math.max(highest, state.score);
     total++;
   }
 }
@@ -53,10 +62,16 @@ for (const e of ENDINGS) {
   if (share < MIN_SHARE) problems.push(`ending ${e.id} is at ${share.toFixed(1)}% (< ${MIN_SHARE}%)`);
   if (share > MAX_SHARE) problems.push(`ending ${e.id} is at ${share.toFixed(1)}% (> ${MAX_SHARE}%)`);
 }
-if (process.env.SIM_VERBOSE === '1') {
-  console.log('\nper policy (% of that policy\'s runs)\n' + 'policy'.padEnd(11) + ENDINGS.map((e) => e.id.slice(0, 8).padStart(9)).join(''));
-  for (const p of names) console.log(p.padEnd(11) + ENDINGS.map((e) => (((table[p][e.id] ?? 0) * 100) / runs).toFixed(0).padStart(9)).join(''));
+console.log('\nper policy (% of that policy\'s runs)\n' + 'policy'.padEnd(11) + ENDINGS.map((e) => e.id.slice(0, 8).padStart(9)).join(''));
+for (const p of names) console.log(p.padEnd(11) + ENDINGS.map((e) => (((table[p][e.id] ?? 0) * 100) / runs).toFixed(0).padStart(9)).join(''));
+console.log('\npolicy       rests    turns  rest rate');
+for (const name of names) {
+  const { rest, turns } = activity[name];
+  console.log(name.padEnd(11) + String(rest).padStart(7) + String(turns).padStart(9) + pct(rest, turns).padStart(11));
+  if (POLICIES[name].style === 'planner' && (!rest || rest / turns > 0.35)) problems.push(`planner ${name} rested on ${rest}/${turns} turns`);
 }
+console.log(`\nhighest score: ${highest}`);
+if (highest > 100_000) problems.push(`highest score ${highest} exceeds 100,000`);
 if (problems.length) {
   console.error('\nFAILED\n' + [...new Set(problems)].slice(0, 20).join('\n'));
   process.exit(1);

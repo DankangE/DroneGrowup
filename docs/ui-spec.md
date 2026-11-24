@@ -25,8 +25,8 @@ import { PLACES, ITEMS, ENDINGS, STAGES, STAT_LABEL, RULES } from './game/data.t
 
 - `newGame(seed)` → `GameState` (JSON-serialisable). Pick the seed with `crypto.getRandomValues` (or `?seed=N` in the URL).
 - `options(state)` → `OptionView[]`: everything the player may look at now. Each has `id`, `kind`
-  (`action | job | event | shop | repair | bank`), `place`, `title`, `desc`, `cost`, `free` (does not spend the
-  quarter), `enabled`, `locks` (Korean reasons when disabled), and either `roll` (`chance` in %, `success` and
+  (`action | job | event | shop | repair | bank`), `place`, `title`, `desc`, `cost`, `tire`, `free` (does not spend the
+  quarter), `enabled`, `locks` (Korean reasons when disabled), and either `roll` (`chance` in %, signed `staminaPct` in percentage points, `success` and
   `fail` outcomes with a ready-made Korean `summary`, optional `crashPct`) or `sure` (one outcome).
 - `choose(state, optionId)` → `{ state, result }`. Pure: returns a new state. `result` has the roll
   (`chance`, `value` 0-99, `success`), `text`, `deltas` (stat changes), `crashed`, `notes`, `upkeep` (the
@@ -98,7 +98,8 @@ action window share the middle row. The toolbar and status bar span both columns
    isometric tile grid and the place's map landmark sit beneath it during loading or if the image is
    unavailable. A solid plate identifies the place. 지도 shows the SVG town map. Choosing an available
    landmark moves the drone and opens that place's actions. The view persists across play-screen renders.
-   The raised goal plate stays above the scene. Inset instruments below it show experience, reputation,
+   The raised goal plate stays above the scene. The first instrument is the 체력 meter (0–100). It shows 쌩쌩, 지침 or 탈진 outside the normal band
+   and uses warning colours for 지침 and 탈진. The following instruments show 이론, 조종, 경험, 평판,
    the stage's active specialty, equipment levels and drone condition.
 3. **Action window.** The pinstriped navy title bar names the active view, including “이번 분기 할 일”
    for 홈. The cream body contains the selected tab's controls and a measured page of content.
@@ -111,13 +112,15 @@ action window share the middle row. The toolbar and status bar span both columns
      for the picked row: title, description, for a roll "성공: …" and "실패: …" (the `summary` strings) and
      "추락 위험 25%" when `crashPct` is set, for a sure outcome its `summary`, for a disabled option its
      `locks`; and one large primary button "실행" with the cost on it. The first enabled row of a page is
-     picked by default.
+     picked by default. Rows and the detail button show the up-front stamina cost beside the price
+     (무료 · 체력 -14). For a nonzero stamina modifier the row and detail show 체력 여유 +4%p,
+     피로 -8%p or 탈진 -20%p. The detail keeps the crash risk and lock reasons visible together.
    - **상점** — `shop` and `repair` options as upgrade cards (a grid, paged if needed): item icon, title,
      effect / description, and the price as the button label. Marked "분기 소모 없음". Locked cards are
      dimmed and show the first lock reason.
    - **은행** — `bank` options as cards in the same style, above them a debt gauge (`debt / creditLimit`).
    - **내 정보** — every non-zero stat with its `STAT_LABEL` as a compact grid, net worth, and the next
-     quarter's upkeep lines. Paged if it does not fit.
+     quarter's upkeep lines. 체력, 이론 and 조종 실력 are listed even at zero. Paged if it does not fit.
    - **기록** — the recent log (`state.log`), newest first, paged.
 4. **Bottom status bar.** At the left, the career emblem accompanies the stage name and rank. The middle
    shows the age and quarter, completed quarters out of 72, and “남은 N분기”. Two sunken LCD readouts on
@@ -128,18 +131,18 @@ Event, result, confirmation and ranking popups share a centred steel-blue window
 a pinstriped blue title bar with white text, and a cream inset body. Each fits inside the viewport.
 
 - **Event** (`data-phase="event"`): shown as soon as `state.phase === 'event'`; it must be answered. A framed
-  portrait from `eventPortrait(event.id)` sits beside the six-colour **현재 상태** chart (a labelled
-  `<dl>`). A CSS silhouette fills the frame when the file is unavailable. 자금, 경험 and 평판 show
+  portrait from `eventPortrait(event.id)` sits beside the eight-column **현재 상태** chart (a labelled
+  `<dl>`). A CSS silhouette fills the frame when the file is unavailable. The chart reads 자금, 신용, 체력, 이론, 조종, 경험, 평판, 기체 in order, wrapping to two rows on narrow phones. 자금, 이론, 조종, 경험 and 평판 show
   their actual values, each scaled to the smallest enclosing step of a fixed 50, 100, 200, 500, …
   ladder capped at the stat maximum. 신용 shows remaining credit divided by the limit, 기체 shows
-  condition (0% without a drone), and 시간 shows the share of quarters remaining. Each column has
+  condition (0% without a drone), and 체력 shows points out of 100. Each column has
   its value or percentage above the bar and a name below. Below are the place name,
   inset event text and the event's choices (two at most) as large buttons. Each button carries the
   choice title, cost, the chance ("성공 66%") with a small bar, and the success / fail (or sure) summaries.
-  Disabled choices show their locks.
+  A nonzero stamina modifier appears on the same reason line as in the action detail. Disabled choices show their locks.
 - **Result** (`data-phase="result"`): after `choose`. For a roll: the luck animation (about 900 ms; a gauge
   with the success zone marked and a needle or rolling number landing on `result.roll.value`), then
-  성공 / 실패, `result.text`, the stat deltas as chips (+green / -red), `notes` (추락!), the quarter's
+  성공 / 실패, `result.text`, the stat deltas, including 체력, as chips (+green / -red), `notes` (추락!), the quarter's
   upkeep as one compact line per entry or a single total when there are many, and a stage-up banner when
   `stageTo !== stageFrom`. One "계속" button. With `prefers-reduced-motion` the animation is skipped.
 
@@ -184,6 +187,7 @@ fills any discovered portrait frame whose art is unavailable. A "타이틀" butt
   - the root element carries `data-screen="title | play | ending | gallery"` and, on the play screen,
     `data-phase="action | event | result"`;
   - title / ending buttons: `data-action="new | continue-run | gallery | title | retry"`;
+  - the 체력 pill carries `data-stamina-band="fresh | normal | tired | exhausted"`;
   - top toolbar navigation buttons: `data-nav="home | shop | bank | info | log"`;
   - tab rows inside a view: `data-tab="<name>"`; choosing a tab or a nav entry shows its first page;
   - pagers: `data-action="page-prev"` and `data-action="page-next"`, with the `disabled` attribute at the ends;

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
-import { ACTIONS, ENDINGS, EVENTS, PLACES, RULES, STAGES } from '../src/game/data.ts';
-import { choose, creditLimit, derived, newGame, options, restore } from '../src/game/engine.ts';
+import { ACTIONS, ENDINGS, EVENTS, PLACES, RULES, STAGES, STAT_MAX } from '../src/game/data.ts';
+import { choose, creditLimit, derived, newGame, options, restore, staminaBand } from '../src/game/engine.ts';
 import type { GameState, Stage, StatMap } from '../src/game/types.ts';
 
 /** A fresh run moved to a stage with some stats set, as plain data (the state is JSON all the way down). */
@@ -47,44 +47,100 @@ test('choose does not change the state it was given', () => {
   assert.deepEqual(state, before);
 });
 
-test('the wind-turbine job shows its odds and pays +200 / -150', () => {
+test('the wind-turbine job shows its odds and pays +250 / -150', () => {
   const state = at('pilot', { drone: 3, gear: 2, car: 2, xp: 150 }, ['licensed']);
   const wind = option(state, 'job_wind');
   assert.equal(wind.enabled, true);
-  assert.equal(wind.roll?.success.add.money, 200);
+  assert.equal(wind.roll?.success.add.money, 250);
   assert.equal(wind.roll?.fail.add.money, -150);
   assert.ok(wind.roll!.chance >= RULES.chanceMin && wind.roll!.chance <= RULES.chanceMax);
   assert.equal(wind.roll?.crashPct, RULES.flight.crashPct);
-  assert.match(wind.roll!.success.summary, /\+200만원/);
+  assert.match(wind.roll!.success.summary, /\+250만원/);
   assert.match(wind.roll!.fail.summary, /-150만원/);
 });
 
-test('the shown chance is the chance that is rolled', () => {
-  const state = at('pilot', { drone: 3, gear: 2, car: 2, money: 500 }, ['licensed']);
-  const shown = option(state, 'job_wind').roll!.chance;
-  let wins = 0;
-  const n = 2000;
-  for (let seed = 1; seed <= n; seed++) {
-    const { result } = choose({ ...state, rng: seed * 2654435761 >>> 0 }, 'job_wind');
-    assert.equal(result.roll!.chance, shown);
-    assert.equal(result.roll!.success, result.roll!.value < shown);
-    if (result.roll!.success) wins++;
+test('stamina costs are paid before outcomes and rest recovers up to the cap', () => {
+  const tire = ACTIONS.find((a) => a.id === 'st_flight')!.tire!;
+  const gain = ACTIONS.find((a) => a.id === 'rest')!.effect!.add!.stamina!;
+  const state = at('student', { stamina: tire });
+  const flight = option(state, 'st_flight');
+  assert.equal(flight.tire, tire);
+  const { state: next, result } = choose(state, flight.id);
+  assert.equal(result.deltas.stamina, -tire);
+  assert.equal(next.s.stamina, 0);
+  state.s.stamina = 0;
+  const locked = option(state, flight.id);
+  assert.equal(locked.enabled, false);
+  assert.deepEqual(locked.missing, [{ stat: 'stamina', need: tire }]);
+  assert.deepEqual(locked.locks, [`체력 부족 (${tire} 필요, 현재 0)`]);
+  assert.throws(() => choose(state, flight.id), /disabled/);
+  assert.ok(option(state, 'rest').enabled);
+  assert.equal(option(state, 'rest').tire, 0);
+  assert.equal(choose(state, 'rest').result.deltas.stamina, gain);
+  state.s.stamina = 80;
+  assert.equal(choose(state, 'rest').state.s.stamina, 100);
+});
+
+test('action and event cards use the pre-payment stamina band and roll their displayed odds', () => {
+  const bands = [[90, 'fresh', RULES.stamina.freshBonus], [60, 'normal', 0],
+    [30, 'tired', -RULES.stamina.tiredPenalty], [10, 'exhausted', -RULES.stamina.exhaustedPenalty]] as const;
+  for (const [stamina, band, adjustment] of bands) {
+    const pilot = at('pilot', { stamina, drone: 1 }, ['licensed']);
+    const student = at('student', { stamina });
+    student.phase = 'event';
+    student.eventId = 'scholarship';
+    for (const [state, id, base] of [[pilot, 'job_event', 90], [student, 'ev:0', 35]] as const) {
+      assert.equal(staminaBand(state), band);
+      const shown = option(state, id).roll!;
+      assert.equal(shown.staminaPct, adjustment);
+      assert.equal(shown.chance, base + adjustment);
+      let wins = 0;
+      for (let seed = 1; seed <= 1000; seed++) {
+        const { result } = choose({ ...state, rng: seed * 2654435761 >>> 0 }, id);
+        assert.equal(result.roll!.chance, shown.chance);
+        assert.equal(result.roll!.success, result.roll!.value < shown.chance);
+        if (result.roll!.success) wins++;
+      }
+      assert.ok(Math.abs(wins / 10 - shown.chance) < 5);
+    }
   }
-  assert.ok(Math.abs((wins * 100) / n - shown) < 4, `${wins}/${n} against ${shown}%`);
+});
+
+test('failed flight crash frequency tracks the displayed risk across skill, condition and exhaustion', () => {
+  const f = RULES.flight;
+  for (const [skill, cond, stamina, risk] of [
+    [0, 100, 60, f.crashPct], [205, 100, 60, f.crashPct - f.skillCrashCap],
+    [45, 35, 10, f.crashPct + f.crashLowCondPct - Math.floor(45 / f.skillPer) + RULES.stamina.exhaustedCrashPct],
+  ]) {
+    const state = at('pilot', { stamina, skill, cond, drone: 1 }, ['licensed']);
+    const shown = option(state, 'job_event').roll!.crashPct;
+    assert.equal(shown, risk);
+    let crashes = 0, failures = 0;
+    for (let seed = 1; seed <= 8000; seed++) {
+      const { result } = choose({ ...state, rng: seed * 2654435761 >>> 0 }, 'job_event');
+      if (!result.roll!.success) failures++;
+      if (result.crashed) {
+        assert.equal(result.roll!.success, false);
+        crashes++;
+      }
+    }
+    assert.ok(Math.abs(crashes * 100 / failures - risk) < 5, `${crashes}/${failures} at ${shown}%`);
+  }
 });
 
 test('a locked or unaffordable option is shown disabled with a reason and cannot be played', () => {
   const state = newGame(5);
   const exam = option(state, 'st_exam');
   assert.equal(exam.enabled, false);
-  assert.ok(exam.locks.length >= 2, 'both the XP requirement and the fee are listed');
+  assert.deepEqual(exam.missing, [{ stat: 'theory', need: 30 }, { stat: 'skill', need: 30 }, { stat: 'money', need: 300 }]);
   assert.throws(() => choose(state, 'st_exam'), /disabled/);
   assert.throws(() => choose(state, 'no_such_option'), /not available/);
 });
 
 test('the licence is paid for with a loan and opens the pilot stage', () => {
   let state = newGame(11);
-  state.s.xp = 150;
+  state.s.theory = 30;
+  state.s.skill = 30;
   state = choose(state, 'loan:500').state;
   assert.equal(state.turn, 0, 'a loan does not spend the quarter');
   assert.equal(state.s.debt, 500);
@@ -170,6 +226,23 @@ test('a run that reaches the last quarter ends with the ending of its career', (
   }
 });
 
+test('planners rest before tired rolls and for stamina-locked prerequisites', () => {
+  const student = at('student', { money: 500, theory: 90, skill: 90, stamina: 30 });
+  const decide = (name: string) => pick(POLICIES[name], student, botRandom(1));
+  assert.equal(decide('ceo'), 'rest');
+  assert.equal(decide('gambler'), 'st_exam');
+  student.s.stamina = 15;
+  assert.equal(decide('gambler'), 'rest');
+  student.s.theory = 0;
+  student.s.stamina = 5;
+  assert.equal(decide('ceo'), 'rest');
+  student.s.stamina = 20;
+  assert.equal(decide('ceo'), 'st_theory');
+  student.s.theory = 90;
+  student.s.stamina = 14;
+  assert.equal(decide('ceo'), 'rest');
+});
+
 test('every bot policy finishes within the turn limit with a known ending', () => {
   const known = new Set(ENDINGS.map((e) => e.id));
   for (const policy of Object.keys(POLICIES)) {
@@ -192,10 +265,11 @@ test('the tables are consistent and no event can trap the player', () => {
   for (const e of EVENTS) {
     assert.ok(e.place in PLACES, e.id);
     assert.ok(e.choices.length >= 2, e.id);
+    assert.ok(e.choices.every(c => c.tire === undefined), e.id);
     assert.ok(e.choices.some((c) => !c.cost && !c.need), `${e.id} has a choice that is always open`);
     assert.ok(e.choices.some((c) => c.roll) || e.choices.length >= 2);
   }
-  assert.ok(ACTIONS.some((a) => a.id === 'rest' && !a.need && !a.cost && Object.keys(a.when).length === 0), 'resting is always possible');
+  assert.ok(ACTIONS.some((a) => a.id === 'rest' && !a.tire && !a.need && !a.cost && Object.keys(a.when).length === 0), 'resting is always possible');
   for (const stage of Object.values(STAGES)) assert.ok(ENDINGS.some((e) => e.id === stage.timeout));
   assert.equal(ENDINGS.filter((e) => e.main).length, 5);
 });
@@ -224,4 +298,23 @@ test('restore rejects junk and clamps tampered numbers', () => {
   assert.equal(back.s.drone, 5);
   assert.equal(back.turn, RULES.maxTurns);
   assert.deepEqual(back.flags, ['licensed']);
+});
+
+test('v1 saves migrate only absent stats and validate every supplied value', () => {
+  for (const [stage, xp, training] of [['student', 35, 17], ['pilot', 35, 30], ['employee', 8000, STAT_MAX.skill]] as const) {
+    const raw = JSON.parse(JSON.stringify(at(stage, { xp, stamina: 12, skill: 9, theory: 3 })));
+    assert.deepEqual(restore(raw), raw);
+    for (const stat of ['stamina', 'theory', 'skill']) delete raw.s[stat];
+    const back = restore(raw)!;
+    assert.equal(back.v, 1);
+    assert.equal(back.s.stamina, RULES.start.stamina);
+    assert.equal(back.s.theory, training);
+    assert.equal(back.s.skill, training);
+    raw.s.skill = 0;
+    assert.equal(restore(raw)!.s.skill, 0);
+    assert.equal(restore(raw)!.s.theory, training);
+    for (const stat of ['stamina', 'theory', 'skill']) {
+      assert.equal(restore({ ...raw, s: { ...raw.s, [stat]: 2.5 } }), null);
+    }
+  }
 });

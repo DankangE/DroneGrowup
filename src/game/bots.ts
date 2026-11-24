@@ -2,7 +2,7 @@
 // (which asks a bot what to tap next and then taps the real button). They only read what a player sees:
 // the option views, plus the public chance modifiers in data.ts.
 import { ACTIONS, RULES } from './data.ts';
-import { options } from './engine.ts';
+import { options, staminaBand } from './engine.ts';
 import type { GameState, ItemKind, OptionView, Stat } from './types.ts';
 
 export type Policy = {
@@ -42,7 +42,7 @@ function ev(o: OptionView, stat: Stat): number {
 const moneyEv = (o: OptionView) => ev(o, 'money') - o.cost;
 
 const WORTH: Partial<Record<Stat, number>> = {
-  rep: 8, net: 8, biz: 8, teach: 8, xp: 4, support: 10, students: 10, drone: 150, gear: 100, cond: 1, contracts: 60, staff: 60, value: 0.1, rank: 100,
+  stamina: 1.5, theory: 4, skill: 4, rep: 8, net: 8, biz: 8, teach: 8, xp: 4, support: 10, students: 10, drone: 150, gear: 100, cond: 1, contracts: 60, staff: 60, value: 0.1, rank: 100,
 };
 
 function eventValue(o: OptionView): number {
@@ -59,7 +59,6 @@ const best = <T>(list: T[], score: (x: T) => number): T | undefined =>
 export function pick(policy: Policy, state: GameState, rand: () => number): string {
   const opts = options(state);
   const on = opts.filter((o) => o.enabled);
-  const byId = new Map(opts.map((o) => [o.id, o]));
   const anyOf = (list: OptionView[]) => list[Math.floor(rand() * list.length)].id;
   const turn = on.filter((o) => !o.free);
 
@@ -71,19 +70,36 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
   }
   if (policy.style === 'drifter') return anyOf(turn);
 
+  const band = staminaBand(state);
+  if (policy.style === 'gambler' && band === 'exhausted') return 'rest';
+  const id = plannedPick(policy, state, opts);
+  const wanted = opts.find(o => o.id === id)!;
+  if (onlyNeedsStamina(wanted)) return 'rest';
+  if (policy.style === 'planner' && !wanted.free && wanted.roll && (band === 'tired' || band === 'exhausted')) return 'rest';
+  return id;
+}
+
+function onlyNeedsStamina(o: OptionView) {
+  return o.locks.length === 1 && o.missing[0]?.stat === 'stamina';
+}
+
+function plannedPick(policy: Policy, state: GameState, opts: OptionView[]): string {
+  const byId = new Map(opts.map(o => [o.id, o]));
+  const turn = opts.filter(o => !o.free && (o.enabled || onlyNeedsStamina(o)));
   const s = state.s;
   const enabled = (id: string) => byId.get(id)?.enabled === true;
   const room = () => (enabled('loan:500') ? 'loan:500' : enabled('loan:100') ? 'loan:100' : null);
   const earn = (saving: boolean): string => {
     if (!saving && s.debt > 0 && s.money >= 250 && enabled('repay:100')) return 'repay:100';
-    const jobs = turn.filter((o) => o.id !== 'emp_quit' && o.id !== 'inst_quit');
-    if (policy.style === 'gambler') return best(jobs, (o) => o.roll?.success.add.money ?? moneyEv(o))!.id;
-    return best(jobs, moneyEv)!.id;
+    const jobs = turn.filter((o) => o.id !== 'rest' && o.id !== 'emp_quit' && o.id !== 'inst_quit');
+    if (policy.style === 'gambler') return best(jobs, (o) => o.roll?.success.add.money ?? moneyEv(o))?.id ?? 'rest';
+    return best(jobs, moneyEv)?.id ?? 'rest';
   };
   /** Covers a cost: borrow when the policy allows it and there is room, otherwise work for it. */
   const fund = (): string => (policy.borrow ? room() : null) ?? earn(true);
   /** Works towards an option: plays it when it is ready, otherwise goes after what it still lacks. */
   const pursue = (o: OptionView, depth: number): string | null => {
+    if (onlyNeedsStamina(o)) return 'rest';
     if (o.enabled) {
       const mod = ACTIONS.find((a) => a.id === o.id)?.roll?.mods?.[0];
       if (o.roll && mod && o.roll.chance < policy.minChance && RULES.maxTurns - state.turn > 10 && s[mod.stat] < mod.over + (mod.per * mod.cap) / mod.pct) {
@@ -94,13 +110,14 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
     }
     const lack = o.missing[0];
     if (!lack || depth > 3) return null;
+    if (lack.stat === 'stamina') return 'rest';
     if (lack.stat === 'money') return fund();
     const givers = opts.filter((g) => g.id !== o.id && g.kind !== 'bank' && ev(g, lack.stat) > 0);
     // Givers are ranked by how much of the stat they bring, with the money they make or cost as the tie-breaker.
     const gain = (g: OptionView) => ev(g, lack.stat) * (lack.stat === 'value' ? 0.05 : 30) + moneyEv(g);
     // A giver that only lacks money counts as ready: the bot funds it instead of settling for a weaker free one.
-    const ready = best(givers.filter((g) => g.locks.length === (g.missing.some((m) => m.stat === 'money') ? 1 : 0)), gain);
-    if (ready) return ready.enabled ? ready.id : fund();
+    const ready = best(givers.filter((g) => g.enabled || onlyNeedsStamina(g) || (g.locks.length === 1 && g.missing[0]?.stat === 'money')), gain);
+    if (ready) return ready.enabled || onlyNeedsStamina(ready) ? ready.id : fund();
     const next = best(givers, gain);
     return next ? pursue(next, depth + 1) : null;
   };
@@ -115,7 +132,7 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
   }
   if (state.stage === 'academy') {
     if (s.students >= 8 + s.staff * 8 - 2 && s.staff < 4) return enabled('ac_hire') ? 'ac_hire' : fund();
-    if (s.students < 8 + s.staff * 8 - 4 && s.students < 30) return enabled('ac_ad') ? 'ac_ad' : fund();
+    if (s.students < 8 + s.staff * 8 - 4 && s.students < 30) return enabled('ac_ad') || onlyNeedsStamina(byId.get('ac_ad')!) ? 'ac_ad' : fund();
   }
   if (s.money < 40 && s.debt > 0 && policy.style !== 'gambler') return earn(true);
   if (policy.style !== 'gambler' && s.money >= s.debt + 2500 && enabled('repay:all')) return 'repay:all';

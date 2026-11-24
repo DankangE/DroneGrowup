@@ -163,17 +163,33 @@ function outcome(state: GameState, effect: Effect, payPct: number): OutcomeView 
   return { text: effect.text, add, summary: summarize(add, effect), stage: effect.stage !== state.stage ? effect.stage : undefined, end: effect.end };
 }
 
+export function staminaBand(state: GameState): 'fresh' | 'normal' | 'tired' | 'exhausted' {
+  const stamina = state.s.stamina;
+  if (stamina >= RULES.stamina.fresh) return 'fresh';
+  if (stamina < RULES.stamina.exhausted) return 'exhausted';
+  if (stamina < RULES.stamina.tired) return 'tired';
+  return 'normal';
+}
+
+const staminaBonus = {
+  fresh: RULES.stamina.freshBonus, normal: 0,
+  tired: -RULES.stamina.tiredPenalty, exhausted: -RULES.stamina.exhaustedPenalty,
+};
+
 function flightOdds(state: GameState, choice: Choice): { bonus: number; crashPct: number } {
   const f = RULES.flight;
   const cond = state.s.cond;
   const spare = Math.max(0, state.s.drone - (choice.need?.min?.drone ?? 1));
   const penalty = cond < f.badCond ? f.badCondPenalty : cond < f.lowCond ? f.lowCondPenalty : 0;
-  return { bonus: Math.min(f.spareLevelCap, spare * f.spareLevelPct) - penalty, crashPct: f.crashPct + (cond < f.lowCond ? f.crashLowCondPct : 0) };
+  const crash = f.crashPct + (cond < f.lowCond ? f.crashLowCondPct : 0)
+    - Math.min(f.skillCrashCap, Math.floor(state.s.skill / f.skillPer))
+    + (staminaBand(state) === 'exhausted' ? RULES.stamina.exhaustedCrashPct : 0);
+  return { bonus: Math.min(f.spareLevelCap, spare * f.spareLevelPct) - penalty, crashPct: clamp(crash, 0, 100) };
 }
 
-function chanceOf(state: GameState, choice: Choice, flight: boolean): number {
+function chanceOf(state: GameState, choice: Choice, flight: boolean, staminaPct: number): number {
   const roll = choice.roll!;
-  let chance = roll.base;
+  let chance = roll.base + staminaPct;
   for (const m of roll.mods ?? []) chance += clamp(Math.floor((state.s[m.stat] - m.over) / m.per) * m.pct, 0, m.cap);
   if (flight) chance += flightOdds(state, choice).bonus;
   return clamp(chance, RULES.chanceMin, RULES.chanceMax);
@@ -186,10 +202,16 @@ function view(state: GameState, id: string, kind: OptionKind, place: PlaceId, ch
     locks.push(`자금 부족 (${num(cost)}만원 필요)`);
     missing.push({ stat: 'money', need: cost });
   }
+  const tire = kind === 'action' || kind === 'job' ? choice.tire ?? 0 : 0;
+  if (state.s.stamina < tire) {
+    locks.push(`체력 부족 (${tire} 필요, 현재 ${state.s.stamina})`);
+    missing.push({ stat: 'stamina', need: tire });
+  }
   const payPct = flight ? STAGES[state.stage].jobPct : 100;
-  const o: OptionView = { id, kind, place, title: choice.title, desc: choice.desc, free: kind === 'shop' || kind === 'repair' || kind === 'bank', cost, enabled: locks.length === 0, locks, missing };
+  const o: OptionView = { id, kind, place, title: choice.title, desc: choice.desc, free: kind === 'shop' || kind === 'repair' || kind === 'bank', cost, tire, enabled: locks.length === 0, locks, missing };
   if (choice.roll) {
-    o.roll = { chance: chanceOf(state, choice, flight), success: outcome(state, choice.roll.success, payPct), fail: outcome(state, choice.roll.fail, 100) };
+    const staminaPct = staminaBonus[staminaBand(state)];
+    o.roll = { staminaPct, chance: chanceOf(state, choice, flight, staminaPct), success: outcome(state, choice.roll.success, payPct), fail: outcome(state, choice.roll.fail, 100) };
     if (flight) o.roll.crashPct = flightOdds(state, choice).crashPct;
   } else if (choice.effect) o.sure = outcome(state, choice.effect, 100);
   return o;
@@ -334,6 +356,7 @@ export function choose(prev: GameState, optionId: string): { state: GameState; r
   let picked: { effect: Effect; view: OutcomeView };
 
   s.money -= v.cost;
+  s.stamina -= v.tire;
   if (r.choice.roll && v.roll) {
     const value = randInt(state, 100);
     const success = value < v.roll.chance;
@@ -393,8 +416,16 @@ export function restore(raw: unknown): GameState | null {
   state.turn = clamp(d.turn!, 0, RULES.maxTurns);
   state.stage = d.stage!;
   for (const k of STATS) {
-    if (!int(d.s[k])) return null;
-    setStat(state, k, d.s[k] as number);
+    let value = d.s[k];
+    if (!Object.hasOwn(d.s, k)) {
+      if (k === 'stamina') value = state.s.stamina;
+      if (k === 'theory' || k === 'skill') {
+        if (!int(d.s.xp)) return null;
+        value = Math.max(Math.floor(d.s.xp / 2), state.stage === 'student' ? 0 : 30);
+      }
+    }
+    if (!int(value)) return null;
+    setStat(state, k, value);
   }
   settle(state);
   state.flags = d.flags.filter((f) => typeof f === 'string' && f in FLAG_LABEL);
