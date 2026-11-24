@@ -1,110 +1,119 @@
-import { RULES, STAGES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
+import { careerRank, grade, nextRanks } from '../game/career.ts';
+import { RULES, STAT_MAX } from '../game/data.ts';
 import { derived, num, staminaBand } from '../game/engine.ts';
-import type { GameState, OptionView, Stage, Stat } from '../game/types.ts';
+import type { GameState, OptionView, Stat } from '../game/types.ts';
 import { button, countNumber, el, meter, reducedMotion } from './dom.ts';
-import { emblem, icon, type IconName } from './icons.ts';
+import { icon } from './icons.ts';
+import { chibi, gradeBadge, plateStats, requirements, shortLabel, stars } from './pieces.ts';
 
 export const signed = (value: number) => `${value > 0 ? '+' : ''}${num(value)}`;
 export const statValue = (stat: Stat, value: number) => num(value) + (['money','debt','value'].includes(stat) ? '만원' : ['support','cond'].includes(stat) ? '%' : '');
-const specialty: Record<Stage, Stat> = { student: 'flights', pilot: 'flights', employee: 'rank', instructor: 'teach', academy: 'students', solo: 'contracts', company: 'value', director: 'support' };
 
-export function hud(state: GameState, choices: OptionView[], onGoal: (id: string) => void, previous?: GameState) {
+function changePop(node: HTMLElement, diff: number) {
+  if (!diff || reducedMotion()) return;
+  const pop = el('span', 'gain', signed(diff));
+  pop.setAttribute('aria-hidden', 'true');
+  pop.addEventListener('animationend', () => pop.remove(), { once: true });
+  node.append(pop);
+}
+
+export function hud(state: GameState, choices: OptionView[], numbers: boolean, onFlip: (numbers: boolean) => void, onLadder: () => void, previous?: GameState) {
   const d = derived(state);
-  function counter(stat: Stat, label: string, symbol: IconName, max?: number) {
-    const pill = el('div', 'counter ' + stat);
-    const value = el('b');
-    countNumber(value, previous?.s[stat] ?? state.s[stat], state.s[stat], num);
-    const copy = el('span', 'counter-copy');
-    copy.append(el('small', '', label), value);
-    if (stat === 'debt') value.after(el('small', '', ' / ' + num(d.creditLimit)));
-    pill.append(icon(symbol), copy);
-    if (max) {
-      const bar = meter(state.s[stat], max, label);
-      pill.append(bar);
-      if (previous && !reducedMotion()) {
-        bar.firstElementChild?.animate([{width: Math.min(100, previous.s[stat] / max * 100) + '%'}, {width: Math.min(100, state.s[stat] / max * 100) + '%'}], 480);
-      }
-    }
-    if (previous && previous.s[stat] !== state.s[stat] && !reducedMotion()) {
-      pill.classList.add('changed');
-      const pop = el('span', 'gain', signed(state.s[stat] - previous.s[stat]));
-      pop.setAttribute('aria-hidden', 'true');
-      pop.addEventListener('animationend', () => pop.remove(), {once:true});
-      pill.append(pop);
-    }
-    return pill;
-  }
-  const status = el('footer', 'status-bar');
-  const level = Object.keys(STAGES).indexOf(state.stage) + 1;
-  const badge = el('div', 'career-emblem');
-  badge.append(emblem(level));
-  if (previous && previous.stage !== state.stage && !reducedMotion()) badge.classList.add('promoted');
+  const rank = careerRank(state);
+  const status = el('header', 'player-plate');
   const identity = el('div', 'identity');
-  const rank = el('div', 'career-rank');
-  rank.append(el('b', 'tier', 'Lv.' + level));
-  if (d.rankName) rank.append(el('small', '', d.rankName));
-  identity.append(rank, el('h1', '', d.stageName));
-  const debt = counter('debt', '빚 / 한도', 'bank');
-  debt.classList.toggle('near-limit', state.s.debt >= d.creditLimit * .85);
-  const careerPlate = el('div', 'career-plate');
-  careerPlate.append(badge, identity);
-  const accounts = el('div', 'accounts');
-  accounts.append(counter('money', '자금 (만원)', 'coin'), debt);
-  const time = el('div', 'time-strip');
-  const acts = el('span', '', `${STAT_LABEL.acts} ${state.s.acts}회`);
+  const title = el('div', 'player-name');
+  const level = el('span', 'level', 'Lv ' + rank.level);
+  if (previous && (careerRank(previous).level !== rank.level || previous.stage !== state.stage)) level.classList.add('promoted');
+  title.append(el('h1', '', rank.title), stars(rank), level);
+  identity.append(chibi(rank, true), title);
+
+  const time = el('div', 'calendar');
+  const acts = el('span', '', `계절 행동 ${state.s.acts}회`);
   acts.dataset.acts = String(state.s.acts);
-  time.append(icon('sun'), el('strong', '', d.dateLabel), acts);
+  time.append(el('strong', '', d.dateLabel), acts, el('small', '', `${d.age - RULES.startAge + 1} / ${RULES.maxTurns / RULES.seasons.length}바퀴`));
 
-  status.append(careerPlate, time, accounts);
+  const accounts = el('div', 'accounts');
+  for (const stat of ['money', 'debt'] as const) {
+    const pill = el('div', 'account ' + stat);
+    const figure = el('b', 'figure');
+    countNumber(figure, previous?.s[stat] ?? state.s[stat], state.s[stat], num);
+    pill.title = stat === 'debt' ? '빚 / 신용 한도 (만원)' : '자금 (만원)';
+    pill.append(icon(stat === 'money' ? 'coin' : 'bank'), el('small', '', stat === 'money' ? '자금' : '빚'), figure);
+    pill.append(el('small', '', stat === 'money' ? '만원' : ' / ' + num(d.creditLimit)));
+    if (stat === 'debt' && state.s.debt >= d.creditLimit * .85) pill.classList.add('near-limit');
+    if (previous) changePop(pill, state.s[stat] - previous.s[stat]);
+    accounts.append(pill);
+  }
 
-  const next = choices.find(o => o.roll?.success.stage || o.sure?.stage);
-  const goal = next ? button('', 'goal', () => onGoal(next.id)) : el('div', 'goal');
-  const flag = el('span', 'goal-icon');
-  flag.append(icon('flag'));
-  const copy = el('span', 'goal-copy');
-  const title = el('span', 'goal-title');
-  if (next) title.append(el('small', '', '다음 목표'));
-  title.append(el('strong', '', next?.title ?? `${RULES.startAge + RULES.maxTurns / 4}세에 은퇴`));
-  copy.append(title);
-  if (next && !next.enabled) copy.append(el('span', 'goal-reason', next.locks[0]));
-  goal.append(flag, copy);
-  if (next) goal.append(el('small', 'goal-lock', next.enabled ? '도전 가능' : '잠김'), icon('arrow'));
-  const strip = el('div', 'stat-strip');
-  const gauges = el('div', 'gauges');
+  const strip = button('', 'grade-strip', () => {
+    numbers = !numbers;
+    drawGrades();
+    onFlip(numbers);
+  }, 'grades');
   const band = staminaBand(state);
   const words = { fresh: '쌩쌩', normal: '', tired: '지침', exhausted: '탈진' };
-  const stamina = counter('stamina', ['체력', words[band]].filter(Boolean).join(' · '), 'bolt', STAT_MAX.stamina);
-  stamina.dataset.stamina = band;
-  if (state.phase === 'action' && !choices.some(o => !o.free && o.id !== 'rest' && o.tire <= state.s.stamina)) {
-    stamina.classList.add('stamina-warning');
-  }
-  stamina.dataset.staminaBand = band;
-  gauges.append(stamina, counter('theory', '이론', 'book'), counter('skill', '조종', 'drone'),
-    counter('xp', '경험', 'bolt', STAT_MAX.xp), counter('rep', '평판', 'star', STAT_MAX.rep));
-  const career = specialty[state.stage];
-  if (state.s[career]) gauges.append(counter(career, STAT_LABEL[career], 'flag'));
-  const equipment = el('div', 'equipment');
-  for (const [stat, label, symbol] of [['drone','드론','drone'], ['gear','장비','tool'], ['car','차량','car']] as const) {
-    const chip = counter(stat, label, symbol);
-    chip.title = d.items[stat].name;
-    if (stat === 'drone') {
-      const current = state.s.drone ? state.s.cond : 0;
-      const prior = previous?.s.drone ? previous.s.cond : 0;
-      if (state.s.drone) chip.title += ` · 기체 상태 ${current}%`;
-      const condition = meter(current, 100, '기체 상태');
-      if (previous && prior !== current && !reducedMotion()) {
-        condition.firstElementChild?.animate([{width: prior + '%'}, {width: current + '%'}], 480);
-        if (previous.s.drone === state.s.drone) {
-          const pop = el('span', 'gain', signed(current - prior) + '%');
-          pop.addEventListener('animationend', () => pop.remove(), {once:true});
-          chip.classList.add('changed');
-          chip.append(pop);
+  function drawGrades(feedback = false) {
+    strip.replaceChildren();
+    strip.dataset.grades = numbers ? 'numbers' : 'letters';
+    strip.setAttribute('aria-pressed', String(numbers));
+    const stats = el('span', 'plate-grades');
+    for (const stat of plateStats(state.stage)) {
+      const held = grade(stat, state.s[stat])!;
+      const cell = el('span', 'grade-cell');
+      const name = el('span', 'grade-name', shortLabel(stat));
+      const badge = gradeBadge(state, stat, numbers);
+      cell.append(name, badge);
+      if (stat === 'stamina') {
+        cell.dataset.stamina = band;
+        cell.dataset.staminaBand = band;
+        if (state.phase === 'action' && !choices.some(o => !o.free && o.id !== 'rest' && o.tire <= state.s.stamina)) cell.classList.add('stamina-warning');
+        const value = el('b', 'stamina-value');
+        if (!numbers) {
+          countNumber(value, feedback && previous ? previous.s.stamina : state.s.stamina, state.s.stamina, num);
+          name.append(' ', value);
         }
+        if (words[band]) cell.append(el('small', 'band', words[band]));
+        const bar = meter(state.s.stamina, STAT_MAX.stamina!, '체력');
+        cell.append(bar);
+        if (feedback && previous && !reducedMotion()) bar.firstElementChild?.animate([{width: previous.s.stamina + '%'}, {width: state.s.stamina + '%'}], 480);
       }
-      chip.append(condition);
+      if (numbers) cell.append(el('small', 'next-grade', held.next === null ? '최고 등급' : '다음 등급까지 ' + num(held.next - state.s[stat])));
+      if (feedback && previous && previous.s[stat] !== state.s[stat]) {
+        if (numbers) countNumber(badge, previous.s[stat], state.s[stat], num);
+        changePop(cell, state.s[stat] - previous.s[stat]);
+        if (grade(stat, previous.s[stat])?.letter !== held.letter) badge.classList.add('flip');
+      }
+      stats.append(cell);
     }
-    equipment.append(chip);
+    const gear = el('span', 'equipment');
+    for (const [stat, label, symbol] of [['drone','드론','drone'], ['gear','장비','tool'], ['car','차량','car']] as const) {
+      const item = el('span', 'item-chip');
+      item.title = d.items[stat].name;
+      item.append(icon(symbol), label + ' ' + state.s[stat]);
+      gear.append(item);
+    }
+    const flip = el('span', 'flip-hint', '↻');
+    flip.setAttribute('aria-hidden', 'true');
+    gear.append(flip);
+    strip.title = '등급과 수치 전환';
+    strip.append(stats, gear);
+    strip.setAttribute('aria-label', [numbers ? '등급 글자로 보기' : '정확한 수치 보기', stats.textContent, gear.textContent].join(' · '));
   }
-  strip.append(gauges, equipment);
-  return {status, goal, strip};
+  drawGrades(true);
+  status.append(identity, time, accounts, strip);
+
+  const ladder = button('', 'career-strip', onLadder, 'ladder');
+  ladder.dataset.ladder = '';
+  const here = el('span', 'current-rung');
+  here.append(el('b', '', rank.title), stars(rank));
+  const next = nextRanks(state);
+  const target = el('span', 'next-rung');
+  target.append(el('strong', '', next.length ? '다음 랭크 ▶ ' + next[0].rank.title : '50세에 은퇴'));
+  if (next.length) {
+    target.append(requirements(next[0].requirements));
+    if (next[0].enabled) target.append(el('b', 'ready', '도전 가능'));
+  }
+  ladder.append(here, target, el('b', 'ladder-more', next.length > 1 ? '+' + (next.length - 1) : '›'));
+  return { status, ladder };
 }

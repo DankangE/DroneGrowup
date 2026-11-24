@@ -1,3 +1,5 @@
+import { careerRank, GRADED_STATS } from '../game/career.ts';
+import { chibi, rankLine, standingGrades } from './pieces.ts';
 import { ENDINGS, RULES } from '../game/data.ts';
 import { derived, endingInfo, num } from '../game/engine.ts';
 import type { EndingId, GameState } from '../game/types.ts';
@@ -42,9 +44,9 @@ export function titleScreen(meta: Meta, saved: GameState | null, actions: TitleA
   const guide = el('section','guide');
   guide.append(el('h2','section-heading','비행 안내'));
   for (const [symbol,title,body] of [
-    ['map','사계절','체력이 닿는 만큼 한 계절에 여러 번 행동해요.'],
-    ['drone','휴식',`첫 행동으로 쉬면 +${RULES.rest.full}, 활동 후엔 +${RULES.rest.light}.`],
-    ['flag','계절 전환',`쉬면 다음 계절로 넘어가고 체력이 +${RULES.seasonRefill} 올라요.`],
+    ['map','한 바퀴', '사계절을 한 바퀴 돌면 한 살 더!'],
+    ['drone','행동과 휴식',`한 계절에 여러 번 행동해요. 첫 휴식 +${RULES.rest.full}, 활동 후 +${RULES.rest.light}.`],
+    ['flag','성장', '능력 등급을 올리고 다음 랭크에 도전해요.'],
   ] as const) {
     const row = el('div','guide-row');
     const mark = el('span','guide-icon');
@@ -111,7 +113,9 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   const badges = el('div','records');
   if (record.firstTime) badges.append(pill('book','새 엔딩'));
   if (record.newBest) badges.append(pill('star',`최고 기록 ${num(state.score)}점`));
-  story.append(portrait(endingPortrait(ending.id)));
+  const portraits = el('div', 'ending-portraits');
+  portraits.append(portrait(endingPortrait(ending.id)), chibi(careerRank(state)));
+  story.append(portraits);
   if (badges.childElementCount) story.append(badges);
   story.append(el('h1','',ending.title), el('p','',ending.text));
   const report = el('section','ending-report');
@@ -128,9 +132,9 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   }
   const controls = el('div','ending-controls');
   controls.append(button('다시 하기','primary',onRetry,'retry'),button('엔딩 도감','secondary',onGallery,'gallery'),button('타이틀','secondary',onTitle,'title'));
-  report.append(score,facts,controls);
+  report.append(rankLine(state), score, facts, standingGrades(state, GRADED_STATS), controls);
   const title = el('header', 'window-title');
-  title.append(icon('flag'), '비행 경력 결산');
+  title.append(icon('flag'), '인생 결산');
   const body = el('div', 'ending-body');
   body.append(story, report);
   main.append(title, body);

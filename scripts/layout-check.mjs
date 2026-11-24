@@ -23,7 +23,7 @@ import { chromium } from 'playwright-core';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
 import { ENDING_IDS } from '../src/game/data.ts';
 import { choose, newGame, options } from '../src/game/engine.ts';
-import { eachTabAndPage, names, revealOption } from './ui-driver.mjs';
+import { eachTabAndPage, finishChoice, names, revealOption, stoppedResult } from './ui-driver.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SIZES = [[390, 844], [360, 740], [1280, 800], [1366, 768]];
@@ -62,8 +62,8 @@ for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['i
     state = next.state;
   }
 }
-const rollStep = stageUp ?? anyRoll;
-assert.ok(event && rollStep && lastStep && windDown, 'the bot runs reach an event, a luck roll and an ending');
+const rollStep = stageUp;
+assert.ok(event && anyRoll && rollStep && lastStep && windDown, 'the bot runs reach an event, a luck roll and an ending');
 
 await build({ root, configFile: join(root, 'vite.config.ts'), logLevel: 'warn' });
 const server = await preview({ root, configFile: join(root, 'vite.config.ts'), preview: { port: 5298, strictPort: false } });
@@ -97,6 +97,12 @@ function audit({ minTap, minFont }) {
       if (clips(s.overflowX)) { left = Math.max(left, b.left); right = Math.min(right, b.right); }
       if (clips(s.overflowY)) { top = Math.max(top, b.top); bottom = Math.min(bottom, b.bottom); }
     }
+    // A target can be larger than 44px yet mostly hidden behind the frame.
+    // Check its unclipped box too, including completely clipped targets.
+    const target = el.matches('button, a[href], [role="button"], input, select');
+    if (target && (right - left < box.width - 1 || bottom - top < box.height - 1)) {
+      problems.push(`${label(el)} "${el.textContent.trim().slice(0, 12)}" is clipped by its container`);
+    }
     if (right - left <= 1 || bottom - top <= 1) continue;
     if (left < -1 || top < -1 || right > vw + 1 || bottom > vh + 1) {
       problems.push(`${label(el)} is outside the viewport: x ${Math.round(left)}..${Math.round(right)}, y ${Math.round(top)}..${Math.round(bottom)}`);
@@ -104,7 +110,7 @@ function audit({ minTap, minFont }) {
     const tall = el.scrollHeight > el.clientHeight + 1;
     const wide = el.scrollWidth > el.clientWidth + 1;
     const scrolls = (v) => v === 'auto' || v === 'scroll';
-    if ((tall && scrolls(style.overflowY)) || (wide && scrolls(style.overflowX))) {
+    if (scrolls(style.overflowY) || scrolls(style.overflowX)) {
       problems.push(`${label(el)} scrolls inside: content ${el.scrollWidth}x${el.scrollHeight}, room ${el.clientWidth}x${el.clientHeight}`);
     }
     const cut = (v) => v === 'hidden' || v === 'clip';
@@ -112,7 +118,10 @@ function audit({ minTap, minFont }) {
       && ((tall && cut(style.overflowY)) || (wide && cut(style.overflowX) && style.textOverflow !== 'ellipsis'))) {
       problems.push(`${label(el)} cuts its content off: content ${el.scrollWidth}x${el.scrollHeight}, room ${el.clientWidth}x${el.clientHeight}`);
     }
-    if (el.matches('button, a[href], [role="button"], input, select') && (box.height < minTap - 0.5 || box.width < minTap - 0.5)) {
+    if (el.matches('.panel-body,.album-body,.ending-body') && (tall || wide)) {
+      problems.push(`${label(el)} exceeds the card: content ${el.scrollWidth}x${el.scrollHeight}, room ${el.clientWidth}x${el.clientHeight}`);
+    }
+    if (target && (box.height < minTap - 0.5 || box.width < minTap - 0.5)) {
       problems.push(`${label(el)} "${(el.textContent ?? '').trim().slice(0, 12)}" is a ${Math.round(box.width)}x${Math.round(box.height)} tap target (min ${minTap})`);
     }
     const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
@@ -172,6 +181,7 @@ for (const [width, height] of SIZES) {
     await check(name);
     for (const nav of await names(page, 'data-nav')) {
       await page.locator(`[data-nav="${nav}"]:visible`).first().click();
+      if (nav === 'info') assert.deepEqual(await names(page, 'data-tab'), ['stats', 'money', 'grades']);
       await check(`${name}-${nav}`);
     }
   };
@@ -185,13 +195,26 @@ for (const [width, height] of SIZES) {
 
     await playViews('play-start', start);
     await playViews('play-busy', busiest);
+    await resume(busiest);
+    await page.locator('[data-action="grades"]').click();
+    await page.locator('[data-grades="numbers"]').waitFor();
+    await check('play-grades-numbers');
+    await page.locator('[data-action="ladder"]').click();
+    await check('play-ladder');
+    await page.locator('[data-action="ladder-go"]').click();
+    await page.locator('[data-pick][aria-pressed="true"]').waitFor();
+    await page.locator('.stage-toggle button', { hasText: '지도' }).click();
+    await check('play-map');
+    await page.locator('.stage-toggle button', { hasText: '현장' }).click();
     await resume(event);
     await check('play-event');
 
     await resume(rollStep.state);
     await tap(rollStep);
-    await page.locator('[data-action="continue"]').waitFor({ state: 'visible', timeout: 8000 });
+    await stoppedResult(page).waitFor();
+    await stoppedResult(page).locator('[data-wheel][data-outcome]').waitFor();
     await check('play-result');
+    assert.ok(await finishChoice(page, () => check('play-rank-card')), 'rank card was reached');
 
     await resume(windDown.state);
     await tap(windDown);
@@ -200,15 +223,15 @@ for (const [width, height] of SIZES) {
 
     await resume(start);
     await tap({ option: { id: 'st_theory' } });
-    await page.locator('[data-action="continue"]').click();
+    await finishChoice(page);
     await revealOption(page, { id: 'rest' });
     await page.locator('[data-option="rest"][data-rest="light"]').waitFor();
     await check('play-light-rest');
     await resume(lastStep.state);
     await tap(lastStep);
-    await page.locator('[data-action="continue"]').waitFor({ state: 'visible', timeout: 8000 });
+    await stoppedResult(page).waitFor();
     await check('play-last-result');
-    await page.locator('[data-action="continue"]').click();
+    await finishChoice(page);
     await screenIs('ending');
     await check('ending');
     await page.locator('[data-action="gallery"]:visible').first().click();

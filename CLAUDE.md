@@ -15,6 +15,8 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
 - `src/game/` — the rules. Pure, DOM-free, seeded RNG kept in the state, money as integers (만원).
   - `data.ts` — every number and every sentence: rules, stages, places, items, actions, events, endings.
   - `engine.ts` — `newGame`, `options`, `choose`, `derived`, `restore`.
+  - `career.ts` — read-only views for the board UI: letter grades, the current rank, next ranks, rank changes.
+    It changes no state, roll or payout; the grade steps and the ladder are the `GRADE_STEPS` and `CAREER` tables in `data.ts`.
   - `bots.ts` — the policies the simulation plays with.
 - `src/ui/`, `src/main.ts`, `src/styles.css`, `index.html` — the UI. It renders `options(state)` and calls
   `choose(state, id)`; it never computes odds, payouts or endings.

@@ -48,6 +48,10 @@ export async function revealOption(page, option) {
     await target.waitFor({ state: 'visible', timeout: 3000 });
     return true;
   };
+  if (await here()) return target;
+  const nav = ['shop', 'repair'].includes(option.kind) ? 'shop' : option.kind === 'bank' ? 'bank' : 'home';
+  const tab = page.locator(`[data-nav="${nav}"]:enabled`);
+  if (await tab.count() && await tab.getAttribute('aria-pressed') !== 'true') await tab.click();
   const search = async () => (await here()) || (await eachTabAndPage(page, here));
   if (await search()) return target;
   for (const nav of await names(page, 'data-nav')) {
@@ -55,4 +59,18 @@ export async function revealOption(page, option) {
     if (await search()) return target;
   }
   throw new Error(`option ${option.id} is offered by the engine but no button for it can be reached in the UI`);
+}
+
+
+/** The result owns the first continue. A career change can insert a second card before play resumes. */
+export const stoppedResult = page => page.locator('[data-phase="result"] [data-spin="done"]');
+export async function finishChoice(page, onRank) {
+  await stoppedResult(page).locator('[data-action="continue"]:enabled').click();
+  const rank = page.locator('[data-phase="rankup"] [data-rank-card]');
+  const appeared = await rank.count() === 1;
+  if (appeared) {
+    if (onRank) await onRank(rank);
+    await rank.locator('[data-action="continue"]').click();
+  }
+  return appeared;
 }

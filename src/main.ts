@@ -1,4 +1,6 @@
 import './styles.css';
+import { rankChange } from './game/career.ts';
+import { yearBoard } from './ui/board.ts';
 import { ENDINGS } from './game/data.ts';
 import { choose, currentEvent, newGame, num, options } from './game/engine.ts';
 import type { GameState, OptionView, PlaceId } from './game/types.ts';
@@ -12,7 +14,7 @@ import { icon } from './ui/icons.ts';
 import { createScene, fieldScene } from './ui/scene.ts';
 import { endingScreen, galleryScreen, titleScreen } from './ui/screens.ts';
 import type { EndingRecord } from './ui/screens.ts';
-import { closeSheet, confirmNewRun, createSheet, refreshModalBackground, showEvent, showResult } from './ui/sheets.ts';
+import { closeSheet, confirmNewRun, createSheet, refreshModalBackground, showEvent, showLadder, showRankCard, showResult } from './ui/sheets.ts';
 
 declare global {
   interface Window {
@@ -30,20 +32,30 @@ function seed(): number {
 
 let state = loadRun() ?? newGame(seed());
 let dronePlace: PlaceId = STAGE_PLACE[state.stage];
-let stageView: 'field' | 'map' = 'field';
+type StageView = 'field' | 'map';
+const viewKey = 'pilot-growup:scene-view';
+let stageView: StageView = 'field';
+try {
+  if (sessionStorage.getItem(viewKey) === 'map') stageView = 'map';
+} catch { /* The view switch also works when browser storage is unavailable. */ }
+let gradeNumbers = false;
 let startedAt = performance.now();
 let endingRecord: EndingRecord | null = null;
 let choosing = false;
 let activePanel: ReturnType<typeof createPanel> | undefined;
+let fitMap: (() => void) | undefined;
 let onRankingResize: (() => void) | undefined;
 
-window.addEventListener('resize', () => {
+function fitView() {
   if (activePanel?.panel.isConnected) {
     activePanel.fit();
+    fitMap?.();
     refreshModalBackground();
   }
   if (PLATFORM) onRankingResize?.();
-});
+}
+window.addEventListener('resize', fitView);
+document.fonts.addEventListener('loadingdone', fitView);
 
 if (params.get('debug') === '1') {
   window.__game = { state: () => structuredClone(state), options: () => options(state) };
@@ -55,6 +67,7 @@ function setScreen(screen: 'title' | 'play' | 'ending' | 'gallery', content: HTM
   delete root.dataset.phase;
   root.replaceChildren(content);
   activePanel = undefined;
+  fitMap = undefined;
   focusHeading(content);
 }
 
@@ -103,50 +116,51 @@ function renderPlay(nav: Nav, previous?: GameState) {
   const event = currentEvent(state);
   if (event) dronePlace = event.place;
   const panel = createPanel(state, choices, takeOption, nav, showTitle);
-  const ui = hud(state, choices, id => panel.goal(id), previous);
-  const stage = el('section', 'stage');
-  stage.dataset.clipOk = '';
   let map: ReturnType<typeof createScene> | undefined;
-  const header = el('header', 'stage-header');
-  const heading = el('strong', 'stage-heading');
+  const ui = hud(state, choices, gradeNumbers, numbers => {
+    gradeNumbers = numbers;
+    panel.fit();
+    map?.fit();
+  }, () => showLadder(root, state, panel.goal), previous);
+  const { board, sceneWindow, animate } = yearBoard(state, previous);
   const toggle = el('div', 'stage-toggle');
   toggle.setAttribute('role', 'group');
   toggle.setAttribute('aria-label', '보기 전환');
-  function updateStage(view: typeof stageView) {
-    stageView = view;
+  function updateStage(view: StageView) {
+    if (stageView !== view) {
+      stageView = view;
+      try { sessionStorage.setItem(viewKey, view); } catch { /* Keep the in-memory preference. */ }
+    }
     const field = view === 'field';
     fieldButton.setAttribute('aria-pressed', String(field));
     mapButton.setAttribute('aria-pressed', String(!field));
-    heading.replaceChildren(icon(field ? 'sun' : 'map'), field ? '비행 현장' : '비행 지도');
-    stage.querySelector('.scene')?.remove();
-    if (field) {
-      ui.strip.before(fieldScene(dronePlace, state));
-    } else {
+    if (field) sceneWindow.replaceChildren(fieldScene(dronePlace, state), toggle);
+    else {
       map ??= createScene(new Set(choices.map(o => o.place)), dronePlace, state.s.drone, id => {
         dronePlace = id;
         map?.move(id);
         map?.select(id);
         panel.place(id);
       });
-      ui.strip.before(map.element);
+      sceneWindow.replaceChildren(map.element, toggle);
+      map.fit();
     }
   }
   const fieldButton = button('현장', '', () => updateStage('field'));
   const mapButton = button('지도', '', () => updateStage('map'));
-  toggle.append(fieldButton, mapButton);
-  header.append(heading, ui.goal);
-  stage.append(header, ui.strip);
-  updateStage(stageView);
-  const shell = el('main', 'flight-deck');
-  const toolbar = el('header', 'toolbar');
   fieldButton.prepend(icon('sun'));
   mapButton.prepend(icon('map'));
-  toolbar.append(panel.nav, toggle);
-  shell.append(toolbar, stage, panel.panel, ui.status);
+  toggle.append(fieldButton, mapButton);
+  updateStage(stageView);
+  const shell = el('main', 'flight-deck');
+  shell.append(ui.status, board, ui.ladder, panel.panel, panel.nav);
   setScreen('play', shell);
   activePanel = panel;
+  fitMap = () => map?.fit();
   root.dataset.phase = state.phase;
   panel.fit();
+  map?.fit();
+  animate();
   if (event) showEvent(root,event,state,choices,takeOption);
 }
 
@@ -168,10 +182,17 @@ function takeOption(id: string) {
     endingRecord = recordEnding(state, Math.max(1, Math.round((performance.now() - startedAt) / 1000)));
   }
   root.dataset.phase = 'result';
-  showResult(root, next.result, () => {
-    choosing = false;
+  showResult(root, next.result, previous, state, () => {
     if (state.phase === 'ended') { showEnding(); return; }
-    renderPlay(option.free ? nav : 'home', previous);
+    const resume = () => {
+      choosing = false;
+      renderPlay(option.free ? nav : 'home', previous);
+    };
+    const change = rankChange(previous, state);
+    if (change) {
+      root.dataset.phase = 'rankup';
+      showRankCard(root, change, resume);
+    } else resume();
   });
 }
 

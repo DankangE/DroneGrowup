@@ -189,7 +189,7 @@ function landscape(): SVGSVGElement {
   return art;
 }
 
-export type Scene = { element: HTMLElement; move: (place: PlaceId) => void; select: (place: PlaceId | null) => void };
+export type Scene = { element: HTMLElement; move: (place: PlaceId) => void; select: (place: PlaceId | null) => void; fit: () => void };
 
 export function createScene(available: Set<PlaceId>, current: PlaceId, level: number, onPlace?: (id: PlaceId) => void): Scene {
   const element = el('div', 'scene');
@@ -198,8 +198,7 @@ export function createScene(available: Set<PlaceId>, current: PlaceId, level: nu
   const art = landscape();
   canvas.append(art);
   const sites = new Map<PlaceId, HTMLElement>();
-  // The landscape inset has five plots per lane. Even a 200px-tall
-  // 4:3 map leaves a separate 53 × 50px plot for each landmark.
+  // Road order on the small town inset, from north to south.
   const lanes: PlaceId[][] = [
     ['school', 'airfield', 'exam', 'assoc', 'windfarm'],
     ['town', 'shop', 'academy', 'site', 'farm'],
@@ -251,12 +250,59 @@ export function createScene(available: Set<PlaceId>, current: PlaceId, level: nu
   drone.append(droneArt);
   canvas.append(drone);
   element.append(canvas);
+  let location = current;
+  let mapPage = -1;
+  const plots = lanes.flat();
+  const pageButton = button('', 'map-page', () => { mapPage++; fit(); });
+  pageButton.setAttribute('aria-label', '다음 지도 구역');
+  element.append(pageButton);
+
+  function fit() {
+    if (!element.isConnected) return;
+    const compact = element.clientWidth < 450 || element.clientHeight < 340;
+    element.classList.toggle('compact-map', compact);
+    element.classList.toggle('shallow-map', compact && element.clientHeight < 100);
+    if (!compact) {
+      pageButton.hidden = true;
+      for (const site of sites.values()) site.hidden = false;
+      drone.hidden = false;
+      return;
+    }
+    // Preserve a full 44px plot per landmark. A shorter window opens the town
+    // in sections; the view switch and page button have their own room.
+    const columns = Math.max(1, Math.min(5, Math.floor(canvas.clientWidth / 44)));
+    const rows = Math.max(1, Math.min(4, Math.floor(canvas.clientHeight / 44)));
+    const capacity = rows * columns;
+    const pages = Math.ceil(plots.length / capacity);
+    if (mapPage < 0) mapPage = Math.floor(plots.indexOf(location) / capacity);
+    mapPage %= pages;
+    pageButton.hidden = pages === 1;
+    pageButton.textContent = `${mapPage + 1}/${pages} ›`;
+    plots.forEach((id, i) => {
+      const site = sites.get(id)!;
+      const slot = i % capacity;
+      const x = ((slot % columns + .5) / columns) * 100 + '%';
+      const y = ((Math.floor(slot / columns) + .5) / rows) * 100 + '%';
+      site.hidden = Math.floor(i / capacity) !== mapPage;
+      site.style.setProperty('--mx', x);
+      site.style.setProperty('--my', y);
+      site.style.setProperty('--plot-width', 100 / columns + '%');
+      site.style.setProperty('--plot-height', 100 / rows + '%');
+      if (id === location) {
+        drone.hidden = site.hidden;
+        drone.style.setProperty('--mx', x);
+        drone.style.setProperty('--my', y);
+      }
+    });
+  }
   const move = (place: PlaceId) => {
+    location = place;
     position(drone, place);
     sites.forEach((site, id) => site.classList.toggle('current', id === place));
+    fit();
   };
   move(current);
-  return { element, move, select: place => {
+  return { element, move, fit, select: place => {
     sites.forEach((target, id) => {
       if (!(target instanceof HTMLButtonElement)) return;
       target.classList.toggle('selected', id === place);

@@ -22,7 +22,7 @@ the subscription's image limit was not reached.
 | Web export | `node scripts/art-export.mjs <dir with raw PNGs> [name ...]`: `cwebp` at 1344x896 (scenes) or 384x384 (portraits), quality stepped down from 80 until the file fits its budget (scene 300 KB, portrait 60 KB; cover 400 KB). It also writes a q95 WebP of every raw generation to `docs/art-raw/` (the 3 to 4 MB PNGs are not kept in git). |
 | Wiring | `src/ui/art.ts` maps place and career stage to a scene, event to a speaker, ending to a portrait. An `<img>` is created only when its view is shown, so a run downloads just the scenes it visits; an image that fails to load removes itself and the drawn SVG fallback shows. `tests/art.test.ts` checks every named file exists and fits its budget. |
 | In-game check | `npm run build && node scripts/art-shots.mjs docs/screenshots/art-final` opens every scene in the real play screen at 390x844 and 1280x800. |
-| Lettering | Never generated. The title is real text in Bagel Fat One (SIL OFL 1.1, `public/fonts/OFL-BagelFatOne.txt`), subset to the glyphs of "파일럿 키우기" with `pyftsubset --text="파일럿 키우기" --flavor=woff2` (3.6 KB). Every prompt ends with a "no text, letters, logos" clause. |
+| Lettering | Never generated. The title is real text in Bagel Fat One (SIL OFL 1.1, `public/fonts/OFL-BagelFatOne.txt`), subset with `pyftsubset --text=<glyphs> --flavor=woff2` to the banner words of the board UI (the glyph list is in `docs/ui-spec.md`, Look; 19.8 KB). Every prompt ends with a "no text, letters, logos" clause. |
 
 ## Files
 
@@ -34,7 +34,8 @@ the subscription's image limit was not reached.
 | `public/art/portrait-senior.webp` | 19 KB | `docs/art-raw/portrait-senior-v1.png` | Event popup portrait: senior |
 | `public/art/portrait-<id>.webp` x 13 | under 60 KB each | `docs/art-raw/sheet-speakers1..3.webp`, `sheet-endings3.webp` (examiner) | Event popup portraits |
 | `public/art/ending-<id>.webp` x 11 | under 60 KB each | `docs/art-raw/sheet-endings1..3.webp` | Ending screen and ending gallery |
-| `public/fonts/bagel-fat-one-title.woff2` | 3.6 KB | Google Fonts repo, `ofl/bagelfatone` | Title lettering |
+| `public/art/chibi-<stage>.webp` x 8 | 12 to 16 KB each | `docs/art-raw/chibi-sheet1..2.webp` (two generations, 2026-11-25, no retries) | The player as a full-body chibi per career stage on flat cream `#fdf5e6`: rank card, board piece, player plate, ending. Prompts `chibi-sheet1`, `chibi-sheet2` in `docs/art-prompts.json`. NPC chibis were not generated. |
+| `public/fonts/bagel-fat-one-display.woff2` | 19.8 KB | Google Fonts repo, `ofl/bagelfatone` | Title, banner words, digits and grade letters |
 
 `public/art` is 5.5 MB in 44 files; the whole build (`dist/`) is 6.3 MB. A first visit loads the cover and
 one scene (about 0.6 MB of art); the rest arrives as places, events and endings come up.

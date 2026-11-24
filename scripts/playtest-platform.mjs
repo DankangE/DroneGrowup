@@ -12,7 +12,7 @@
 //   npm run playtest:platform
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
-import { revealOption } from './ui-driver.mjs';
+import { finishChoice, revealOption } from './ui-driver.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
@@ -78,7 +78,7 @@ try {
   const pageState = () => page.evaluate(() => window.__game.state());
   const step = async (id = 'st_theory') => {
     await (await revealOption(page, { id })).click();
-    await page.locator('[data-action="continue"]').click();
+    await finishChoice(page);
   };
   const uploaded = async expected => {
     for (let i = 0; i < 80; i++) {

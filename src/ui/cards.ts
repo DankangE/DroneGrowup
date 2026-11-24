@@ -1,4 +1,7 @@
-import { PLACES, RULES, STAT_LABEL } from '../game/data.ts';
+import { GRADED_STATS, grade } from '../game/career.ts';
+import { gradeBadge, rankLine } from './pieces.ts';
+import { previewWheel } from './wheel.ts';
+import { GRADE_STEPS, GRADES, PLACES, RULES, STAT_LABEL } from '../game/data.ts';
 import { dateLabel, derived, num } from '../game/engine.ts';
 import type { GameState, OptionView, PlaceId, Stat } from '../game/types.ts';
 import { button, el, meter, paginateRows } from './dom.ts';
@@ -50,12 +53,13 @@ export function pager(page: number, total: number, change: (page: number) => voi
 
 export function createPanel(state: GameState, choices: OptionView[], choose: (id: string) => void, initial: Nav, onTitle: () => void) {
   const panel = el('section', 'panel');
-  const caption = el('h2', 'window-title', '이번 계절 할 일');
+  const caption = el('h2', 'window-title', '이번 칸에서 할 일');
   const body = el('div', 'panel-body');
   panel.append(caption, body);
   const nav = el('nav', 'nav-bar');
   nav.setAttribute('aria-label','게임 메뉴');
   let view = initial, tab: Tab = 'all', place: PlaceId | null = null;
+  let infoTab = 'stats';
   let page = 0, picked = '';
   const navButtons = new Map<Nav, HTMLButtonElement>();
   const d = derived(state);
@@ -64,15 +68,15 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
   const bank = choices.filter(o => o.kind === 'bank');
   const statEntries: [string,string][] = [['순자산', num(d.netWorth) + '만원']];
   for (const stat of Object.keys(STAT_LABEL) as Stat[]) {
-    if (stat === 'acts') continue;
-    if (state.s[stat] || ['stamina', 'theory', 'skill'].includes(stat)) statEntries.push([STAT_LABEL[stat], statValue(stat, state.s[stat])]);
+    if (stat === 'acts' || GRADED_STATS.includes(stat)) continue;
+    if (state.s[stat]) statEntries.push([STAT_LABEL[stat], statValue(stat, state.s[stat])]);
   }
   for (const line of d.upkeep.lines) statEntries.push(['다음 계절 · ' + line.label, signed(line.amount) + '만원']);
   statEntries.push(['다음 계절 합계', signed(d.upkeep.total) + '만원']);
   const actions = choices.filter(o => !o.free && o.kind !== 'event');
   const logs = [...state.log].reverse();
   function reset() { page = 0; picked = ''; }
-  function switchView(value: Nav) { view = value; tab = 'all'; reset(); render(); }
+  function switchView(value: Nav) { view = value; tab = 'all'; infoTab = 'stats'; reset(); render(); }
   for (const [key, label, symbol] of navigation) {
     const b = button('', '', () => switchView(key));
     b.dataset.nav = key;
@@ -88,19 +92,23 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     const rest = o.id === 'rest';
     const label = rest
       ? `${o.title} · ${o.sure!.summary}${restMode === 'full' ? ' · 계절 전체' : ''}`
-      : '실행 · ' + (o.cost ? num(o.cost) + '만원' : '무료');
+      : (o.roll ? `룰렛 돌리기 · ${o.roll.chance}%` : '실행') + ' · ' + price(o);
     const commit = commitButton(o, label, choose);
     if (rest) {
       commit.dataset.rest = restMode;
       commit.setAttribute('aria-label', label);
     }
-    detail.append(head, el('p', 'desc', o.desc), outcomes(o), commit);
+    const effects = el('div', 'detail-effects');
+    if (o.roll) effects.append(previewWheel(o.roll.chance));
+    effects.append(outcomes(o));
+    detail.append(head, el('p', 'desc', o.desc), effects, commit);
     return detail;
   }
 
   function pickRow(o: OptionView, selected: boolean) {
     const row = button('', 'pick-row' + (o.enabled ? '' : ' locked'), () => { picked = o.id; render(); });
     row.dataset.pick = o.id;
+    if (o.roll) row.style.setProperty('--chance', o.roll.chance + '%');
     if (o.id === 'rest') row.dataset.rest = restMode;
     row.setAttribute('aria-pressed', String(selected));
     const patch = el('span', 'row-icon');
@@ -137,10 +145,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     body.replaceChildren();
     panel.style.height = '';
     const desktop = matchMedia('(min-width: 900px)').matches;
-    const deck = panel.parentElement!;
-    const scene = deck.querySelector<HTMLElement>('.scene')!;
-    const mapReserve = Math.max(200, Math.min(320, 200 + (deck.clientHeight - 740) * .8));
-    const budget = panel.clientHeight + (desktop ? 0 : scene.clientHeight - mapReserve);
+    const budget = panel.offsetHeight;
     const style = getComputedStyle(body);
     const chrome = panel.offsetHeight - body.clientHeight;
     const frame = chrome + 44 + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2 * parseFloat(style.rowGap);
@@ -163,9 +168,9 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     if (!desktop) {
       // All five views share the height of the first full home page. Allow
       // enough room to select even the longest single detail on a later page.
-      const first = actionPages(actions)[0];
-      const needed = Math.max(pageHeight(first), ...actions.map(o => pageHeight([o])));
-      listRoom = actions.length ? Math.ceil(needed) : listRoom;
+      const preferred = pageHeight(actionPages(actions)[0]);
+      const longest = Math.max(0, ...actions.map(o => pageHeight([o])));
+      listRoom = Math.ceil(Math.max(longest, preferred));
       panel.style.height = (frame + listRoom) + 'px';
     }
     render();
@@ -176,7 +181,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     for (const [key,b] of navButtons) b.setAttribute('aria-pressed',String(key === view));
     panel.dataset.view = view;
     const [,label,symbol] = navigation.find(([key]) => key === view)!;
-    caption.replaceChildren(icon(symbol), view === 'home' ? '이번 계절 할 일' : label);
+    caption.replaceChildren(icon(symbol), view === 'home' ? '이번 칸에서 할 일' : label);
     const header = el('div', 'panel-head');
     body.append(header);
     function pageControl(total: number) {
@@ -252,13 +257,49 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
           body.append(empty('bag', state.stage === 'student' ? '자격증을 취득하면 장비 상점이 열려요.' : '현재 이용할 업그레이드나 정비가 없어요.'));
         }
       } else if (view === 'info') {
-        header.append(button('타이틀', 'return-title', onTitle, 'title'));
-        const facts = statEntries.map(([label, value]) => {
-          const pair = el('div');
-          pair.append(el('dt', '', label), el('dd', '', value));
-          return pair;
-        });
-        pagedGrid(el('dl', 'fact-grid'), facts, 2);
+        const tabs = el('div', 'tabs');
+        for (const [key, name] of [['stats','능력'], ['money','살림'], ['grades','등급표']]) {
+          const tabButton = button(name, '', () => { infoTab = key; reset(); render(); });
+          tabButton.dataset.tab = key;
+          tabButton.setAttribute('aria-pressed', String(infoTab === key));
+          tabs.append(tabButton);
+        }
+        header.append(tabs);
+        if (infoTab === 'stats') {
+          const summary = rankLine(state);
+          summary.append(button('타이틀', 'return-title', onTitle, 'title'));
+          body.append(summary);
+          const rows = GRADED_STATS.filter(stat => state.s[stat] || ['stamina','theory','skill'].includes(stat)).map(stat => {
+            const value = state.s[stat];
+            const held = grade(stat, value)!;
+            const row = el('div', 'stat-row');
+            row.append(gradeBadge(state, stat), el('b', '', STAT_LABEL[stat]), el('strong', '', num(value)));
+            row.append(el('small', '', held.next === null ? '최고 등급' : `다음 ${GRADES[held.index + 1]}까지 ${num(held.next - value)}`));
+            row.append(held.next === null ? meter(1, 1, '최고 등급') : meter(value - held.from, held.next - held.from, '다음 등급까지'));
+            return row;
+          });
+          pagedGrid(el('div', 'stat-list'), rows, 1);
+        } else if (infoTab === 'grades') {
+          const rows = GRADED_STATS.map(stat => {
+            const row = el('div', 'threshold-row');
+            row.append(el('b', '', STAT_LABEL[stat]), gradeBadge(state, stat));
+            const held = grade(stat, state.s[stat])!;
+            GRADE_STEPS[stat]!.forEach((v, i) => {
+              const cell = el('span', held.index === i + 1 ? 'held' : '');
+              cell.append(el('b', '', GRADES[i + 1]), el('small', '', num(v)));
+              row.append(cell);
+            });
+            return row;
+          });
+          pagedGrid(el('div', 'grade-table'), rows, 1);
+        } else {
+          const facts = statEntries.map(([label, value]) => {
+            const pair = el('div');
+            pair.append(el('dt', '', label), el('dd', '', value));
+            return pair;
+          });
+          pagedGrid(el('dl', 'fact-grid'), facts, 2);
+        }
       } else {
         header.append(el('span', 'log-count', `최근 기록 ${logs.length}건`));
         const entries = logs.map(entry => {

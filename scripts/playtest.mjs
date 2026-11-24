@@ -20,8 +20,9 @@ import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
-import { choose, options } from '../src/game/engine.ts';
-import { revealOption } from './ui-driver.mjs';
+import { choose, derived, options } from '../src/game/engine.ts';
+import { grade, rankChange } from '../src/game/career.ts';
+import { finishChoice, revealOption, stoppedResult } from './ui-driver.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shots = join(root, 'docs/screenshots/playtest');
@@ -76,11 +77,21 @@ async function tappable(page, where) {
   assert.deepEqual(bad, [], `${where}: choice buttons too small or off-screen`);
 }
 
-/** Taps the button of one option the way a player reaches it (tabs, pages, bottom navigation). */
-async function tapOption(page, option) {
-  const target = await revealOption(page, option);
-  assert.equal(await target.isDisabled(), false, `${option.id} is enabled in the engine but disabled in the UI`);
-  await target.click();
+async function checkPieces(page, state) {
+  const ui = await page.evaluate(() => {
+    const token = document.querySelector('[data-token]');
+    return {
+      space: token.parentElement.dataset.space, season: token.dataset.season, step: token.dataset.step,
+      spaces: [...document.querySelectorAll('[data-space]')].map(space => space.dataset.space),
+      badges: [...document.querySelectorAll('[data-grades] [data-stat]')].map(b => [b.dataset.stat, b.dataset.grade]),
+    };
+  });
+  const season = String(derived(state).season);
+  const step = String(Math.min(state.s.acts, 3));
+  assert.deepEqual([ui.space, ui.season, ui.step], [season + '-' + step, season, step]);
+  assert.equal(new Set(ui.spaces).size, 16);
+  assert.ok(ui.badges.length >= 5);
+  for (const [stat, letter] of ui.badges) assert.equal(letter, grade(stat, state.s[stat]).letter, stat);
 }
 
 /** Plays one whole run through the UI with a bot policy. Returns the ending id. */
@@ -117,36 +128,61 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
     const option = options(state).find((o) => o.id === id);
     const next = choose(state, id);
     if (state.phase === 'action') assert.equal(await page.locator('[data-acts]').getAttribute('data-acts'), String(state.s.acts));
+    await checkPieces(page, state);
+    let resultShot;
     for (const [name, at] of Object.entries(shotsAt)) {
       if (at === 'event' ? state.phase === 'event' : at === 'roll' ? !!option.roll && option.kind === 'job' : state.turn === at && state.phase === 'action') {
-        if (at === 0) await shot(page, `${name}-map`);
         await noSideScroll(page, name);
         await tappable(page, name);
         await shot(page, name);
-        if (at === 'roll') {
-          await tapOption(page, option);
-          await page.locator('[data-action="continue"]').waitFor({ state: 'visible', timeout: 8000 });
-          await page.waitForTimeout(2200); // let the luck roll land before the picture
-          await noSideScroll(page, `${name}-result`);
-          await shot(page, `${name}-result`);
-          delete shotsAt[name];
-          await page.locator('[data-action="continue"]').click();
-          state = next.state;
-        }
+        if (at === 'roll') resultShot = name + '-result';
         delete shotsAt[name];
       }
     }
-    if (state !== next.state) {
-      await tapOption(page, option);
-      const go = page.locator('[data-action="continue"]');
-      await go.waitFor({ state: 'visible', timeout: 8000 });
-      assert.equal(await phase(page), 'result');
-      await page.waitForFunction(() => document.querySelector('[data-action="continue"]:enabled'));
-      assert.equal(await page.locator('[data-season-change]').count(), Number(!!next.result.season));
-      assert.equal(await page.getByText('계절 결산', { exact: true }).count(), Number(!!next.result.upkeep));
-      await go.click();
-      state = next.state;
+    const target = await revealOption(page, option);
+    assert.equal(await target.isEnabled(), true, option.id);
+    if (option.roll) {
+      const preview = state.phase === 'event' ? target.locator('[data-wheel-preview]') : page.locator('.detail [data-wheel-preview]');
+      assert.equal(await preview.getAttribute('data-chance'), String(option.roll.chance));
     }
+    await target.click();
+    assert.equal(await phase(page), 'result');
+    if (option.roll) {
+      const spin = await page.locator('[data-spin]').evaluate(card => ({
+        spinning: card.dataset.spin === 'spinning',
+        disabled: card.querySelector('[data-action="continue"]').disabled,
+        reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      }));
+      assert.equal(spin.disabled, spin.spinning, 'continue is locked while the wheel turns');
+      if (spin.reduced) assert.equal(spin.spinning, false, 'reduced motion stops immediately');
+    }
+    const card = stoppedResult(page);
+    await card.waitFor();
+    const wheel = card.locator('[data-wheel]');
+    assert.equal(await wheel.count(), Number(!!next.result.roll));
+    if (next.result.roll) {
+      const { chance, value, success } = next.result.roll;
+      const reading = await wheel.evaluate(node => {
+        const disc = node.querySelector('.wheel-disc');
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(disc).transform);
+        // Invert the displayed disc angle to read the tick under the top pointer.
+        const angle = (360 - Math.atan2(matrix.b, matrix.a) * 180 / Math.PI) % 360;
+        return [node.dataset.chance, node.dataset.value, node.dataset.outcome, disc.style.getPropertyValue('--chance'), Math.floor(angle / 3.6)];
+      });
+      assert.deepEqual(reading, [String(chance), String(value), success ? 'success' : 'fail', chance + '%', value]);
+    }
+    assert.equal(await page.locator('[data-season-change]').count(), Number(!!next.result.season));
+    assert.equal(await page.getByText('계절 결산', { exact: true }).count(), Number(!!next.result.upkeep));
+    if (resultShot) await shot(page, resultShot);
+    const change = next.state.phase === 'ended' ? null : rankChange(state, next.state);
+    const appeared = await finishChoice(page, async rank => {
+      assert.ok(change, 'unexpected rank card');
+      assert.equal(await rank.getAttribute('data-kind'), change.kind);
+      assert.equal(await rank.locator('[data-rank-title]').textContent(), change.to.title);
+      assert.equal(await rank.locator('[data-rank-level]').getAttribute('data-rank-level'), String(change.to.level));
+    });
+    assert.equal(appeared, !!change, 'rank card appears exactly when the engine reports a change in a continuing run');
+    state = next.state;
     assert.deepEqual(await pageState(page), state, `after ${id} on turn ${state.turn} the page state equals the engine state`);
   }
   await page.waitForFunction(() => document.querySelector('[data-screen="ending"]'));
