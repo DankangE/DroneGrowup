@@ -406,17 +406,18 @@ export function choose(prev: GameState, optionId: string): { state: GameState; r
     state.phase = 'action';
     state.eventId = null;
   } else if (optionId === 'rest') {
-    endSeason(state, result, picked.view.add.stamina!, false);
+    endSeason(state, result, s.stamina - before.stamina, false); // the gain actually received, after the cap
   } else if (!v.free) {
     setStat(state, 'acts', s.acts + 1);
     if (picked.effect.end) {
       state.turn += 1;
       finish(state, picked.effect.end, true);
     } else if (!ACTIONS.some(a => a.id !== 'rest' && (a.tire ?? 0) <= s.stamina && met(state, a.when))) {
-      setStat(state, 'stamina', s.stamina + RULES.rest.light);
+      const tired = s.stamina;
+      setStat(state, 'stamina', tired + RULES.rest.light);
       result.notes.push(WIND_DOWN_NOTE);
       state.log.push({ turn: state.turn, text: WIND_DOWN_NOTE, tone: 'info' });
-      endSeason(state, result, RULES.rest.light, true);
+      endSeason(state, result, s.stamina - tired, true);
     }
   }
   if (state.ending) result.ended = state.ending;

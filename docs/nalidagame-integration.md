@@ -125,7 +125,7 @@ Validation bounds the server hook should enforce (reject with 400 otherwise):
 - `detail.turns === 120` unless `stage` is `ceo`, `chairman`, `academy` or `debtor` (the only endings that can
   come early); `detail.age === 20 + floor(turns / 4)`;
 - `score <= max(0, netWorth) + 10_000 + (120 - turns) * 50` (the largest ending bonus plus the early bonus);
-- `flights <= wins + losses`, `crashes <= min(flights, losses)`;
+- `flights <= wins + losses`, `crashes <= losses` (two events can crash the drone without a flight);
 - a soft plausibility cap for review rather than rejection: `score > 400_000` (the simulation's maximum over
   3,300 bot runs is far below this).
 

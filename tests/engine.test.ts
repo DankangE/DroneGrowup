@@ -113,7 +113,7 @@ test('action and event cards use the pre-payment stamina band and roll their dis
   }
 });
 
-test('failed flight crash frequency tracks the displayed risk across skill, condition and exhaustion', () => {
+test('failed flight crash frequency tracks the displayed risk across skill and condition; an exhausted pilot is shown the risk but cannot fly', () => {
   const f = RULES.flight;
   for (const [skill, cond, stamina, risk] of [
     [0, 100, 60, f.crashPct], [205, 100, 60, f.crashPct - f.skillCrashCap],
@@ -374,7 +374,7 @@ test('first-action rest gives full rest followed by a capped season refill', () 
     const next = choose(state, rest.id);
     assert.equal(next.state.turn, 1);
     assert.equal(next.state.s.acts, 0);
-    assert.deepEqual(next.result.season, { from: dateLabel(0), to: dateLabel(1), rest: 60, refill, auto: false });
+    assert.deepEqual(next.result.season, { from: dateLabel(0), to: dateLabel(1), rest: Math.min(60, 100 - initial), refill, auto: false });
     assert.equal(next.state.s.stamina, Math.min(100, initial + 60 + refill));
   }
 });
