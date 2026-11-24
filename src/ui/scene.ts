@@ -4,9 +4,9 @@ import { button, el, svg } from './dom.ts';
 
 
 export const shortNames: Record<PlaceId, string> = {
-  home: '자취방', school: '드론학과', airfield: '실습장', exam: '시험장', town: '시내', shop: '드론 상점',
-  garage: '정비소', bank: '은행', farm: '농경지', site: '건설 현장', bridge: '대교', windfarm: '풍력 단지',
-  studio: '촬영장', coast: '해안', office: '내 사무실', hq: '본사 사옥', academy: '교육원', assoc: '협회 회관',
+  home: '자취방', school: '드론학과', airfield: '실습장', exam: '시험장', town: '시내', shop: '상점',
+  garage: '정비소', bank: '은행', farm: '농경지', site: '건설 현장', bridge: '대교', windfarm: '풍력단지',
+  studio: '촬영장', coast: '해안', office: '사무실', hq: '본사', academy: '교육원', assoc: '협회',
 };
 
 const ink = '#3b5950';
@@ -141,22 +141,25 @@ function landscape(): SVGSVGElement {
   const pattern = svg('pattern', { id: 'map-grass', width: 42, height: 42, patternUnits: 'userSpaceOnUse' });
   path(pattern, 'M8 13l2-5m2 6 3-3M29 32l1-4', 'none', '#8ca47b', 1.5);
   defs.append(pattern);
-  art.append(defs, svg('rect', { width: 1000, height: 1000, fill: '#d6dfba' }), svg('rect', { width: 1000, height: 1000, fill: 'url(#map-grass)', opacity: 0.35 }));
+  // The portrait map frame exposes a little extra countryside on either side
+  // of the square town. SVG's default 'meet' scaling keeps every road to scale.
+  const ground = { x: -170, width: 1340, height: 1000 };
+  art.append(defs, svg('rect', { ...ground, fill: '#d6dfba' }), svg('rect', { ...ground, fill: 'url(#map-grass)', opacity: 0.35 }));
   path(art, 'M0 56Q125 5 218 43T422 34L440 0H0ZM0 350Q65 303 83 408T42 666L0 685Z', '#bccca6', 'none');
-  path(art, 'M1000 570Q918 611 925 713T843 866Q804 926 820 1000H1000Z', '#e8d8af', 'none');
-  path(art, 'M1000 603Q946 640 953 724T877 881Q837 936 852 1000H1000Z', '#a7cec5', 'none');
+  path(art, 'M1170 520Q1070 525 1000 570Q918 611 925 713T843 866Q804 926 820 1000H1170Z', '#e8d8af', 'none');
+  path(art, 'M1170 554Q1070 560 1000 603Q946 640 953 724T877 881Q837 936 852 1000H1170Z', '#a7cec5', 'none');
   path(art, 'M1000 680Q971 696 978 750T914 892M1000 834q-44 23-51 74m-44 65q29-42 65-40', 'none', '#dce9d3', 4);
   const river = 'M1020 438Q894 403 828 514T677 628Q568 598 551 721T404 894Q324 941 330 1030';
   path(art, river, 'none', '#c1d4b1', 82);
   path(art, river, 'none', '#a3c9bf', 66);
   path(art, river, 'none', '#c5e0cb', 3);
-  const roads = ['M-20 360Q205 345 326 355T740 358Q816 360 980 230', 'M328-10Q304 198 328 355L365 580Q350 702 252 774L190 1010', 'M35 645 344 580 602 653 742 838 846 972', 'M116 841 252 774 441 712', 'M326 355 480 443 622 405 778 522', 'M421 163 527 262 640 145 739 243', 'M740 358 739 243 878 101'];
+  const roads = ['M-170 390Q-80 361-20 360Q205 345 326 355T740 358Q816 360 980 230', 'M328-10Q304 198 328 355L365 580Q350 702 252 774L190 1010', 'M35 645 344 580 602 653 742 838 846 972', 'M116 841 252 774 441 712', 'M326 355 480 443 622 405 778 522', 'M421 163 527 262 640 145 739 243', 'M740 358 739 243 878 101'];
   for (const road of roads) path(art, road, 'none', '#b9bca1', 27);
   for (const road of roads) path(art, road, 'none', '#f2e9ce', 22);
   for (const road of roads) {
     art.append(svg('path', { d: road, fill: 'none', stroke: '#c8c3a9', 'stroke-width': 1.5, 'stroke-dasharray': '8 13' }));
   }
-  for (const [x, y, s] of [[80, 120, 1.3], [120, 155, 1], [75, 230, 1], [260, 100, .8], [91, 420, 1], [125, 460, 1.2], [203, 450, .8], [210, 546, .8], [65, 730, 1.3], [215, 902, 1.2], [470, 890, 1.1], [490, 490, .8], [540, 530, 1.3], [610, 900, 1.2], [776, 932, 1], [935, 160, .8], [926, 353, 1.3], [707, 74, .8], [40, 910, 1.1], [452, 55, .8], [660, 503, 1], [726, 470, .7], [860, 610, 1]]) {
+  for (const [x, y, s] of [[-120, 145, 1.3], [-93, 192, 1], [-63, 560, 1.2], [-122, 837, 1], [1062, 167, 1.2], [1112, 342, 1], [80, 120, 1.3], [120, 155, 1], [75, 230, 1], [260, 100, .8], [91, 420, 1], [125, 460, 1.2], [203, 450, .8], [210, 546, .8], [65, 730, 1.3], [215, 902, 1.2], [470, 890, 1.1], [490, 490, .8], [540, 530, 1.3], [610, 900, 1.2], [776, 932, 1], [935, 160, .8], [926, 353, 1.3], [707, 74, .8], [40, 910, 1.1], [452, 55, .8], [660, 503, 1], [726, 470, .7], [860, 610, 1]]) {
     const tree = svg('g', { transform: `translate(${x} ${y}) scale(${s})` });
     circle(tree, 5, 7, 21, '#a7bc91', 'none');
     path(tree, 'M0 29V-3', 'none', ink, 3);
@@ -179,44 +182,22 @@ export function createScene(available: Set<PlaceId>, current: PlaceId, level: nu
   element.setAttribute('aria-label', '마을 비행 지도');
   const canvas = el('div', 'map-canvas');
   const art = landscape();
-  art.setAttribute('preserveAspectRatio', 'none');
   canvas.append(art);
-  const controls = new Map<PlaceId, HTMLButtonElement>();
-  // Spread the landmarks over three flight lanes on a short phone map. Their
-  // drawings keep their proportions while the terrain fills the available space.
+  const sites = new Map<PlaceId, HTMLElement>();
+  // The landscape inset has five plots per lane. Even a 200px-tall
+  // 4:3 map leaves a separate 53 × 50px plot for each landmark.
   const lanes: PlaceId[][] = [
-    ['school', 'airfield', 'academy', 'exam', 'assoc', 'windfarm'],
-    ['bank', 'town', 'shop', 'garage', 'site', 'farm'],
-    ['home', 'office', 'studio', 'bridge', 'hq', 'coast'],
+    ['school', 'airfield', 'exam', 'assoc', 'windfarm'],
+    ['town', 'shop', 'academy', 'site', 'farm'],
+    ['bank', 'studio', 'garage', 'bridge'],
+    ['home', 'office', 'hq', 'coast'],
   ];
-  // Under a long choice summary use two lanes. Keep full touch widths for
-  // active buildings and leave smaller plots for scenery-only landmarks.
-  const byNorth = lanes.flat().sort((a, b) => PLACES[a].y - PLACES[b].y);
-  const compact = new Map<PlaceId, { x: number; y: number; width: number }>();
-  const activeIds = byNorth.filter(id => available.has(id));
-  const scenery = byNorth.filter(id => !available.has(id));
-  for (const lane of [0, 1]) {
-    const half = (ids: PlaceId[]) => lane ? ids.slice(Math.ceil(ids.length / 2)) : ids.slice(0, Math.ceil(ids.length / 2));
-    const sites = [...half(activeIds), ...half(scenery)].sort((a, b) => PLACES[a].x - PLACES[b].x);
-    const width = (id: PlaceId) => available.has(id) ? 44 : 16;
-    const total = sites.reduce((sum, id) => sum + width(id), 0);
-    let left = 0;
-    for (const id of sites) {
-      const share = 100 * width(id) / total;
-      compact.set(id, { x: left + share / 2, y: 25 + 50 * lane, width: share });
-      left += share;
-    }
-  }
   function position(node: HTMLElement, id: PlaceId) {
-    const plot = compact.get(id)!;
-    node.style.setProperty('--cx', plot.x + '%');
-    node.style.setProperty('--cy', plot.y + '%');
-    node.style.setProperty('--cw', plot.width + '%');
     const row = lanes.findIndex(lane => lane.includes(id));
     node.style.setProperty('--x', PLACES[id].x + '%');
     node.style.setProperty('--y', PLACES[id].y + '%');
-    node.style.setProperty('--mx', (lanes[row].indexOf(id) + .5) / 6 * 100 + '%');
-    node.style.setProperty('--my', (row + .5) / 3 * 100 + '%');
+    node.style.setProperty('--mx', (lanes[row].indexOf(id) + .5) / lanes[row].length * 100 + '%');
+    node.style.setProperty('--my', (row + .5) / lanes.length * 100 + '%');
   }
   for (const id of Object.keys(PLACES) as PlaceId[]) {
     const active = available.has(id) && !!onPlace;
@@ -227,9 +208,9 @@ export function createScene(available: Set<PlaceId>, current: PlaceId, level: nu
     site.append(drawing);
     if (site instanceof HTMLButtonElement) {
       site.setAttribute('aria-label', PLACES[id].name + ' 선택지 보기');
-      site.append(el('span', 'place-label', shortNames[id]));
-      controls.set(id, site);
     }
+    site.append(el('span', 'place-label', shortNames[id]));
+    sites.set(id, site);
     canvas.append(site);
   }
   const drone = el('div', 'drone-position');
@@ -256,10 +237,14 @@ export function createScene(available: Set<PlaceId>, current: PlaceId, level: nu
   drone.append(droneArt);
   canvas.append(drone);
   element.append(canvas);
-  const move = (place: PlaceId) => position(drone, place);
+  const move = (place: PlaceId) => {
+    position(drone, place);
+    sites.forEach((site, id) => site.classList.toggle('current', id === place));
+  };
   move(current);
   return { element, move, select: place => {
-    controls.forEach((target, id) => {
+    sites.forEach((target, id) => {
+      if (!(target instanceof HTMLButtonElement)) return;
       target.classList.toggle('selected', id === place);
       target.setAttribute('aria-pressed', String(id === place));
     });

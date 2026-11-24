@@ -28,7 +28,10 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
 ## Commands
 
 - `npm run dev` — dev server (PORT env, default 5173).
-- `npm run verify` — typecheck, build, unit tests, simulation, both headless playtests. Run it before every PR.
+- `npm run verify` — typecheck, build, unit tests, simulation, both headless playtests, layout check. Run it before every PR.
+- `npm run layout` — every screen, tab and pager page at 390x844, 360x740, 1280x800 and 1366x768; fails on
+  page or inner scroll, content outside the viewport, cut-off content, tap targets under 44 px or text under
+  11 px. `LAYOUT_SHOTS=<dir>` also writes a screenshot per view.
 - `npm run simulate` — 11 bot policies x 300 seeds; fails on a softlock, a run that does not end, or an
   ending outside 2%..30%. `SIM_RUNS=1000` for more seeds.
 - `VITE_NG_PLATFORM=1 npm run build` — the nalidagame.online build.
@@ -41,8 +44,10 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
   card is the chance that is rolled.
 - Every event needs one choice with no cost and no requirement, and `rest` is always available, so a run can
   never get stuck. `tests/engine.test.ts` checks both.
-- The UI keeps the `data-option`, `data-action`, `data-screen` and `data-phase` hooks from `docs/ui-spec.md`;
-  the playtest depends on them.
+- The UI keeps the `data-option`, `data-pick`, `data-nav`, `data-tab`, `data-action`, `data-screen` and
+  `data-phase` hooks from `docs/ui-spec.md`; the playtest and the layout check depend on them.
+- Nothing scrolls, on any screen at any size. More content means a tab or a pager page, never a scroll area.
+  References for the UI patterns are in `docs/ui-references.md`.
 - Strings from the server or from storage go into the DOM with `textContent`.
 - The platform code must stay inside `if (PLATFORM)` so the default build makes no network request.
 - All names, text and art are original. Do not copy from other games.

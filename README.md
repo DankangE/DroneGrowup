@@ -7,7 +7,7 @@
 ```
 npm install
 npm run dev        # 개발 서버
-npm run verify     # 타입 검사, 빌드, 단위 테스트, 밸런스 시뮬레이션, 헤드리스 플레이 테스트
+npm run verify     # 타입 검사, 빌드, 단위 테스트, 밸런스 시뮬레이션, 헤드리스 플레이 테스트, 무스크롤 레이아웃 검사
 ```
 
 - 기획: [docs/design.md](docs/design.md)

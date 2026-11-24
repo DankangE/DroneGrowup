@@ -1,4 +1,4 @@
-import { RULES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
+import { RULES, STAGES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
 import { derived, num } from '../game/engine.ts';
 import type { GameState, OptionView, Stage, Stat } from '../game/types.ts';
 import { button, countNumber, el, meter, reducedMotion } from './dom.ts';
@@ -6,7 +6,6 @@ import { emblem, icon, type IconName } from './icons.ts';
 
 export const signed = (value: number) => `${value > 0 ? '+' : ''}${num(value)}`;
 export const statValue = (stat: Stat, value: number) => num(value) + (['money','debt','value'].includes(stat) ? '만원' : ['support','cond'].includes(stat) ? '%' : '');
-const tiers: Record<Stage, number> = { student: 0, pilot: 1, employee: 2, instructor: 2, solo: 2, academy: 3, company: 3, director: 3 };
 const specialty: Record<Stage, Stat> = { student: 'flights', pilot: 'flights', employee: 'rank', instructor: 'teach', academy: 'students', solo: 'contracts', company: 'value', director: 'support' };
 
 export function hud(state: GameState, choices: OptionView[], onGoal: (id: string) => void, previous?: GameState) {
@@ -36,10 +35,15 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
     return pill;
   }
   const top = el('header', 'top-bar');
-  const badge = emblem(tiers[state.stage]);
-  if (previous && previous.stage !== state.stage) badge.classList.add('promoted');
+  const level = Object.keys(STAGES).indexOf(state.stage) + 1;
+  const badge = el('div', 'career-emblem');
+  badge.append(emblem(level));
+  if (previous && previous.stage !== state.stage && !reducedMotion()) badge.classList.add('promoted');
   const identity = el('div', 'identity');
-  identity.append(el('small', '', d.rankName || '파일럿 수첩'), el('h1', '', d.stageName));
+  const rank = el('div', 'career-rank');
+  rank.append(el('b', 'tier', 'Lv.' + level));
+  if (d.rankName) rank.append(el('small', '', d.rankName));
+  identity.append(rank, el('h1', '', d.stageName));
   const debt = counter('debt', '빚 / 한도', 'bank');
   debt.classList.toggle('near-limit', state.s.debt >= d.creditLimit * .85);
   top.append(badge, identity, counter('money', '자금 · 만원', 'coin'), debt);
@@ -51,13 +55,17 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
   const flag = el('span', 'goal-icon');
   flag.append(icon('flag'));
   const copy = el('span', 'goal-copy');
-  copy.append(el('small', '', next ? '다음 목표' : '은퇴까지'), el('strong', '', next?.title ?? `남은 ${d.turnsLeft}분기`));
+  const title = el('span', 'goal-title');
+  title.append(el('small', '', next ? '다음 목표' : '은퇴까지'), el('strong', '', next?.title ?? `남은 ${d.turnsLeft}분기`));
+  copy.append(title);
+  if (next && !next.enabled) copy.append(el('span', 'goal-reason', next.locks[0]));
   goal.append(flag, copy);
-  if (next) goal.append(el('small', 'goal-lock', next.enabled ? '도전 가능' : next.locks[0]), icon('arrow'));
+  if (next) goal.append(el('small', 'goal-lock', next.enabled ? '도전 가능' : '잠김'), icon('arrow'));
   const strip = el('div', 'stat-strip');
-  strip.append(counter('xp', '경험치', 'bolt', STAT_MAX.xp), counter('rep', '평판', 'star', STAT_MAX.rep));
+  const gauges = el('div', 'gauges');
+  gauges.append(counter('xp', '경험치', 'bolt', STAT_MAX.xp), counter('rep', '평판', 'star', STAT_MAX.rep));
   const career = specialty[state.stage];
-  if (state.s[career]) strip.append(counter(career, STAT_LABEL[career], 'flag'));
+  if (state.s[career]) gauges.append(counter(career, STAT_LABEL[career], 'flag'));
   const equipment = el('div', 'equipment');
   for (const [stat, label, symbol] of [['drone','드론','drone'], ['gear','장비','tool'], ['car','차량','car']] as const) {
     const chip = counter(stat, label, symbol);
@@ -76,6 +84,6 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
     }
     equipment.append(chip);
   }
-  strip.append(equipment);
+  strip.append(gauges, equipment);
   return {top, time, goal, strip};
 }

@@ -77,36 +77,72 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     return detail;
   }
 
-  let rowCount = 4;
-  // Reserve the tallest detail up front. Picking a locked row or opening a
-  // shorter page must not move the map, the pager, or the bottom navigation.
+  function pickRow(o: OptionView, selected: boolean) {
+    const row = button('', 'pick-row' + (o.enabled ? '' : ' locked'), () => { picked = o.id; render(); });
+    row.dataset.pick = o.id;
+    row.setAttribute('aria-pressed', String(selected));
+    const patch = el('span', 'row-icon');
+    patch.append(icon(o.enabled ? symbols[o.place] : 'lock'));
+    row.append(patch, el('strong', '', o.title), el('small', 'row-price', price(o)),
+      el('b', o.roll ? 'odds' : 'odds sure', o.roll ? o.roll.chance + '%' : '확정'));
+    return row;
+  }
+
+  const sizes = new Map<OptionView, { row: number; detail: number }>();
+  let listRoom = 0, rowGap = 0;
+  function pageHeight(items: OptionView[]) {
+    let rows = 0, detail = 0;
+    for (const item of items) {
+      const size = sizes.get(item)!;
+      rows += size.row;
+      detail = Math.max(detail, size.detail);
+    }
+    return rows + Math.max(0, items.length - 1) * rowGap + detail;
+  }
+  function actionPages(list: OptionView[], room = listRoom) {
+    const pages: OptionView[][] = [[]];
+    for (const item of list) {
+      const last = pages[pages.length - 1];
+      if (last.length >= 6 || (last.length && pageHeight([...last, item]) > room)) pages.push([item]);
+      else last.push(item);
+    }
+    return pages;
+  }
+
   function fit() {
     panel.replaceChildren();
     panel.style.height = '';
-    panel.classList.remove('compact-detail');
-    const style = getComputedStyle(panel);
     const desktop = matchMedia('(min-width: 900px)').matches;
-    const minimum = panel.offsetHeight;
-    const scene = panel.parentElement!.querySelector<HTMLElement>('.scene')!;
-    const budget = desktop ? minimum : minimum + scene.offsetHeight - 132;
+    const deck = panel.parentElement!;
+    const scene = deck.querySelector<HTMLElement>('.scene')!;
+    const mapReserve = Math.max(200, Math.min(320, 200 + (deck.clientHeight - 740) * .8));
+    const budget = panel.clientHeight + (desktop ? 0 : scene.clientHeight - mapReserve);
+    const style = getComputedStyle(panel);
+    const frame = 44 + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2 * parseFloat(style.rowGap);
+
+    // Measure at the real column width. A long locked choice only reduces
+    // capacity on the page containing it.
     const probe = el('div', 'panel-probe');
-    const row = button('', 'pick-row', () => {});
     const rows = el('div', 'action-rows');
-    rows.append(row);
-    const details = actions.map(detailFor);
-    probe.append(rows, ...details);
+    const samples = actions.map(option => ({ option, row: pickRow(option, false), detail: detailFor(option) }));
+    rows.append(...samples.map(sample => sample.row));
+    probe.append(rows, ...samples.map(sample => sample.detail));
     panel.append(probe);
-    const rowGap = parseFloat(getComputedStyle(rows).rowGap);
-    const rowHeight = row.offsetHeight + rowGap;
-    const frame = 44 + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) +
-      parseFloat(style.borderTopWidth) + 2 * parseFloat(style.rowGap) - rowGap;
-    const detailHeight = () => Math.max(0, ...details.map(item => item.offsetHeight));
-    if (frame + 4 * rowHeight + detailHeight() > budget) panel.classList.add('compact-detail');
-    const fixed = Math.ceil(frame + detailHeight());
-    const preferred = Number(style.getPropertyValue('--rows'));
-    rowCount = Math.max(4, Math.min(preferred, Math.floor((budget - fixed) / rowHeight)));
+    rowGap = parseFloat(getComputedStyle(rows).rowGap);
+    for (const { option, row, detail } of samples) {
+      sizes.set(option, { row: row.getBoundingClientRect().height, detail: detail.getBoundingClientRect().height });
+    }
     probe.remove();
-    if (!desktop) panel.style.height = Math.max(minimum, fixed + rowCount * rowHeight) + 'px';
+
+    listRoom = Math.floor(budget - frame);
+    if (!desktop) {
+      // All five views share the height of the first full home page. Allow
+      // enough room to select even the longest single detail on a later page.
+      const first = actionPages(actions)[0];
+      const needed = Math.max(pageHeight(first), ...actions.map(o => pageHeight([o])));
+      listRoom = actions.length ? Math.ceil(needed) : listRoom;
+      panel.style.height = (frame + listRoom + parseFloat(style.borderTopWidth)) + 'px';
+    }
     render();
   }
   function render() {
@@ -140,29 +176,27 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
       }
       header.append(tabs);
       const list = actions.filter(o => tab === 'all' || (tab === 'place' ? o.place === place : o.kind === tab));
-      pageControl(Math.max(1, Math.ceil(list.length / rowCount)));
-      const items = list.slice(page * rowCount, (page + 1) * rowCount);
+      const pages = actionPages(list);
+      if (picked) {
+        const selectedPage = pages.findIndex(items => items.some(o => o.id === picked));
+        if (selectedPage >= 0) page = selectedPage;
+      }
+      pageControl(pages.length);
+      const items = pages[page];
       const current = items.find(o => o.id === picked) ?? items.find(o => o.enabled) ?? items[0];
       if (current) {
         picked = current.id;
         const rows = el('div', 'action-rows');
-        for (const o of items) {
-          const b = button('', 'pick-row' + (o.enabled ? '' : ' locked'), () => { picked = o.id; render(); });
-          b.dataset.pick = o.id;
-          b.setAttribute('aria-pressed',String(o === current));
-          const patch = el('span','row-icon');
-          patch.append(icon(o.enabled ? symbols[o.place] : 'lock'));
-          b.append(patch, el('strong','',o.title), el('small','row-price',price(o)), el('b',o.roll ? 'odds' : 'odds sure',o.roll ? o.roll.chance + '%' : '확정'));
-          rows.append(b);
-        }
+        rows.style.setProperty('--page-rows', String(items.length));
+        rows.append(...items.map(o => pickRow(o, o === current)));
         panel.append(rows, detailFor(current));
       } else if (tab === 'place' && place && choices.some(o => o.free && o.place === place)) {
         const bankHere = place === 'bank';
         const facility = empty(bankHere ? 'bank' : 'bag', PLACES[place].desc);
         facility.append(button(bankHere ? '은행 이용하기' : '상점 · 정비 이용하기', 'secondary', () => switchView(bankHere ? 'bank' : 'shop')));
         panel.append(facility);
-      } else {
-        const message = state.phase === 'event' ? '새 소식이 도착했어요.' : tab === 'job' ? '이번 분기에 받은 일감이 없어요.' : '이곳에는 이번 분기 활동이 없어요.';
+      } else if (state.phase !== 'event') {
+        const message = tab === 'job' ? '이번 분기에 받은 일감이 없어요.' : '이곳에는 이번 분기 활동이 없어요.';
         panel.append(empty('map', message));
       }
     } else {
@@ -220,7 +254,6 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     view = 'home'; tab = 'place'; reset(); render();
   }, goal(id: string) {
     view = 'home'; tab = 'all'; picked = id;
-    page = Math.floor(actions.findIndex(o => o.id === id) / rowCount);
     render();
     panel.querySelector<HTMLButtonElement>('[aria-pressed="true"][data-pick]')?.focus({preventScroll:true});
   }};

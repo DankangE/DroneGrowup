@@ -14,7 +14,7 @@ const endingHints: Record<EndingId, string> = {
 };
 const endingIcons: Record<EndingId, IconName> = {
   ceo: 'flag', chairman: 'star', academy: 'book', solo: 'drone', debtor: 'coin', smallbiz: 'home',
-  director: 'flag', instructor: 'book', employee: 'bag', pilot: 'drone', student: 'bolt',
+  director: 'bank', instructor: 'map', employee: 'bag', pilot: 'compass', student: 'bolt',
 };
 
 
@@ -114,7 +114,9 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   const badges = el('div','records');
   if (record.firstTime) badges.append(pill('book','새 엔딩'));
   if (record.newBest) badges.append(pill('star',`최고 기록 ${num(state.score)}점`));
-  story.append(patch(ending.id),badges,el('h1','',ending.title),el('p','',ending.text));
+  story.append(patch(ending.id));
+  if (badges.childElementCount) story.append(badges);
+  story.append(el('h1','',ending.title), el('p','',ending.text));
   const report = el('section','ending-report');
   const score = el('div','score');
   const number = el('b');
