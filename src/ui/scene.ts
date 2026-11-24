@@ -1,6 +1,7 @@
 import { PLACES } from '../game/data.ts';
 import type { PlaceId } from '../game/types.ts';
 import { button, el, svg } from './dom.ts';
+import officeArt from '/art/scene-office.webp?url';
 
 
 export const shortNames: Record<PlaceId, string> = {
@@ -8,6 +9,19 @@ export const shortNames: Record<PlaceId, string> = {
   garage: '정비소', bank: '은행', farm: '농경지', site: '건설 현장', bridge: '대교', windfarm: '풍력단지',
   studio: '촬영장', coast: '해안', office: '사무실', hq: '본사', academy: '교육원', assoc: '협회',
 };
+
+// Only the office has sample art; every other place uses the office as its backdrop.
+const SCENE_ART: Partial<Record<PlaceId, string>> = { office: officeArt };
+
+export function fieldScene(place: PlaceId) {
+  const scene = el('div', 'scene field-scene');
+  const art = el('img');
+  art.src = SCENE_ART[place] ?? officeArt;
+  art.alt = '';
+  art.decoding = 'async';
+  scene.append(art, el('span', 'place-plate', shortNames[place]));
+  return scene;
+}
 
 const ink = '#3b5950';
 type Group = SVGGElement;

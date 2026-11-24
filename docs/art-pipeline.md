@@ -27,6 +27,17 @@ in the same style. Status: **sample pass** (one cover, one scene, one portrait).
 | `public/art/portrait-senior.webp` | 19 KB | `docs/art-raw/portrait-senior-v1.png` | Event popup portrait (sample: shown for every event) |
 | `public/fonts/bagel-fat-one-title.woff2` | 3.6 KB | Google Fonts repo, `ofl/bagelfatone` | Title lettering |
 
+## Sample screenshots
+
+`docs/screenshots/art-samples/`: `390x844-title.png`, `1280x800-title.png` (cover), `390x844-play-start.png`,
+`1280x800-play-start.png` (scene in the stage's "현장" view), `390x844-play-event.png`,
+`1280x800-play-event.png` (window popup with portrait and stat chart). Written by
+`LAYOUT_SHOTS=<dir> npm run layout`.
+
+Known gaps of the sample: the office is shown for every place and the senior for every event; the action panel
+on the right still has the old pastel look; the stat chart is empty at the start of a run because every value
+is zero.
+
 ## What was checked and rejected (2026-11-24)
 
 - **Local Stable Diffusion / ComfyUI / Flux**: none installed. No `~/ComfyUI`, nothing listening on :8188, the

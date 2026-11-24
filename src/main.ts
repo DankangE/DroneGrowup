@@ -8,7 +8,7 @@ import { createPanel, pager, type Nav } from './ui/cards.ts';
 import { button, el, focusHeading, paginateRows } from './ui/dom.ts';
 import { hud } from './ui/hud.ts';
 import { icon } from './ui/icons.ts';
-import { createScene } from './ui/scene.ts';
+import { createScene, fieldScene } from './ui/scene.ts';
 import { endingScreen, galleryScreen, titleScreen } from './ui/screens.ts';
 import type { EndingRecord } from './ui/screens.ts';
 import { closeSheet, confirmNewRun, createSheet, refreshModalBackground, showEvent, showResult } from './ui/sheets.ts';
@@ -29,6 +29,7 @@ function seed(): number {
 
 let state = loadRun() ?? newGame(seed());
 let dronePlace: PlaceId = 'school';
+let stageView: 'field' | 'map' = 'field';
 let startedAt = performance.now();
 let endingRecord: EndingRecord | null = null;
 let choosing = false;
@@ -104,24 +105,44 @@ function renderPlay(nav: Nav, previous?: GameState) {
   const ui = hud(state, choices, id => panel.goal(id), previous);
   const stage = el('section', 'stage');
   stage.dataset.clipOk = '';
-  const scene = createScene(new Set(choices.map(o => o.place)), dronePlace, state.s.drone, id => {
-    dronePlace = id;
-    scene.move(id);
-    scene.select(id);
-    panel.place(id);
-  });
-  const legend = el('div','map-header');
-  const label = el('span','','비행 지도');
-  label.prepend(icon('map'));
-  legend.append(label, icon('sun'));
-  stage.append(legend, ui.goal, scene.element, ui.strip);
+  let map: ReturnType<typeof createScene> | undefined;
+  const header = el('header', 'stage-header');
+  const heading = el('strong', 'stage-heading');
+  const toggle = el('div', 'stage-toggle');
+  toggle.setAttribute('role', 'group');
+  toggle.setAttribute('aria-label', '보기 전환');
+  function updateStage(view: typeof stageView) {
+    stageView = view;
+    const field = view === 'field';
+    fieldButton.setAttribute('aria-pressed', String(field));
+    mapButton.setAttribute('aria-pressed', String(!field));
+    heading.replaceChildren(icon(field ? 'sun' : 'map'), field ? '비행 현장' : '비행 지도');
+    stage.querySelector('.scene')?.remove();
+    if (field) {
+      ui.strip.before(fieldScene(dronePlace));
+    } else {
+      map ??= createScene(new Set(choices.map(o => o.place)), dronePlace, state.s.drone, id => {
+        dronePlace = id;
+        map?.move(id);
+        map?.select(id);
+        panel.place(id);
+      });
+      ui.strip.before(map.element);
+    }
+  }
+  const fieldButton = button('현장', '', () => updateStage('field'));
+  const mapButton = button('지도', '', () => updateStage('map'));
+  toggle.append(fieldButton, mapButton);
+  header.append(heading, ui.goal, toggle);
+  stage.append(header, ui.strip);
+  updateStage(stageView);
   const shell = el('main', 'flight-deck');
   shell.append(ui.top, ui.time, stage, panel.panel, panel.nav);
   setScreen('play', shell);
   activePanel = panel;
   root.dataset.phase = state.phase;
   panel.fit();
-  if (event) showEvent(root,event,choices,takeOption);
+  if (event) showEvent(root,event,state,choices,takeOption);
 }
 
 function takeOption(id: string) {

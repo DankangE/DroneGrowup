@@ -77,8 +77,10 @@ import { PLATFORM, bootPlatform, nickname, runStatus, fetchLeaderboard, sessionO
 
 ### 1. Title (`data-screen="title"`)
 
-One screen, no scroll. Top: the game logo "파일럿 키우기" and the one-line pitch over a decorative top-view
-scene (the drone hovering over the town). Middle: three short how-to lines as icon rows. Bottom, stacked:
+The cover fills the upper part of the screen with the five-character key visual. Phones crop to the centre
+three characters. The two-word “파일럿 키우기” heading uses the local Bagel Fat One font, outlined and tilted
+over the lower artwork alongside the ribbon, one-line pitch and two pills. The console holds three short
+how-to lines as icon rows and the following controls:
 "새 게임" (large primary), "이어하기" (only with a saved run), "엔딩 도감 n / 11", best score and run count as
 small stat pills. Platform build: nickname pill and a "랭킹" button; the leaderboard opens as a centred popup
 with paged rows.
@@ -90,10 +92,11 @@ Phone (portrait), top to bottom:
 1. **Top bar** (about 52 px). Left: the career emblem (see Growth) with the stage name and rank. Right:
    resource pills with an icon: 자금, 빚 (`debt / creditLimit`; red when debt is near or over the limit).
 2. **Time strip** (about 24 px). "23세 2분기", a thin progress bar of the 72 quarters, "남은 54분기".
-3. **Stage** (takes all remaining height, `data-clip-ok`). The top-view town map (SVG, one building per
-   `PLACES` entry, existing art in `src/ui/scene.ts`), with the player's drone hovering at the current place
-   and flying to a tapped place. Places with an option right now are highlighted and tappable; tapping one
-   selects the "장소" tab of the action panel for that place. Overlaid on the stage:
+3. **Stage** (takes all remaining height, `data-clip-ok`). The bevelled header holds the goal chip and two
+   pressed-state buttons, "현장" and "지도". The initial 현장 view fills the stage with isometric place art and
+   a short place-name plate. This sample uses the office image for every place. 지도 shows the SVG town map.
+   Tapping an available place flies the drone there and selects its "장소" tab. The selected view persists
+   across play-screen renders. Both views keep:
    - top: the **goal chip** "다음 목표" (see Growth),
    - bottom: a **stat strip**: gauges for 경험치 and 평판, the career stat that matters in this stage when
      it is above zero, and chips for the drone (level + condition bar), gear and car levels.
@@ -117,10 +120,13 @@ Phone (portrait), top to bottom:
 5. **Bottom tab bar** (about 56 px + safe area): 홈, 상점, 은행, 내 정보, 기록, each an icon over a label.
    The active tab is marked. A dot on 상점 / 은행 when one of its options is enabled.
 
-Popups (centred card over the dimmed screen, title band, never taller than the viewport):
+Event, result, confirmation and ranking popups share a centred steel-blue window with a two-pixel bevel,
+a pinstriped blue title bar with white text, and a cream inset body. Each fits inside the viewport.
 
-- **Event** (`data-phase="event"`): shown as soon as `state.phase === 'event'`; it must be answered. Title,
-  text, the place name, then the event's choices (two at most) as large buttons. Each button carries the
+- **Event** (`data-phase="event"`): shown as soon as `state.phase === 'event'`; it must be answered. A framed
+  portrait sits beside a five-bar chart of current experience, reputation, drone, gear and car levels,
+  scaled to their engine maxima. All sample events use the senior portrait. Below are the place name,
+  inset event text and the event's choices (two at most) as large buttons. Each button carries the
   choice title, cost, the chance ("성공 66%") with a small bar, and the success / fail (or sure) summaries.
   Disabled choices show their locks.
 - **Result** (`data-phase="result"`): after `choose`. For a roll: the luck animation (about 900 ms; a gauge
@@ -165,7 +171,8 @@ silhouette. A "타이틀" button. No scroll with all 11 found.
 ## Rules for the build
 
 - Korean for every player-facing string; identifiers in English.
-- Vanilla TypeScript + DOM, no framework, no new dependencies, no external images or fonts. Strict TS:
+- Vanilla TypeScript + DOM, no framework, no new dependencies. No images or fonts loaded from other hosts;
+  art lives in `public/art`, fonts in `public/fonts`. Strict TS:
   `npm run typecheck` must pass (`noUnusedLocals`, `verbatimModuleSyntax`: use `import type` for types, and
   keep the `.ts` extension in relative imports).
 - Stable hooks for the headless scripts (`scripts/ui-driver.mjs`, `playtest.mjs`, `layout-check.mjs`):

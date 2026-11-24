@@ -1,9 +1,13 @@
-import { PLACES, STAGES, STAT_LABEL } from '../game/data.ts';
-import type { EventDef, OptionView, Result, Stat } from '../game/types.ts';
+import { PLACES, STAGES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
+import type { EventDef, GameState, OptionView, Result, Stat } from '../game/types.ts';
 import { commitButton, outcomes, price } from './cards.ts';
 import { button, el, meter, reducedMotion } from './dom.ts';
 import { icon } from './icons.ts';
 import { signed, statValue } from './hud.ts';
+import seniorPortrait from '/art/portrait-senior.webp?url';
+
+// Every event in this sample falls back to the senior portrait.
+const EVENT_PORTRAIT: Record<string, string> = {};
 
 type Sheet = { dialog: HTMLDialogElement; body: HTMLElement; close: () => void; open: () => void; disableBackground: () => void };
 let activeSheet: Sheet | null = null;
@@ -168,12 +172,38 @@ export function confirmNewRun(root: HTMLElement, onConfirm: () => void) {
   sheet.open();
 }
 
-export function showEvent(root: HTMLElement, event: EventDef, choices: OptionView[], choose: (id: string) => void) {
+function eventProfile(event: EventDef, state: GameState) {
+  const profile = el('div', 'event-profile');
+  const portrait = el('img', 'event-portrait');
+  portrait.src = EVENT_PORTRAIT[event.id] ?? seniorPortrait;
+  portrait.alt = '';
+  portrait.decoding = 'async';
+  const chart = el('dl', 'event-chart');
+  chart.setAttribute('aria-label', '현재 능력치');
+  for (const [stat, label] of [['xp', '경험치'], ['rep', '평판'], ['drone', '드론'], ['gear', '장비'], ['car', '차량']] as const) {
+    const column = el('div', 'chart-column chart-' + stat);
+    const value = state.s[stat];
+    const track = el('span', 'chart-track');
+    track.setAttribute('aria-hidden', 'true');
+    const fill = el('i');
+    const percent = value / STAT_MAX[stat]! * 100;
+    fill.style.height = value ? `max(1px, ${percent}%)` : '0';
+    track.append(fill);
+    const reading = el('dd', '', String(value));
+    reading.append(track);
+    column.append(el('dt', '', label), reading);
+    chart.append(column);
+  }
+  profile.append(portrait, chart);
+  return profile;
+}
+
+export function showEvent(root: HTMLElement, event: EventDef, state: GameState, choices: OptionView[], choose: (id: string) => void) {
   const sheet = createSheet(root, event.title, false);
   sheet.dialog.classList.add('event-sheet');
   const place = el('p','eyebrow',PLACES[event.place].name + ' · 이벤트');
   place.prepend(icon('flag'));
-  sheet.body.append(place, el('p','event-text',event.text));
+  sheet.body.append(eventProfile(event, state), place, el('p','event-text',event.text));
   const answers = el('div','event-choices');
   for (const o of choices) {
     const answer = commitButton(o, '', choose);

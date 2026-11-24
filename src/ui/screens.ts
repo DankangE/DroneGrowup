@@ -4,7 +4,7 @@ import type { EndingId, GameState } from '../game/types.ts';
 import type { Meta } from '../save.ts';
 import { button, countNumber, el, meter } from './dom.ts';
 import { icon, type IconName } from './icons.ts';
-import { coverArt } from './cover.ts';
+import coverUrl from '/art/cover.webp?url';
 
 const endingHints: Record<EndingId, string> = {
   ceo: '기업 · 더 큰 하늘을 향해', chairman: '협회 · 함께 날아가는 사람들', academy: '교육 · 누군가의 첫 비행',
@@ -28,13 +28,17 @@ export function titleScreen(meta: Meta, saved: GameState | null, actions: TitleA
   const main = el('main','title-screen frame');
   const cover = el('section','cover');
   cover.dataset.clipOk = '';
+  const art = el('img', 'cover-image');
+  art.src = coverUrl;
+  art.alt = '';
+  art.decoding = 'async';
   const copy = el('div','cover-copy');
   const tab = el('span','ribbon','드론 커리어 육성 게임');
   tab.prepend(icon('drone'));
   const title = el('h1','game-title');
   title.append(el('span','','파일럿'), document.createTextNode(' '), el('span','','키우기'));
   copy.append(tab,title,el('p','','작은 드론으로 시작하는 나만의 비행 인생'));
-  cover.append(copy, coverArt());
+  cover.append(art, copy);
   const coverFoot = el('div','cover-foot');
   coverFoot.append(pill('sun',`${RULES.maxTurns}분기의 여정`),pill('flag',`${ENDINGS.length}가지 엔딩`));
   cover.append(coverFoot);
