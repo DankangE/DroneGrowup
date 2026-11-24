@@ -91,6 +91,10 @@ export function recordEnding(state: GameState, durationSec: number): { meta: Met
 
 /** The server's `progressAt` this browser last read or wrote for this account; 0 when it never synced. */
 export const markSynced = (progressAt: number) => write(key('synced'), int(progressAt, Number.MAX_SAFE_INTEGER));
+export const syncedAt = () => int(read(key('synced')), Number.MAX_SAFE_INTEGER);
+
+/** The local record as it would be uploaded. */
+export const localProgress = (): Progress => ({ run: loadRun(), meta: loadMeta() });
 
 /**
  * Platform boot hands over the server copy for the logged-in account. The gallery and best score are merged.
@@ -101,7 +105,7 @@ export const markSynced = (progressAt: number) => write(key('synced'), int(progr
 export function adoptServerProgress(server: Progress, userId: string, progressAt: number) {
   scope = `:u:${encodeURIComponent(userId)}`;
   write(key('meta'), mergeMeta(loadMeta(), server.meta));
-  if (progressAt > int(read(key('synced')), Number.MAX_SAFE_INTEGER)) {
+  if (progressAt > syncedAt()) {
     write(key('run'), server.run);
     markSynced(progressAt);
   }

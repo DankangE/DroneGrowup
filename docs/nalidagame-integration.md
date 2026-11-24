@@ -18,6 +18,9 @@ NalidaGame server side needs to register the game. Nothing has been changed in t
   run follows the newer side: if the server's `progressAt` is later than the one this browser last read or
   wrote, the server's run replaces the local one (also when it is `null`, a run finished elsewhere), otherwise
   the local run stays. Choices made offline on one device are dropped if another device saved after them.
+  A page left open while another device saves does not overwrite that record: its next upload sees the newer
+  `progressAt`, stops, and asks for a reload. Local changes that never reached the server (tab closed before
+  the upload) are uploaded at the next boot.
   `npm run playtest:platform` checks these rules against a stand-in SDK.
 - Nicknames and every other server string reach the DOM through `textContent` only. Numbers from the server
   are coerced to integers before display.
@@ -71,7 +74,7 @@ server check is about storage hygiene, not trust. Progress never feeds the leade
 ```jsonc
 {
   "stage": "ceo",          // ending id: ceo | chairman | academy | solo | debtor | smallbiz | director | instructor | employee | pilot | student
-  "score": 20828,          // integer 0..9_999_999
+  "score": 20778,          // integer 0..9_999_999
   "cleared": true,         // false only for "debtor"
   "durationSec": 612,      // integer 0..86_400, wall-clock time of this session of the run
   "detail": {

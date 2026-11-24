@@ -5,7 +5,9 @@
 //   - choices are uploaded to the logged-in account;
 //   - a second account on the same browser sees neither the first account's run nor its gallery;
 //   - when another device moved the account's run forward, this browser continues from the server's run;
-//   - when another device finished the run, this browser does not offer it again.
+//   - when another device finished the run, this browser does not offer it again;
+//   - a page left open does not overwrite a record another device saved after it;
+//   - a choice whose upload never left is uploaded at the next boot.
 //
 //   npm run playtest:platform
 import assert from 'node:assert/strict';
@@ -137,8 +139,28 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   assert.deepEqual(await pageState(), mine);
 
+  // ---- a page left open while another device finishes the run: its next choice does not overwrite the server
+  const theirs = { data: { run: null, meta: { gallery: ['pilot', 'solo'], best: 5000, runs: 2 } }, progressAt: records['user-a'].progressAt + 60_000 };
+  records['user-a'] = theirs;
+  await step();
+  await page.waitForTimeout(3000);
+  assert.deepEqual(records['user-a'], theirs, 'a stale page does not overwrite a newer server record');
+  await open();
+  assert.equal(await hasContinue(), false);
+
+  // ---- a choice whose upload never left (tab closed inside the debounce) is uploaded at the next boot
+  await page.locator('[data-action="new"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
+  await step();
+  await uploaded(1);
+  await step();
+  const unsent = await pageState();
+  await open(); // immediately: the 1.5 s debounce has not fired
+  await uploaded(unsent.turn);
+  assert.deepEqual(restore(records['user-a'].data.run), unsent, 'the unsent choice is uploaded after the reload');
+
   assert.deepEqual(errors, [], 'console errors, page errors or outside requests');
-  console.log('platform playtest OK: account scoping, newer server run adopted, finished run not resurrected');
+  console.log('platform playtest OK: account scoping, newer server run adopted, finished run not resurrected, stale page does not overwrite, unsent choice re-uploaded');
 } finally {
   await browser.close();
   await new Promise((done) => server.httpServer.close(done));

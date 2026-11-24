@@ -10,7 +10,7 @@
 import { RULES } from './game/data.ts';
 import { netWorth } from './game/engine.ts';
 import type { GameState } from './game/types.ts';
-import { adoptServerProgress, cleanProgress, markSynced, mergeMeta, type Progress } from './save.ts';
+import { adoptServerProgress, cleanProgress, localProgress, markSynced, mergeMeta, syncedAt, type Progress } from './save.ts';
 
 export const PLATFORM = import.meta.env.VITE_NG_PLATFORM === '1';
 const GAME_ID = 'pilotgrowup';
@@ -45,7 +45,7 @@ export type BoardRow = { rank: number | null; nickname: string; score: number | 
 
 let sdk: Sdk | null = null;
 let user: User | null = null;
-let lost: '' | 'expired' | 'switched' = '';
+let lost: '' | 'expired' | 'switched' | 'moved' = '';
 
 const int = (v: unknown): number | null => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.floor(Number(v)));
 const err = (code: string): ApiError => Object.assign(new Error(code), { code });
@@ -60,6 +60,7 @@ const GATE: Record<string, [string, string, string?]> = {
   nickname: ['닉네임 설정이 필요합니다', 'nalidagame.online 에서 닉네임을 정하면 게임으로 돌아옵니다.', '닉네임 설정'],
   expired: ['로그인이 만료되었습니다', '다시 로그인하면 이어서 플레이할 수 있습니다.', '다시 로그인'],
   switched: ['다른 계정으로 로그인되었습니다', '다른 탭에서 계정이 바뀌었습니다. 새로고침하면 지금 계정으로 이어서 플레이합니다.', '새로고침'],
+  moved: ['다른 기기에서 플레이했습니다', '이 계정의 진행 상황이 다른 기기에서 바뀌었습니다. 새로고침하면 최신 상태로 이어서 플레이합니다.', '새로고침'],
   down: ['서버에 연결할 수 없습니다', '게임 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.', '다시 시도'],
 };
 
@@ -87,7 +88,7 @@ function showGate(state: keyof typeof GATE) {
     button.type = 'button';
     button.addEventListener('click', () => {
       if (state === 'nickname') goNickname();
-      else if (state === 'switched') location.reload();
+      else if (state === 'switched' || state === 'moved') location.reload();
       else if (state === 'down') void attempt();
       else goLogin();
     });
@@ -117,7 +118,11 @@ async function attempt() {
     if (!me.nickname) return showGate('nickname');
     const saved = await timed(sdk.progress.get());
     user = me;
-    adoptServerProgress(cleanProgress(saved.data), String(me.id), Number(saved.progressAt) || 0);
+    const server = cleanProgress(saved.data);
+    adoptServerProgress(server, String(me.id), Number(saved.progressAt) || 0);
+    // Choices or an ending that never reached the server (tab closed before the upload) go up now.
+    const local = localProgress();
+    if (JSON.stringify(local) !== JSON.stringify(server)) pushProgress(local);
     sdk.onChange((u) => {
       if (!user) return;
       if (!u) lost = 'expired';
@@ -173,11 +178,17 @@ async function flush() {
   const sending = pending;
   try {
     const cur = await timed(sdk.progress.get());
+    if ((Number(cur.progressAt) || 0) > syncedAt()) {
+      // Another device saved since this page last synced: its record stands, this page must reload onto it.
+      pending = null;
+      lost = 'moved';
+      return;
+    }
     const body: Progress = { run: sending.run, meta: mergeMeta(sending.meta, cleanProgress(cur.data).meta) };
     const stamp = Math.max(Date.now(), (Number(cur.progressAt) || 0) + 1);
+    markSynced(stamp); // before the request: a reload while it is in flight must not mistake it for another device
     const r = await timed(sdk.progress.put(body, stamp));
     if (r.conflict) throw err('conflict');
-    markSynced(stamp);
     if (pending === sending) pending = null;
     saveWait = 0;
   } catch (e) {

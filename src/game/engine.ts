@@ -366,6 +366,7 @@ export function choose(prev: GameState, optionId: string): { state: GameState; r
     state.phase = 'action';
     state.eventId = null;
   } else if (picked.effect.end) {
+    state.turn += 1; // the winning action took its quarter too
     finish(state, picked.effect.end, true);
   } else if (!v.free) {
     endTurn(state, result);
