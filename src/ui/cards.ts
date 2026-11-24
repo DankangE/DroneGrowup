@@ -1,5 +1,5 @@
 import { PLACES, RULES, STAT_LABEL } from '../game/data.ts';
-import { derived, num } from '../game/engine.ts';
+import { dateLabel, derived, num } from '../game/engine.ts';
 import type { GameState, OptionView, PlaceId, Stat } from '../game/types.ts';
 import { button, el, meter, paginateRows } from './dom.ts';
 import { icon, type IconName } from './icons.ts';
@@ -50,7 +50,7 @@ export function pager(page: number, total: number, change: (page: number) => voi
 
 export function createPanel(state: GameState, choices: OptionView[], choose: (id: string) => void, initial: Nav, onTitle: () => void) {
   const panel = el('section', 'panel');
-  const caption = el('h2', 'window-title', '이번 분기 할 일');
+  const caption = el('h2', 'window-title', '이번 계절 할 일');
   const body = el('div', 'panel-body');
   panel.append(caption, body);
   const nav = el('nav', 'nav-bar');
@@ -59,14 +59,16 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
   let page = 0, picked = '';
   const navButtons = new Map<Nav, HTMLButtonElement>();
   const d = derived(state);
+  const restMode = state.s.acts === 0 ? 'full' : 'light';
   const shop = choices.filter(o => o.kind === 'shop' || o.kind === 'repair');
   const bank = choices.filter(o => o.kind === 'bank');
   const statEntries: [string,string][] = [['순자산', num(d.netWorth) + '만원']];
   for (const stat of Object.keys(STAT_LABEL) as Stat[]) {
+    if (stat === 'acts') continue;
     if (state.s[stat] || ['stamina', 'theory', 'skill'].includes(stat)) statEntries.push([STAT_LABEL[stat], statValue(stat, state.s[stat])]);
   }
-  for (const line of d.upkeep.lines) statEntries.push(['다음 분기 · ' + line.label, signed(line.amount) + '만원']);
-  statEntries.push(['다음 분기 합계', signed(d.upkeep.total) + '만원']);
+  for (const line of d.upkeep.lines) statEntries.push(['다음 계절 · ' + line.label, signed(line.amount) + '만원']);
+  statEntries.push(['다음 계절 합계', signed(d.upkeep.total) + '만원']);
   const actions = choices.filter(o => !o.free && o.kind !== 'event');
   const logs = [...state.log].reverse();
   function reset() { page = 0; picked = ''; }
@@ -83,19 +85,29 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     const detail = el('article', 'detail');
     const head = el('div', 'detail-head');
     head.append(el('small', '', PLACES[o.place].name), el('h2', '', o.title));
-    detail.append(head, el('p', 'desc', o.desc), outcomes(o), commitButton(o, '실행 · ' + (o.cost ? num(o.cost) + '만원' : '무료'), choose));
+    const rest = o.id === 'rest';
+    const label = rest
+      ? `${o.title} · ${o.sure!.summary}${restMode === 'full' ? ' · 계절 전체' : ''}`
+      : '실행 · ' + (o.cost ? num(o.cost) + '만원' : '무료');
+    const commit = commitButton(o, label, choose);
+    if (rest) {
+      commit.dataset.rest = restMode;
+      commit.setAttribute('aria-label', label);
+    }
+    detail.append(head, el('p', 'desc', o.desc), outcomes(o), commit);
     return detail;
   }
 
   function pickRow(o: OptionView, selected: boolean) {
     const row = button('', 'pick-row' + (o.enabled ? '' : ' locked'), () => { picked = o.id; render(); });
     row.dataset.pick = o.id;
+    if (o.id === 'rest') row.dataset.rest = restMode;
     row.setAttribute('aria-pressed', String(selected));
     const patch = el('span', 'row-icon');
     patch.append(icon(o.enabled ? symbols[o.place] : 'lock'));
     const title = el('strong', '', o.title);
     if (o.roll?.staminaPct) title.append(el('small', 'row-reason', staminaReason(o)));
-    row.append(patch, title, el('small', 'row-price', price(o)),
+    row.append(patch, title, el('small', 'row-price', o.id === 'rest' ? o.sure!.summary : price(o)),
       el('b', o.roll ? 'odds' : 'odds sure', o.roll ? o.roll.chance + '%' : '확정'));
     return row;
   }
@@ -164,7 +176,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     for (const [key,b] of navButtons) b.setAttribute('aria-pressed',String(key === view));
     panel.dataset.view = view;
     const [,label,symbol] = navigation.find(([key]) => key === view)!;
-    caption.replaceChildren(icon(symbol), view === 'home' ? '이번 분기 할 일' : label);
+    caption.replaceChildren(icon(symbol), view === 'home' ? '이번 계절 할 일' : label);
     const header = el('div', 'panel-head');
     body.append(header);
     function pageControl(total: number) {
@@ -211,13 +223,13 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
         facility.append(button(bankHere ? '은행 이용하기' : '상점 · 정비 이용하기', 'secondary', () => switchView(bankHere ? 'bank' : 'shop')));
         body.append(facility);
       } else if (state.phase !== 'event') {
-        const message = tab === 'job' ? '이번 분기에 받은 일감이 없어요.' : '이곳에는 이번 분기 활동이 없어요.';
+        const message = tab === 'job' ? '이번 계절에 받은 일감이 없어요.' : '이곳에는 이번 계절 활동이 없어요.';
         body.append(empty('map', message));
       }
     } else {
       if (view === 'shop' || view === 'bank') {
         const list = view === 'shop' ? shop : bank;
-        const note = el('div','service-note','분기 소모 없음');
+        const note = el('div','service-note','계절 소모 없음');
         note.prepend(icon('check'));
         if (view === 'bank') {
           const balance = el('div', 'bank-balance');
@@ -251,7 +263,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
         header.append(el('span', 'log-count', `최근 기록 ${logs.length}건`));
         const entries = logs.map(entry => {
           const row = el('li', entry.tone);
-          row.append(el('b', '', `${entry.turn + 1}분기`), el('p', '', entry.text));
+          row.append(el('b', '', dateLabel(entry.turn)), el('p', '', entry.text));
           return row;
         });
         pagedGrid(el('ol', 'journal'), entries, 1);

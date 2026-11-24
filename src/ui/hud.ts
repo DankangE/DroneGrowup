@@ -51,7 +51,9 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
   const accounts = el('div', 'accounts');
   accounts.append(counter('money', '자금 (만원)', 'coin'), debt);
   const time = el('div', 'time-strip');
-  time.append(icon('sun'), el('strong', '', `${d.age}세 ${d.quarter}분기`), meter(state.turn, RULES.maxTurns, '비행 경력'), el('span', '', `남은 ${d.turnsLeft}분기`));
+  const acts = el('span', '', `${STAT_LABEL.acts} ${state.s.acts}회`);
+  acts.dataset.acts = String(state.s.acts);
+  time.append(icon('sun'), el('strong', '', d.dateLabel), acts);
 
   status.append(careerPlate, time, accounts);
 
@@ -61,7 +63,8 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
   flag.append(icon('flag'));
   const copy = el('span', 'goal-copy');
   const title = el('span', 'goal-title');
-  title.append(el('small', '', next ? '다음 목표' : '은퇴까지'), el('strong', '', next?.title ?? `남은 ${d.turnsLeft}분기`));
+  if (next) title.append(el('small', '', '다음 목표'));
+  title.append(el('strong', '', next?.title ?? `${RULES.startAge + RULES.maxTurns / 4}세에 은퇴`));
   copy.append(title);
   if (next && !next.enabled) copy.append(el('span', 'goal-reason', next.locks[0]));
   goal.append(flag, copy);
@@ -71,6 +74,10 @@ export function hud(state: GameState, choices: OptionView[], onGoal: (id: string
   const band = staminaBand(state);
   const words = { fresh: '쌩쌩', normal: '', tired: '지침', exhausted: '탈진' };
   const stamina = counter('stamina', ['체력', words[band]].filter(Boolean).join(' · '), 'bolt', STAT_MAX.stamina);
+  stamina.dataset.stamina = band;
+  if (state.phase === 'action' && !choices.some(o => !o.free && o.id !== 'rest' && o.tire <= state.s.stamina)) {
+    stamina.classList.add('stamina-warning');
+  }
   stamina.dataset.staminaBand = band;
   gauges.append(stamina, counter('theory', '이론', 'book'), counter('skill', '조종', 'drone'),
     counter('xp', '경험', 'bolt', STAT_MAX.xp), counter('rep', '평판', 'star', STAT_MAX.rep));

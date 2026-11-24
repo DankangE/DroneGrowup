@@ -41,6 +41,7 @@ let busiest = start; // action phase with the most options on offer
 let event = null; // event phase with the most choices
 let stageUp = null; // a luck roll whose result changes the career stage (the fullest result sheet)
 let anyRoll = null;
+let windDown = null;
 let lastStep = null; // the choice that ends a run
 for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['instructor', 7], ['ceo', 1], ['chairman', 4]]) {
   let state = newGame(seed);
@@ -52,6 +53,7 @@ for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['i
     const id = pick(POLICIES[policy], state, rand);
     const option = offered.find((o) => o.id === id);
     const next = choose(state, id);
+    if (next.result.season?.auto && next.result.crashed) windDown ??= { state, option };
     if (option.roll && state.phase === 'action') {
       anyRoll ??= { state, option };
       if (!stageUp && next.result.stageTo !== next.result.stageFrom && next.state.phase !== 'ended') stageUp = { state, option };
@@ -61,7 +63,7 @@ for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['i
   }
 }
 const rollStep = stageUp ?? anyRoll;
-assert.ok(event && rollStep && lastStep, 'the bot runs reach an event, a luck roll and an ending');
+assert.ok(event && rollStep && lastStep && windDown, 'the bot runs reach an event, a luck roll and an ending');
 
 await build({ root, configFile: join(root, 'vite.config.ts'), logLevel: 'warn' });
 const server = await preview({ root, configFile: join(root, 'vite.config.ts'), preview: { port: 5298, strictPort: false } });
@@ -191,6 +193,17 @@ for (const [width, height] of SIZES) {
     await page.locator('[data-action="continue"]').waitFor({ state: 'visible', timeout: 8000 });
     await check('play-result');
 
+    await resume(windDown.state);
+    await tap(windDown);
+    await page.locator('[data-season-change]').waitFor();
+    await check('play-auto-season-change');
+
+    await resume(start);
+    await tap({ option: { id: 'st_theory' } });
+    await page.locator('[data-action="continue"]').click();
+    await revealOption(page, { id: 'rest' });
+    await page.locator('[data-option="rest"][data-rest="light"]').waitFor();
+    await check('play-light-rest');
     await resume(lastStep.state);
     await tap(lastStep);
     await page.locator('[data-action="continue"]').waitFor({ state: 'visible', timeout: 8000 });

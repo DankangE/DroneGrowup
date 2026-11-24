@@ -19,22 +19,25 @@ engine lacks something the UI needs, leave a `TODO(engine):` note at the call si
 ## Engine API (read `src/game/types.ts` for the exact shapes)
 
 ```ts
-import { newGame, options, choose, derived, currentEvent, endingInfo, num } from './game/engine.ts';
+import { newGame, options, choose, derived, dateLabel, currentEvent, endingInfo, num } from './game/engine.ts';
 import { PLACES, ITEMS, ENDINGS, STAGES, STAT_LABEL, RULES } from './game/data.ts';
 ```
 
 - `newGame(seed)` → `GameState` (JSON-serialisable). Pick the seed with `crypto.getRandomValues` (or `?seed=N` in the URL).
 - `options(state)` → `OptionView[]`: everything the player may look at now. Each has `id`, `kind`
-  (`action | job | event | shop | repair | bank`), `place`, `title`, `desc`, `cost`, `tire`, `free` (does not spend the
-  quarter), `enabled`, `locks` (Korean reasons when disabled), and either `roll` (`chance` in %, signed `staminaPct` in percentage points, `success` and
+  (`action | job | event | shop | repair | bank`), `place`, `title`, `desc`, `cost`, `tire`, `free` (uses no stamina and leaves the season and its action count intact), `enabled`, `locks` (Korean reasons when disabled), and either `roll` (`chance` in %, signed `staminaPct` in percentage points, `success` and
   `fail` outcomes with a ready-made Korean `summary`, optional `crashPct`) or `sure` (one outcome).
 - `choose(state, optionId)` → `{ state, result }`. Pure: returns a new state. `result` has the roll
   (`chance`, `value` 0-99, `success`), `text`, `deltas` (stat changes), `crashed`, `notes`, `upkeep` (the
-  quarter's income / cost lines when the turn advanced), `stageFrom` / `stageTo`, `eventId` (a random event
+  season’s income / cost lines on a season change), `stageFrom` / `stageTo`, `eventId` (a random event
   now waits for a choice), `ended`.
-- `state.phase`: `'action'` (pick what to do this quarter), `'event'` (answer `currentEvent(state)` with one of
+- `state.phase`: `'action'` (pick what to do this season), `'event'` (answer `currentEvent(state)` with one of
   its `ev:N` options), `'ended'` (`state.ending`, `state.score`).
-- `derived(state)` → age, quarter, turns left, credit limit, net worth, stage / rank names, item names, next upkeep.
+- `derived(state)` → age, `season` (0..3), `seasonName` (봄, 여름, 가을, 겨울), `dateLabel` (e.g. “24세 · 봄”), credit limit, net worth, stage / rank names, item names, next upkeep.
+- `dateLabel(turn)` formats the date of any log entry. The calendar starts at 20 and advances one year every four seasons.
+- `result.season?: { from: string; to: string; rest: number; refill: number; auto: boolean }` accompanies the season ledger.
+  The dates are formatted labels, `rest` is the awarded rest and `refill` is the actual seasonal recovery after the stamina cap.
+  Early achievement endings still increment the calendar for scoring and skip the seasonal settlement.
 - `PLACES[placeId]` → `{ name, x, y, desc }` with `x`, `y` in 0-100 map coordinates. `ENDINGS` lists all 11
   endings (`main: true` for the five headline ones).
 
@@ -80,7 +83,7 @@ import { PLATFORM, bootPlatform, nickname, runStatus, fetchLeaderboard, sessionO
 The cover fills the upper part of the screen with the five-character key visual. Phones crop to the centre
 three characters. The two-word “파일럿 키우기” heading uses the local Bagel Fat One font, outlined and tilted
 over the lower artwork alongside the ribbon, one-line pitch and two pills. The console holds three short
-how-to lines as icon rows and the following controls:
+how-to lines about multiple actions, both rests and the +30 seasonal recovery as icon rows and the following controls:
 "새 게임" (large primary), "이어하기" (only with a saved run), "엔딩 도감 n / 11", best score and run count as
 small stat pills. Platform build: nickname pill and a "랭킹" button; the leaderboard opens as a centred popup
 with paged rows.
@@ -101,9 +104,9 @@ action window share the middle row. The toolbar and status bar span both columns
    The raised goal plate stays above the scene. The first instrument is the 체력 meter (0–100). It shows 쌩쌩, 지침 or 탈진 outside the normal band
    and uses warning colours for 지침 and 탈진. The following instruments show 이론, 조종, 경험, 평판,
    the stage's active specialty, equipment levels and drone condition.
-3. **Action window.** The pinstriped navy title bar names the active view, including “이번 분기 할 일”
+3. **Action window.** The pinstriped navy title bar names the active view, including “이번 계절 할 일”
    for 홈. The cream body contains the selected tab's controls and a measured page of content.
-   - **홈** — the quarter's actions (options with `free === false`). A tab row: "전체", "일감" (kind `job`),
+   - **홈** — the season’s actions (options with `free === false`). A tab row: "전체", "일감" (kind `job`),
      "활동" (kind `action`), and "장소: <name>" when a place is selected on the map; the pager sits at the right
      end of the tab row ("1 / 4" between "이전" and "다음" icon buttons). Below it a list of compact rows
      (up to six per page, each at least 44 px tall): place icon, title, cost, and the chance as a percentage ("66%")
@@ -115,15 +118,17 @@ action window share the middle row. The toolbar and status bar span both columns
      picked by default. Rows and the detail button show the up-front stamina cost beside the price
      (무료 · 체력 -14). For a nonzero stamina modifier the row and detail show 체력 여유 +4%p,
      피로 -8%p or 탈진 -20%p. The detail keeps the crash risk and lock reasons visible together.
+     Rest stays available in every action phase. Its button reads “푹 쉰다 · 체력 +60 · 계절 전체” before the
+     first action and “쉬고 계절 넘기기 · 체력 +20” afterwards. Either rest ends the season.
    - **상점** — `shop` and `repair` options as upgrade cards (a grid, paged if needed): item icon, title,
-     effect / description, and the price as the button label. Marked "분기 소모 없음". Locked cards are
+     effect / description, and the price as the button label. Marked "계절 소모 없음". Locked cards are
      dimmed and show the first lock reason.
    - **은행** — `bank` options as cards in the same style, above them a debt gauge (`debt / creditLimit`).
-   - **내 정보** — every non-zero stat with its `STAT_LABEL` as a compact grid, net worth, and the next
-     quarter's upkeep lines. 체력, 이론 and 조종 실력 are listed even at zero. Paged if it does not fit.
+   - **내 정보** — every non-zero stat except `acts` with its `STAT_LABEL` as a compact grid, net worth, and the next
+     season’s upkeep lines. 체력, 이론 and 조종 실력 are listed even at zero. Paged if it does not fit.
    - **기록** — the recent log (`state.log`), newest first, paged.
 4. **Bottom status bar.** At the left, the career emblem accompanies the stage name and rank. The middle
-   shows the age and quarter, completed quarters out of 72, and “남은 N분기”. Two sunken LCD readouts on
+   shows `dateLabel` and “이번 계절 행동 N회” from `state.s.acts`. Two sunken LCD readouts on
    the right show 자금 in 만원 and 빚 / 한도. Debt near or over the limit turns the readout red. The
    readouts stack on narrow screens and retain the count-up and floating change animations.
 
@@ -142,8 +147,9 @@ a pinstriped blue title bar with white text, and a cream inset body. Each fits i
   A nonzero stamina modifier appears on the same reason line as in the action detail. Disabled choices show their locks.
 - **Result** (`data-phase="result"`): after `choose`. For a roll: the luck animation (about 900 ms; a gauge
   with the success zone marked and a needle or rolling number landing on `result.roll.value`), then
-  성공 / 실패, `result.text`, the stat deltas, including 체력, as chips (+green / -red), `notes` (추락!), the quarter's
-  upkeep as one compact line per entry or a single total when there are many, and a stage-up banner when
+  성공 / 실패, `result.text`, the stat deltas, including 체력, as chips (+green / -red), `notes` (추락!), the season change when present
+  (“24세 봄 → 24세 여름”, 휴식 +N when positive and 계절 회복 +N), then the “계절 결산” ledger with one
+  line per entry or a total when there are many. Auto wind-down includes the engine’s note. The sheet also shows a stage-up banner when
   `stageTo !== stageFrom`. One "계속" button. With `prefers-reduced-motion` the animation is skipped.
 
 ### 3. Ending (`data-screen="ending"`)
@@ -171,7 +177,7 @@ fills any discovered portrait frame whose art is unavailable. A "타이틀" butt
   another stage (its `roll.success` or `sure` outcome carries the stage change; use the structured field in
   `OptionView`, not the Korean text). The chip shows "다음 목표 · <title>" and, when it is locked, its first
   lock reason; when it is enabled, "도전 가능". Tapping it shows that option in the 홈 list. Without such
-  an option the chip shows the quarters left until retirement.
+  an option the chip shows “50세에 은퇴”.
 - **Numbers move**: when a result is confirmed, the changed readouts and gauges count / fill to the new value
   and a small "+200" / "-150" pop floats up from them. Popups scale in. The primary button has a pressed
   state. All of it is off under `prefers-reduced-motion: reduce`.
@@ -187,7 +193,10 @@ fills any discovered portrait frame whose art is unavailable. A "타이틀" butt
   - the root element carries `data-screen="title | play | ending | gallery"` and, on the play screen,
     `data-phase="action | event | result"`;
   - title / ending buttons: `data-action="new | continue-run | gallery | title | retry"`;
-  - the 체력 pill carries `data-stamina-band="fresh | normal | tired | exhausted"`;
+  - the 체력 pill carries both `data-stamina` and `data-stamina-band` with value `fresh | normal | tired | exhausted`.
+    Tired, exhausted and insufficient stamina for every offered activity trigger warning colours;
+  - the date panel carries a `data-acts="<count>"` indicator. Rest rows and the `data-option="rest"` button carry `data-rest="full | light"`;
+  - `data-season-change` identifies the result’s date and recovery block;
   - top toolbar navigation buttons: `data-nav="home | shop | bank | info | log"`;
   - tab rows inside a view: `data-tab="<name>"`; choosing a tab or a nav entry shows its first page;
   - pagers: `data-action="page-prev"` and `data-action="page-next"`, with the `disabled` attribute at the ends;

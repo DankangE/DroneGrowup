@@ -1,6 +1,6 @@
 // Rules of 파일럿 키우기: pure functions over a JSON-serialisable GameState. No DOM, no Date, no Math.random;
 // all luck comes from the seeded generator stored in the state, so a seed plus a list of choices replays a run.
-import { ACTIONS, ENDINGS, EVENTS, FLAG_LABEL, ITEMS, LOAN_STEPS, RULES, STAGES, STAT_LABEL, STAT_MAX } from './data.ts';
+import { ACTIONS, ENDINGS, EVENTS, FLAG_LABEL, ITEMS, LOAN_STEPS, REST_LIGHT, RULES, STAGES, STAT_LABEL, STAT_MAX, WIND_DOWN_NOTE } from './data.ts';
 import type {
   ActionDef, Choice, Cond, Derived, Effect, EndingDef, EndingId, EventDef, GameState, ItemKind, OptionKind, OptionView,
   OutcomeView, PlaceId, Result, Stage, Stat, StatMap, UpkeepLine,
@@ -8,7 +8,7 @@ import type {
 
 const STATS = Object.keys(STAT_LABEL) as Stat[];
 const ITEM_KINDS: ItemKind[] = ['drone', 'gear', 'car'];
-const HIDDEN_IN_SUMMARY: Stat[] = ['flights', 'crashes', 'wins', 'losses', 'overdue'];
+const HIDDEN_IN_SUMMARY: Stat[] = ['acts', 'flights', 'crashes', 'wins', 'losses', 'overdue'];
 const LOG_MAX = 30;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -96,6 +96,10 @@ function upkeepLines(state: GameState): UpkeepLine[] {
   return lines;
 }
 
+const ageAt = (turn: number) => RULES.startAge + Math.floor(turn / RULES.seasons.length);
+const seasonAt = (turn: number) => turn % RULES.seasons.length;
+export const dateLabel = (turn: number) => `${ageAt(turn)}세 · ${RULES.seasons[seasonAt(turn)]}`;
+
 export function derived(state: GameState): Derived {
   const lines = upkeepLines(state);
   const st = STAGES[state.stage];
@@ -104,9 +108,10 @@ export function derived(state: GameState): Derived {
     return [kind, { level, name: level > 0 ? ITEMS[kind].levels[level - 1].name : ITEMS[kind].none }];
   })) as Derived['items'];
   return {
-    age: RULES.startAge + Math.floor(state.turn / 4),
-    quarter: (state.turn % 4) + 1,
-    turnsLeft: Math.max(0, RULES.maxTurns - state.turn),
+    age: ageAt(state.turn),
+    season: seasonAt(state.turn),
+    seasonName: RULES.seasons[seasonAt(state.turn)],
+    dateLabel: dateLabel(state.turn),
     creditLimit: creditLimit(state),
     netWorth: netWorth(state),
     stageName: st.name,
@@ -171,10 +176,14 @@ export function staminaBand(state: GameState): 'fresh' | 'normal' | 'tired' | 'e
   return 'normal';
 }
 
-const staminaBonus = {
-  fresh: RULES.stamina.freshBonus, normal: 0,
-  tired: -RULES.stamina.tiredPenalty, exhausted: -RULES.stamina.exhaustedPenalty,
-};
+function staminaBonus(state: GameState) {
+  switch (staminaBand(state)) {
+    case 'fresh': return RULES.stamina.freshBonus;
+    case 'normal': return 0;
+    case 'tired': return -RULES.stamina.tiredPenalty;
+    case 'exhausted': return -RULES.stamina.exhaustedPenalty;
+  }
+}
 
 function flightOdds(state: GameState, choice: Choice): { bonus: number; crashPct: number } {
   const f = RULES.flight;
@@ -210,7 +219,7 @@ function view(state: GameState, id: string, kind: OptionKind, place: PlaceId, ch
   const payPct = flight ? STAGES[state.stage].jobPct : 100;
   const o: OptionView = { id, kind, place, title: choice.title, desc: choice.desc, free: kind === 'shop' || kind === 'repair' || kind === 'bank', cost, tire, enabled: locks.length === 0, locks, missing };
   if (choice.roll) {
-    const staminaPct = staminaBonus[staminaBand(state)];
+    const staminaPct = staminaBonus(state);
     o.roll = { staminaPct, chance: chanceOf(state, choice, flight, staminaPct), success: outcome(state, choice.roll.success, payPct), fail: outcome(state, choice.roll.fail, 100) };
     if (flight) o.roll.crashPct = flightOdds(state, choice).crashPct;
   } else if (choice.effect) o.sure = outcome(state, choice.effect, 100);
@@ -242,7 +251,7 @@ function freeChoices(state: GameState): { id: string; kind: OptionKind; place: P
   const room = creditLimit(state) - s.debt;
   for (const amount of LOAN_STEPS) {
     out.push({ id: `loan:${amount}`, kind: 'bank', place: 'bank', choice: {
-      title: `대출 ${amount}만원`, desc: `분기 이자 ${RULES.interestPct}%. 남은 한도 ${num(Math.max(0, room))}만원.`,
+      title: `대출 ${amount}만원`, desc: `계절 이자 ${RULES.interestPct}%. 남은 한도 ${num(Math.max(0, room))}만원.`,
       need: room >= amount ? undefined : { max: { debt: Math.max(0, creditLimit(state) - amount) } },
       effect: { text: `${amount}만원을 빌렸다.`, add: { money: amount, debt: amount } },
     } });
@@ -269,7 +278,9 @@ function resolve(state: GameState): Map<string, Resolved> {
     ev?.choices.forEach((choice, i) => map.set(`ev:${i}`, { kind: 'event', place: ev.place, choice, flight: false }));
   } else if (state.phase === 'action') {
     for (const a of ACTIONS as ActionDef[]) {
-      if (met(state, a.when)) map.set(a.id, { kind: a.flight ? 'job' : 'action', place: a.place, choice: a, flight: a.flight === true });
+      if (!met(state, a.when)) continue;
+      const choice = a.id === 'rest' && state.s.acts > 0 ? REST_LIGHT : a;
+      map.set(a.id, { kind: a.flight ? 'job' : 'action', place: a.place, choice, flight: a.flight === true });
     }
     for (const f of freeChoices(state)) map.set(f.id, { kind: f.kind, place: f.place, choice: f.choice, flight: false });
   }
@@ -312,8 +323,9 @@ function pickEvent(state: GameState): EventDef | null {
   return null;
 }
 
-/** End of a quarter: upkeep, organisation drift, the debt check, the clock, and maybe a random event. */
-function endTurn(state: GameState, result: Result) {
+/** Settle the season before recovering stamina and rolling the next season's event. */
+function endSeason(state: GameState, result: Result, rest: number, auto: boolean) {
+  const from = dateLabel(state.turn);
   const lines = upkeepLines(state);
   const total = lines.reduce((sum, l) => sum + l.amount, 0);
   result.upkeep = { lines, total };
@@ -331,8 +343,13 @@ function endTurn(state: GameState, result: Result) {
   state.s.overdue = over ? state.s.overdue + 1 : 0;
   if (over) result.notes.push(`대출 한도 초과 — 연체 경고 ${state.s.overdue}/${RULES.overdueStrikes}`);
   state.turn += 1;
+  state.s.acts = 0;
+  result.season = { from, to: dateLabel(state.turn), rest, refill: 0, auto };
   if (state.s.overdue >= RULES.overdueStrikes) return finish(state, 'debtor', false);
   if (state.turn >= RULES.maxTurns) return finish(state, timeoutEnding(state), false);
+  const beforeRefill = state.s.stamina;
+  setStat(state, 'stamina', beforeRefill + RULES.seasonRefill);
+  result.season.refill = state.s.stamina - beforeRefill;
   const ev = pickEvent(state);
   if (ev) {
     state.phase = 'event';
@@ -388,11 +405,19 @@ export function choose(prev: GameState, optionId: string): { state: GameState; r
   if (state.phase === 'event') {
     state.phase = 'action';
     state.eventId = null;
-  } else if (picked.effect.end) {
-    state.turn += 1; // the winning action took its quarter too
-    finish(state, picked.effect.end, true);
+  } else if (optionId === 'rest') {
+    endSeason(state, result, picked.view.add.stamina!, false);
   } else if (!v.free) {
-    endTurn(state, result);
+    setStat(state, 'acts', s.acts + 1);
+    if (picked.effect.end) {
+      state.turn += 1;
+      finish(state, picked.effect.end, true);
+    } else if (!ACTIONS.some(a => a.id !== 'rest' && (a.tire ?? 0) <= s.stamina && met(state, a.when))) {
+      setStat(state, 'stamina', s.stamina + RULES.rest.light);
+      result.notes.push(WIND_DOWN_NOTE);
+      state.log.push({ turn: state.turn, text: WIND_DOWN_NOTE, tone: 'info' });
+      endSeason(state, result, RULES.rest.light, true);
+    }
   }
   if (state.ending) result.ended = state.ending;
   if (state.log.length > LOG_MAX) state.log.splice(0, state.log.length - LOG_MAX);
@@ -418,7 +443,7 @@ export function restore(raw: unknown): GameState | null {
   for (const k of STATS) {
     let value = d.s[k];
     if (!Object.hasOwn(d.s, k)) {
-      if (k === 'stamina') value = state.s.stamina;
+      if (k === 'stamina' || k === 'acts') value = state.s[k];
       if (k === 'theory' || k === 'skill') {
         if (!int(d.s.xp)) return null;
         value = Math.max(Math.floor(d.s.xp / 2), state.stage === 'student' ? 0 : 30);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
 import { ACTIONS, ENDINGS, EVENTS, PLACES, RULES, STAGES, STAT_MAX } from '../src/game/data.ts';
-import { choose, creditLimit, derived, newGame, options, restore, staminaBand } from '../src/game/engine.ts';
+import { choose, creditLimit, dateLabel, derived, newGame, options, restore, staminaBand } from '../src/game/engine.ts';
 import type { GameState, Stage, StatMap } from '../src/game/types.ts';
 
 /** A fresh run moved to a stage with some stats set, as plain data (the state is JSON all the way down). */
@@ -21,7 +21,10 @@ const option = (state: GameState, id: string) => {
 function botRun(policy: string, seed: number): GameState {
   let state = newGame(seed);
   const rand = botRandom(seed);
-  for (let i = 0; i < 3000 && state.phase !== 'ended'; i++) state = choose(state, pick(POLICIES[policy], state, rand)).state;
+  for (let i = 0; i < 20000 && state.phase !== 'ended'; i++) {
+    if (state.phase === 'action') assert.equal(option(state, 'rest').enabled, true);
+    state = choose(state, pick(POLICIES[policy], state, rand)).state;
+  }
   return state;
 }
 
@@ -67,7 +70,7 @@ test('stamina costs are paid before outcomes and rest recovers up to the cap', (
   assert.equal(flight.tire, tire);
   const { state: next, result } = choose(state, flight.id);
   assert.equal(result.deltas.stamina, -tire);
-  assert.equal(next.s.stamina, 0);
+  assert.equal(next.s.stamina, RULES.rest.light + RULES.seasonRefill);
   state.s.stamina = 0;
   const locked = option(state, flight.id);
   assert.equal(locked.enabled, false);
@@ -94,6 +97,10 @@ test('action and event cards use the pre-payment stamina band and roll their dis
       const shown = option(state, id).roll!;
       assert.equal(shown.staminaPct, adjustment);
       assert.equal(shown.chance, base + adjustment);
+      if (!option(state, id).enabled) {
+        assert.throws(() => choose(state, id), /disabled/);
+        continue;
+      }
       let wins = 0;
       for (let seed = 1; seed <= 1000; seed++) {
         const { result } = choose({ ...state, rng: seed * 2654435761 >>> 0 }, id);
@@ -110,11 +117,16 @@ test('failed flight crash frequency tracks the displayed risk across skill, cond
   const f = RULES.flight;
   for (const [skill, cond, stamina, risk] of [
     [0, 100, 60, f.crashPct], [205, 100, 60, f.crashPct - f.skillCrashCap],
+    [45, 35, 30, f.crashPct + f.crashLowCondPct - Math.floor(45 / f.skillPer)],
     [45, 35, 10, f.crashPct + f.crashLowCondPct - Math.floor(45 / f.skillPer) + RULES.stamina.exhaustedCrashPct],
   ]) {
     const state = at('pilot', { stamina, skill, cond, drone: 1 }, ['licensed']);
     const shown = option(state, 'job_event').roll!.crashPct;
     assert.equal(shown, risk);
+    if (stamina < option(state, 'job_event').tire) {
+      assert.throws(() => choose(state, 'job_event'), /disabled/);
+      continue;
+    }
     let crashes = 0, failures = 0;
     for (let seed = 1; seed <= 8000; seed++) {
       const { result } = choose({ ...state, rng: seed * 2654435761 >>> 0 }, 'job_event');
@@ -142,7 +154,7 @@ test('the licence is paid for with a loan and opens the pilot stage', () => {
   state.s.theory = 30;
   state.s.skill = 30;
   state = choose(state, 'loan:500').state;
-  assert.equal(state.turn, 0, 'a loan does not spend the quarter');
+  assert.equal(state.turn, 0, 'a loan does not spend the season');
   assert.equal(state.s.debt, 500);
   for (let seed = 1; state.stage === 'student' && seed < 50; seed++) {
     const tried = choose({ ...state, rng: seed }, 'st_exam');
@@ -186,7 +198,7 @@ test('money never goes negative: a shortfall turns into debt', () => {
   assert.equal(next.s.debt, -result.upkeep!.total);
 });
 
-test('debt over the limit for three quarters in a row ends the run as 빚쟁이', () => {
+test('debt over the limit for three seasons in a row ends the run as 빚쟁이', () => {
   let state = at('pilot', {}, ['licensed']);
   state.s.debt = creditLimit(state) * 2;
   for (let i = 0; i < RULES.overdueStrikes && state.phase !== 'ended'; i++) {
@@ -208,7 +220,7 @@ test('빚쟁이 scores zero even with assets left', () => {
   assert.equal(state.score, 0);
 });
 
-test('a run that reaches the last quarter ends with the ending of its career', () => {
+test('a run that reaches the last season ends with the ending of its career', () => {
   const cases: [Stage, StatMap, string][] = [
     ['student', {}, 'student'], ['pilot', {}, 'pilot'], ['employee', {}, 'employee'], ['instructor', {}, 'instructor'],
     ['solo', {}, 'solo'], ['director', {}, 'director'], ['company', { staff: 1, contracts: 2 }, 'smallbiz'],
@@ -220,6 +232,8 @@ test('a run that reaches the last quarter ends with the ending of its career', (
     state.turn = RULES.maxTurns - 1;
     state = choose(state, 'rest').state;
     assert.equal(state.phase, 'ended', stage);
+    assert.equal(state.turn, 120);
+    assert.equal(derived(state).age, 50);
     assert.equal(state.ending, ending, stage);
     assert.equal(options(state).length, 0);
     assert.ok(Number.isInteger(state.score) && state.score >= 0);
@@ -261,7 +275,10 @@ test('the tables are consistent and no event can trap the player', () => {
   const ids = ACTIONS.map((a) => a.id);
   assert.equal(new Set(ids).size, ids.length, 'action ids are unique');
   assert.equal(new Set(EVENTS.map((e) => e.id)).size, EVENTS.length, 'event ids are unique');
-  for (const a of ACTIONS) assert.ok(a.place in PLACES, a.id);
+  for (const a of ACTIONS) {
+    assert.ok(a.place in PLACES, a.id);
+    if (a.id !== 'rest') assert.ok((a.tire ?? 0) > 0, a.id);
+  }
   for (const e of EVENTS) {
     assert.ok(e.place in PLACES, e.id);
     assert.ok(e.choices.length >= 2, e.id);
@@ -317,4 +334,117 @@ test('v1 saves migrate only absent stats and validate every supplied value', () 
       assert.equal(restore({ ...raw, s: { ...raw.s, [stat]: 2.5 } }), null);
     }
   }
+});
+
+
+test('two actions and a bank visit stay in spring until a light rest settles it once', () => {
+  let state = newGame(42);
+  for (const [id, acts] of [['st_theory', 1], ['loan:100', 1], ['st_sim', 2]] as const) {
+    const next = choose(state, id);
+    assert.equal(next.state.turn, 0);
+    assert.equal(next.state.s.acts, acts);
+    assert.equal(next.state.rng, state.rng);
+    assert.equal(next.result.upkeep, undefined);
+    assert.equal(next.result.season, undefined);
+    state = next.state;
+  }
+  assert.equal(state.s.money, 150);
+  assert.equal(state.s.stamina, 65);
+  const rest = option(state, 'rest');
+  assert.equal(rest.title, '쉬고 계절 넘기기');
+  assert.equal(rest.sure!.add.stamina, 20);
+  assert.equal(rest.sure!.summary, '체력 +20');
+  const next = choose(state, rest.id);
+  assert.equal(next.state.turn, 1);
+  assert.equal(next.state.s.acts, 0);
+  assert.equal(next.result.deltas.stamina, 20);
+  assert.equal(next.state.s.stamina, 100);
+  assert.deepEqual(next.result.season, { from: '20세 · 봄', to: '20세 · 여름', rest: 20, refill: 15, auto: false });
+  assert.equal(next.result.upkeep!.total, -22);
+  assert.equal(next.state.s.money, 128);
+});
+
+test('first-action rest gives full rest followed by a capped season refill', () => {
+  for (const [initial, refill] of [[0, 30], [30, 10], [80, 0]]) {
+    const state = at('student', { stamina: initial });
+    const rest = option(state, 'rest');
+    assert.equal(rest.title, '푹 쉰다');
+    assert.equal(rest.sure!.add.stamina, 60);
+    assert.equal(rest.sure!.summary, '체력 +60');
+    const next = choose(state, rest.id);
+    assert.equal(next.state.turn, 1);
+    assert.equal(next.state.s.acts, 0);
+    assert.deepEqual(next.result.season, { from: dateLabel(0), to: dateLabel(1), rest: 60, refill, auto: false });
+    assert.equal(next.state.s.stamina, Math.min(100, initial + 60 + refill));
+  }
+});
+
+test('wind-down checks offered actions after stage changes, ignoring their other locks', () => {
+  const pilot = at('pilot', { stamina: 30, money: 0 }, ['licensed']);
+  const first = choose(pilot, 'self_study');
+  assert.equal(first.state.s.stamina, 15);
+  assert.equal(first.result.season, undefined);
+  const next = choose(first.state, 'self_study');
+  assert.deepEqual(next.result.season, { from: dateLabel(0), to: dateLabel(1), rest: 20, refill: 30, auto: true });
+  assert.equal(next.state.s.stamina, 50);
+  assert.equal(next.state.turn, 1);
+  assert.equal(next.state.s.acts, 0);
+  assert.ok(next.result.notes.some(note => note.includes('체력이 바닥났다')));
+
+  const instructor = at('instructor', { stamina: 20 }, ['licensed', 'member']);
+  // After quitting, the pilot no longer has the 10-stamina quit action available.
+  assert.equal(choose(instructor, 'inst_quit').result.season?.auto, true);
+  // At 10 stamina the only affordable tire belongs to a choice locked by its fee.
+  const broke = at('pilot', { stamina: 25, money: 0 }, ['licensed']);
+  assert.equal(choose(broke, 'self_study').result.season, undefined);
+});
+
+test('event responses leave a fresh season available for a full rest', () => {
+  const state = newGame(3);
+  state.phase = 'event';
+  state.eventId = 'scholarship';
+  const next = choose(state, 'ev:1');
+  assert.equal(next.state.phase, 'action');
+  assert.equal(next.state.turn, 0);
+  assert.equal(next.state.s.acts, 0);
+  assert.equal(next.result.upkeep, undefined);
+  assert.equal(next.result.season, undefined);
+  assert.equal(option(next.state, 'rest').sure!.add.stamina, 60);
+});
+
+test('v1 quarter saves keep their calendar position and resume with a fresh action count', () => {
+  assert.equal(derived(newGame(1)).dateLabel, '20세 · 봄');
+  for (const oldTraining of [true, false]) {
+    const raw = JSON.parse(JSON.stringify(at('pilot', { stamina: 54, xp: 80, skill: 7, theory: 8 })));
+    raw.turn = 17;
+    delete raw.s.acts;
+    if (oldTraining) for (const key of ['stamina', 'theory', 'skill']) delete raw.s[key];
+    const state = restore(raw)!;
+    assert.equal(state.turn, 17);
+    assert.equal(state.s.acts, 0);
+    assert.equal(state.s.stamina, oldTraining ? 100 : 54);
+    assert.equal(state.s.skill, oldTraining ? 40 : 7);
+    assert.equal(state.s.theory, oldTraining ? 40 : 8);
+    const { age, season, seasonName, dateLabel: label } = derived(state);
+    assert.deepEqual([age, season, seasonName, label], [24, 1, '여름', '24세 · 여름']);
+    assert.equal(choose(state, 'self_study').state.s.acts, 1);
+  }
+});
+
+
+test('a career-winning action keeps its early score bonus and skips season settlement', () => {
+  const state = at('director', { rank: 1, support: 100, money: 1000, stamina: 35, acts: 2 });
+  state.turn = 17;
+  for (let rng = 1; rng <= 50; rng++) {
+    const next = choose({ ...state, rng }, 'dir_chair');
+    if (!next.result.roll!.success) continue;
+    assert.equal(next.result.ended, 'chairman');
+    assert.equal(next.state.turn, 18);
+    assert.equal(next.result.season, undefined);
+    assert.equal(next.result.upkeep, undefined);
+    assert.equal(next.state.s.stamina, 0);
+    assert.equal(next.state.score, 550 + 8000 + (120 - 18) * 50);
+    return;
+  }
+  assert.fail('expected a winning seed');
 });

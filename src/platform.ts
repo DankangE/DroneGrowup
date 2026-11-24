@@ -4,8 +4,9 @@
 //
 // Server contract for game 'pilotgrowup' (docs/nalidagame-integration.md):
 //   progress = { run: GameState | null, meta: { gallery: EndingId[], best: int, runs: int } }   last write wins on progressAt
+//   run.turn counts seasons (0..120), run.s.acts counts actions this season (0..99).
 //   play     = { stage: EndingId, score: int, cleared: bool, durationSec: int,
-//                detail: { turns, age, netWorth, debt, wins, losses, flights, crashes } }
+//                detail: { turns: 0..120, age: 20..50, netWorth, debt, wins, losses, flights, crashes } }
 // Nicknames come from the API and are untrusted: they only ever reach the DOM through textContent.
 import { RULES } from './game/data.ts';
 import { netWorth } from './game/engine.ts';

@@ -88,6 +88,10 @@ function plannedPick(policy: Policy, state: GameState, opts: OptionView[]): stri
   const turn = opts.filter(o => !o.free && (o.enabled || onlyNeedsStamina(o)));
   const s = state.s;
   const enabled = (id: string) => byId.get(id)?.enabled === true;
+  const readyAfterRest = (id: string) => {
+    const option = byId.get(id);
+    return option && (option.enabled || onlyNeedsStamina(option));
+  };
   const room = () => (enabled('loan:500') ? 'loan:500' : enabled('loan:100') ? 'loan:100' : null);
   const earn = (saving: boolean): string => {
     if (!saving && s.debt > 0 && s.money >= 250 && enabled('repay:100')) return 'repay:100';
@@ -125,17 +129,20 @@ function plannedPick(policy: Policy, state: GameState, opts: OptionView[]): stri
   if (policy.style !== 'gambler' && s.cond < 60 && enabled('repair')) return 'repair';
   const flies = opts.some((o) => o.kind === 'job');
   if (flies && s.drone === 0 && policy.items.drone > 0) return pursue(byId.get('buy:drone')!, 0) ?? earn(true);
-  // A company or an academy that loses money every quarter fixes that before it chases anything else.
+  // A company or an academy that loses money every season fixes that before it chases anything else.
   if (state.stage === 'company' && policy.style !== 'gambler') {
-    if (s.contracts >= s.staff * 2 && enabled('co_hire')) return 'co_hire';
+    if (s.contracts >= s.staff * RULES.company.perStaff && readyAfterRest('co_hire')) return 'co_hire';
     if (s.contracts < 6 && s.money < 700) return 'co_sales';
   }
   if (state.stage === 'academy') {
-    if (s.students >= 8 + s.staff * 8 - 2 && s.staff < 4) return enabled('ac_hire') ? 'ac_hire' : fund();
-    if (s.students < 8 + s.staff * 8 - 4 && s.students < 30) return enabled('ac_ad') || onlyNeedsStamina(byId.get('ac_ad')!) ? 'ac_ad' : fund();
+    const seats = RULES.academy.baseSeats + s.staff * RULES.academy.seatsPerStaff;
+    if (s.students >= seats - 2 && s.staff < 4) return readyAfterRest('ac_hire') ? 'ac_hire' : fund();
+    if (s.students < seats - 4 && s.students < 30) return readyAfterRest('ac_ad') ? 'ac_ad' : fund();
   }
   if (s.money < 40 && s.debt > 0 && policy.style !== 'gambler') return earn(true);
-  if (policy.style !== 'gambler' && s.money >= s.debt + 2500 && enabled('repay:all')) return 'repay:all';
+  // Clearing the debt must leave the goal's cost in hand, or the bot would borrow it straight back.
+  const goalCost = policy.goals.map((id) => byId.get(id)).find((o) => o !== undefined)?.cost ?? 0;
+  if (policy.style !== 'gambler' && s.money >= s.debt + 2500 + goalCost && enabled('repay:all')) return 'repay:all';
 
   const upgrade = (borrowFor: boolean): string | null => {
     if (!flies) return null;
@@ -174,7 +181,7 @@ export function botRandom(seed: number): () => number {
 /** Plays a whole run. Throws on a softlock (no enabled option, or a run that does not end). */
 export function playRun(policy: Policy, state: GameState, step: (s: GameState, id: string) => GameState, seed: number): GameState {
   const rand = botRandom(seed);
-  for (let i = 0; i < 3000 && state.phase !== 'ended'; i++) state = step(state, pick(policy, state, rand));
+  for (let i = 0; i < 20000 && state.phase !== 'ended'; i++) state = step(state, pick(policy, state, rand));
   if (state.phase !== 'ended') throw new Error('run did not end');
   return state;
 }

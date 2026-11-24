@@ -9,7 +9,7 @@ export type EndingId =
 /** Every number of a run lives in one flat record, so conditions and effects in data.ts can name any of them. */
 export type Stat =
   | 'money' | 'debt' | 'xp' | 'rep' | 'biz' | 'teach' | 'net'
-  | 'stamina' | 'theory' | 'skill'
+  | 'acts' | 'stamina' | 'theory' | 'skill'
   | 'drone' | 'gear' | 'car' | 'cond'
   | 'rank' | 'staff' | 'contracts' | 'value' | 'round' | 'students' | 'level' | 'support'
   | 'overdue' | 'flights' | 'crashes' | 'wins' | 'losses';
@@ -159,6 +159,7 @@ export type Result = {
   notes: string[];
   /** Present when the turn advanced. */
   upkeep?: { lines: UpkeepLine[]; total: number };
+  season?: { from: string; to: string; rest: number; refill: number; auto: boolean };
   stageFrom: Stage;
   stageTo: Stage;
   /** A random event started and now waits for a choice. */
@@ -168,8 +169,9 @@ export type Result = {
 
 export type Derived = {
   age: number;
-  quarter: number;
-  turnsLeft: number;
+  season: number;
+  seasonName: string;
+  dateLabel: string;
   creditLimit: number;
   netWorth: number;
   stageName: string;

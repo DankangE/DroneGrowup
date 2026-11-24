@@ -11,11 +11,13 @@
 //
 //   npm run playtest:platform
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
+import { revealOption } from './ui-driver.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { choose, options, restore } from '../src/game/engine.ts';
+import { choose, restore } from '../src/game/engine.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'node_modules/.cache/dist-platform');
@@ -74,16 +76,16 @@ try {
   };
   const hasContinue = async () => (await page.locator('[data-action="continue-run"]').count()) > 0;
   const pageState = () => page.evaluate(() => window.__game.state());
-  const step = async () => {
-    const id = await page.evaluate(() => window.__game.options().find((o) => o.enabled && !o.free).id);
-    const target = page.locator(`[data-option="${id}"]:visible`).first();
-    if (!(await target.count())) await page.locator('[data-action="all"]').first().click();
-    await target.click();
+  const step = async (id = 'st_theory') => {
+    await (await revealOption(page, { id })).click();
     await page.locator('[data-action="continue"]').click();
   };
-  const uploaded = async (turn) => {
-    for (let i = 0; i < 80 && (records[current]?.data?.run?.turn ?? -1) < turn; i++) await page.waitForTimeout(100);
-    assert.ok((records[current]?.data?.run?.turn ?? -1) >= turn, `the run at turn ${turn} reached the server`);
+  const uploaded = async expected => {
+    for (let i = 0; i < 80; i++) {
+      if (isDeepStrictEqual(records[current]?.data?.run, expected)) return;
+      await page.waitForTimeout(100);
+    }
+    assert.deepEqual(records[current]?.data?.run, expected, 'the exact mid-season save reached the server');
   };
 
   // ---- account A plays three choices; they reach A's server record
@@ -93,7 +95,9 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   for (let i = 0; i < 3; i++) await step();
   const local = await pageState();
-  await uploaded(local.turn);
+  assert.equal(local.turn, 0);
+  assert.equal(local.s.acts, 3);
+  await uploaded(local);
   assert.deepEqual(restore(records['user-a'].data.run), local, "the server holds account A's run");
   const keys = await page.evaluate(() => Object.keys(localStorage));
   assert.ok(keys.length > 0 && keys.every((k) => k.includes(':u:user-a')), `every key is scoped to the account: ${keys}`);
@@ -106,15 +110,16 @@ try {
   await page.locator('[data-action="new"]').click();
   await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   await step();
-  await uploaded(1);
+  await uploaded(await pageState());
   assert.deepEqual(records['user-b'].data.meta, { gallery: [], best: 0, runs: 0 }, "account B's record has none of A's gallery");
   assert.notDeepEqual(records['user-b'].data.run, records['user-a'].data.run);
 
-  // ---- account A again, after another device played five more choices
+  // ---- account A again, after another device played another action in the same season
   current = 'user-a';
   let ahead = restore(records['user-a'].data.run);
-  for (let i = 0; i < 5; i++) ahead = choose(ahead, options(ahead).find((o) => o.enabled && !o.free).id).state;
-  assert.ok(ahead.turn > local.turn && ahead.phase !== 'ended');
+  ahead = choose(ahead, 'st_theory').state;
+  assert.equal(ahead.turn, local.turn);
+  assert.equal(ahead.s.acts, local.s.acts + 1);
   records['user-a'] = { data: { run: ahead, meta: records['user-a'].data.meta }, progressAt: records['user-a'].progressAt + 60_000 };
   await open();
   assert.equal(await hasContinue(), true);
@@ -133,7 +138,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   await step();
   const mine = await pageState();
-  await uploaded(mine.turn);
+  await uploaded(mine);
   await open();
   await page.locator('[data-action="continue-run"]').click();
   await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
@@ -152,11 +157,11 @@ try {
   await page.locator('[data-action="new"]').click();
   await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   await step();
-  await uploaded(1);
+  await uploaded(await pageState());
   await step();
   const unsent = await pageState();
   await open(); // immediately: the 1.5 s debounce has not fired
-  await uploaded(unsent.turn);
+  await uploaded(unsent);
   assert.deepEqual(restore(records['user-a'].data.run), unsent, 'the unsent choice is uploaded after the reload');
 
   assert.deepEqual(errors, [], 'console errors, page errors or outside requests');

@@ -36,15 +36,15 @@ export function titleScreen(meta: Meta, saved: GameState | null, actions: TitleA
   copy.append(tab,title,el('p','','작은 드론으로 시작하는 나만의 비행 인생'));
   cover.append(art, copy);
   const coverFoot = el('div','cover-foot');
-  coverFoot.append(pill('sun',`${RULES.maxTurns}분기의 여정`),pill('flag',`${ENDINGS.length}가지 엔딩`));
+  coverFoot.append(pill('sun',`${RULES.startAge}세부터 ${RULES.startAge + RULES.maxTurns / 4}세까지`),pill('flag',`${ENDINGS.length}가지 엔딩`));
   cover.append(coverFoot);
   const console = el('div','title-console');
   const guide = el('section','guide');
   guide.append(el('h2','section-heading','비행 안내'));
   for (const [symbol,title,body] of [
-    ['map','장소 선택','지도를 눌러 이번 분기의 활동을 골라요.'],
-    ['drone','비행 도전','성공률을 보고 도전해 경험을 쌓아요.'],
-    ['flag','진로 개척','기체와 자금을 돌보며 내 엔딩을 찾아요.'],
+    ['map','사계절','체력이 닿는 만큼 한 계절에 여러 번 행동해요.'],
+    ['drone','휴식',`첫 행동으로 쉬면 +${RULES.rest.full}, 활동 후엔 +${RULES.rest.light}.`],
+    ['flag','계절 전환',`쉬면 다음 계절로 넘어가고 체력이 +${RULES.seasonRefill} 올라요.`],
   ] as const) {
     const row = el('div','guide-row');
     const mark = el('span','guide-icon');

@@ -82,7 +82,7 @@ export function createSheet(root: HTMLElement, title: string, dismissible = true
 export function showResult(root: HTMLElement, result: Result, onContinue: () => void) {
   const sheet = createSheet(root, '이번 선택의 결과', false);
   sheet.dialog.classList.add('result-sheet');
-  const place = el('p', 'eyebrow', `${PLACES[result.place].name} · ${result.free ? '분기 소모 없음' : '나의 이야기'}`);
+  const place = el('p', 'eyebrow', `${PLACES[result.place].name} · ${result.free ? '계절 소모 없음' : '나의 이야기'}`);
   sheet.body.append(place, el('h3', 'result-title', result.title));
   const live = el('div', 'result-live');
   live.setAttribute('aria-live', 'polite');
@@ -95,7 +95,7 @@ export function showResult(root: HTMLElement, result: Result, onContinue: () => 
     live.replaceChildren(el('p', `result-status ${result.roll?.success === false ? 'negative' : 'positive'}`, result.roll ? result.roll.success ? '성공! 잘 날았어요.' : '실패, 그래도 경험은 남아요.' : '선택을 마쳤어요.'), el('p', 'result-text', result.text));
     const chips = el('div', 'delta-chips');
     for (const [stat, value] of Object.entries(result.deltas) as [Stat, number][]) {
-      if (!value) continue;
+      if (!value || stat === 'acts') continue;
       const beneficial = stat === 'debt' ? value < 0 : value > 0;
       chips.append(el('span', `delta-chip ${beneficial ? 'positive' : 'negative'}`, `${STAT_LABEL[stat]} ${value > 0 ? '+' : ''}${statValue(stat, value)}`));
     }
@@ -107,10 +107,19 @@ export function showResult(root: HTMLElement, result: Result, onContinue: () => 
       stage.append(icon('flag'), el('span', '', `${STAGES[result.stageFrom].name} → ${STAGES[result.stageTo].name}`), el('strong', '', '새로운 비행이 시작됩니다!'));
       reveal.append(stage);
     }
+    if (result.season) {
+      const { from, to, rest, refill } = result.season;
+      const change = el('div', 'ledger');
+      change.dataset.seasonChange = '';
+      change.append(el('b', '', `${from.replace(' · ', ' ')} → ${to.replace(' · ', ' ')}`));
+      const gains = [rest > 0 ? `휴식 +${rest}` : '', `계절 회복 +${refill}`].filter(Boolean);
+      change.append(el('p', '', gains.join(' · ')));
+      reveal.append(change);
+    }
     if (result.upkeep) {
       const ledger = el('div', 'ledger');
       const {lines, total} = result.upkeep;
-      ledger.append(el('b', '', '이번 분기 결산'));
+      ledger.append(el('b', '', '계절 결산'));
       for (const line of lines.length <= 3 ? lines : [{ label: '합계', amount: total }]) {
         ledger.append(el('p', '', line.label + ' ' + signed(line.amount) + '만원'));
       }

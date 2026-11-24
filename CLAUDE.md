@@ -1,7 +1,8 @@
 # DroneGrowup — 파일럿 키우기
 
 A top-view career choice game with luck: a drone-school student grows into a pilot, employee, instructor,
-association leader, solo operator or drone-company CEO over 72 quarters, and ends in one of 11 endings.
+association leader, solo operator or drone-company CEO from age 20 to 50, with up to 120 seasons and 11 endings.
+Spring, summer, autumn and winter each allow several actions. Rest ends a season. When stamina falls below the cost of every offered non-rest action, the player rests automatically.
 Static browser game, Korean text, mobile first.
 
 ## Stack
@@ -33,8 +34,12 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
   page or inner scroll, content outside the viewport, cut-off content, tap targets under 44 px or text under
   11 px. `LAYOUT_SHOTS=<dir>` also writes a screenshot per view.
 - `npm run simulate` — 11 bot policies x 300 seeds; fails on a softlock, a run that does not end, or an
-  ending outside 2%..30%, a planner bot that never rests (or rests over 35% of turns). `SIM_RUNS=1000` for
-  more seeds.
+  ending outside 2%..30%, zero full rests for a planner or more than 35% full-rest seasons, a score above
+  100,000, or a mean outside 1..4 actions per season. Reports decisions and estimated play time.
+  `SIM_RUNS=1000` increases the seed count. `SIM_TUNE=./tune.ts` loads a default function taking the
+  data module, so a tuning pass can change its tables in memory.
+- `npm run build && node scripts/season-shots.mjs` — capture six season and stamina views at both sizes
+  under `docs/screenshots/seasons/`.
 - `npm run dominance` — fails when one choice of an event (or one action against another with the same
   requirements) is at least as good in every stat, or when `docs/balance-report.md` is stale.
   `npm run dominance -- --write` regenerates that report; run it after changing a number in `data.ts`.

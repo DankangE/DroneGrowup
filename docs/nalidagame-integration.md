@@ -44,10 +44,10 @@ NalidaGame server side needs to register the game. Nothing has been changed in t
     "v": 1,
     "seed": 123456789,               // uint32
     "rng": 987654321,                // uint32
-    "turn": 17,                      // 0..72
+    "turn": 17,                      // 0..120
     "stage": "pilot",                // student | pilot | employee | instructor | academy | solo | company | director
     "phase": "action",               // action | event  (an ended run is never stored)
-    "s": { "money": 340, "debt": 300, "...": 0 },   // integer stats, see below
+    "s": { "money": 340, "debt": 300, "acts": 2, "...": 0 },   // integer stats; acts = 0..99 non-rest actions this season, defaults to 0 in older saves
     "flags": ["licensed"],           // subset of: licensed, examiner, member, tech
     "eventId": null,                 // string id of the waiting event, or null
     "seen": { "typhoon": 12 },       // event id -> turn it last fired
@@ -65,7 +65,7 @@ NalidaGame server side needs to register the game. Nothing has been changed in t
 
 Suggested server validation: body is an object with exactly `run` and `meta`; total size under 32 KB;
 `meta.gallery` only contains the eleven ending ids; `meta.best` and `meta.runs` are integers in range; `run`
-is null or an object with `v === 1`, integer `turn` in 0..72 and a known `stage`. The client re-validates and
+is null or an object with `v === 1`, integer `turn` in 0..120 and a known `stage`. The client re-validates and
 clamps everything it reads back (`restore` in `src/game/engine.ts`, `cleanProgress` in `src/save.ts`), so the
 server check is about storage hygiene, not trust. Progress never feeds the leaderboard.
 
@@ -107,8 +107,8 @@ Old local saves (no such keys) are migrated the same way by `restore`; `tests/en
   "cleared": true,         // false only for "debtor"
   "durationSec": 612,      // integer 0..86_400, wall-clock time of this session of the run
   "detail": {
-    "turns": 64,           // integer 1..72
-    "age": 36,             // integer 20..38
+    "turns": 64,           // integer 0..120
+    "age": 36,             // integer 20..50
     "netWorth": 10828,     // integer -9_999_999..9_999_999
     "debt": 0,             // integer 0..9_999_999
     "wins": 41,            // integer 0..9_999  (rolls won)
@@ -123,10 +123,10 @@ Validation bounds the server hook should enforce (reject with 400 otherwise):
 
 - every number is an integer inside the range above; `stage` is one of the eleven ids; no extra keys;
 - `stage === "debtor"` ⇔ `cleared === false`, and then `score === 0`;
-- `detail.turns === 72` unless `stage` is `ceo`, `chairman`, `academy` or `debtor` (the only endings that can
+- `detail.turns === 120` unless `stage` is `ceo`, `chairman`, `academy` or `debtor` (the only endings that can
   come early); `detail.age === 20 + floor(turns / 4)`;
-- `score <= max(0, netWorth) + 10_000 + (72 - turns) * 50` (the largest ending bonus plus the early bonus);
-- `wins + losses <= 2 * turns + 10`, `flights <= turns`, `crashes <= losses`;
+- `score <= max(0, netWorth) + 10_000 + (120 - turns) * 50` (the largest ending bonus plus the early bonus);
+- `flights <= wins + losses`, `crashes <= min(flights, losses)`;
 - a soft plausibility cap for review rather than rejection: `score > 400_000` (the simulation's maximum over
   3,300 bot runs is far below this).
 
@@ -140,3 +140,7 @@ wanted later, the run is deterministic: `seed` plus the ordered option ids repro
 - No NalidaGame PR: its open PR #5 touches the same API files. The games row and the two hooks above are the
   whole server-side change.
 - No hosting decision for the flagged build, and no CORS / cookie origin entry for it.
+
+## Seasons update
+
+TODO

@@ -96,11 +96,11 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
   let clicks = 0;
   let reloaded = false;
   while (state.phase !== 'ended') {
-    assert.ok(clicks++ < 2500, 'run did not end');
+    assert.ok(clicks++ < 20000, 'run did not end');
     const shown = await page.evaluate(() => window.__game.options().map((o) => `${o.id}:${o.enabled}`));
     assert.deepEqual(shown, options(state).map((o) => `${o.id}:${o.enabled}`), 'the page offers what the engine offers');
-    if (state.turn === reloadAt && !reloaded && state.phase === 'action') {
-      // Leave mid-run and come back: the title offers 이어하기 and the run continues from the same state.
+    if (state.turn === reloadAt && !reloaded && state.phase === 'action' && state.s.acts > 0) {
+      // Leave mid-season and come back: the title offers 이어하기 and the run continues from the same state.
       reloaded = true;
       await page.reload();
       await page.locator('[data-action="continue-run"]').click();
@@ -110,6 +110,7 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
     const id = pick(POLICIES[policy], state, rand);
     const option = options(state).find((o) => o.id === id);
     const next = choose(state, id);
+    if (state.phase === 'action') assert.equal(await page.locator('[data-acts]').getAttribute('data-acts'), String(state.s.acts));
     for (const [name, at] of Object.entries(shotsAt)) {
       if (at === 'event' ? state.phase === 'event' : at === 'roll' ? !!option.roll && option.kind === 'job' : state.turn === at && state.phase === 'action') {
         if (at === 0) await shot(page, `${name}-map`);
@@ -134,6 +135,9 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
       const go = page.locator('[data-action="continue"]');
       await go.waitFor({ state: 'visible', timeout: 8000 });
       assert.equal(await phase(page), 'result');
+      await page.waitForFunction(() => document.querySelector('[data-action="continue"]:enabled'));
+      assert.equal(await page.locator('[data-season-change]').count(), Number(!!next.result.season));
+      assert.equal(await page.getByText('계절 결산', { exact: true }).count(), Number(!!next.result.upkeep));
       await go.click();
       state = next.state;
     }
@@ -160,6 +164,7 @@ try {
   endings.push(first.ending);
   await noSideScroll(phone, 'ending');
   await shot(phone, '390-ending');
+  await phone.waitForFunction(score => document.querySelector('.score b')?.textContent?.replaceAll(',', '') === String(score), first.score);
   const text = await phone.locator('[data-screen="ending"]').innerText();
   assert.ok(text.includes(String(first.score).replace(/\B(?=(\d{3})+(?!\d))/g, ',')) || text.includes(String(first.score)), 'the ending screen shows the score');
   await phone.locator('[data-action="gallery"]').first().click();

@@ -53,10 +53,13 @@ try {
     await page.locator('[data-nav="info"]').click();
     await shot('info');
     await resume(tiredPilot(30));
-    await (await revealOption(page, { id: 'rest' })).click();
+    await revealOption(page, { id: 'rest' });
+    await page.locator('[data-option="rest"][data-rest="full"]').click();
+    await page.locator('[data-season-change]').waitFor();
     await page.locator('.delta-chip', { hasText: '체력 +60' }).waitFor();
     await shot('rest-result');
     await resume(tiredPilot(8));
+    await page.locator('[data-stamina="exhausted"]').waitFor();
     await page.locator('[data-tab="job"]').click();
     await revealOption(page, { id: 'job_spray' });
     await page.locator('.detail .lock-reasons', { hasText: '체력 부족' }).waitFor();

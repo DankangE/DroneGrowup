@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { ACTIONS, EVENTS, RULES, STAGES, STAT_LABEL } from '../src/game/data.ts';
 import type { ActionDef, Choice, Cond, Effect, Stage, Stat, StatMap } from '../src/game/types.ts';
 
-const stats = Object.keys(STAT_LABEL) as Stat[];
+const stats = (Object.keys(STAT_LABEL) as Stat[]).filter(stat => stat !== 'acts');
 const stages = Object.keys(STAGES) as Stage[];
 const bad = new Set<Stat>(['debt', 'crashes', 'overdue', 'losses']);
 const points = ['하한', '기본', '상한'];

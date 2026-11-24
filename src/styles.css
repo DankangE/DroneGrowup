@@ -178,7 +178,6 @@ svg { display: block; }
 .time-strip strong { font-size: 12px; }
 :is(.flight-deck,.sheet,.gallery-screen) .meter { border-radius: 0; background: #a4b4bd; }
 :is(.flight-deck,.sheet,.gallery-screen) .meter > span { background: #387b91; }
-.time-strip .meter { height: 5px; }
 .counter { position: relative; font-variant-numeric: tabular-nums; }
 .accounts { display: grid; gap: 2px; }
 .accounts .counter { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; color: #d2f4d0; background: #253c38; }
@@ -252,7 +251,7 @@ svg { display: block; }
 .gauges .icon { display: none; }
 .gauges .counter-copy { flex-direction: column; align-items: center; gap: 0; }
 .gauges [data-stamina-band] { flex: 1.45; }
-.gauges [data-stamina-band="tired"] { background: #fff0c5; color: #734800; }
+.gauges .stamina-warning,.gauges [data-stamina-band="tired"] { background: #fff0c5; color: #734800; }
 .gauges [data-stamina-band="exhausted"] { background: #fbe0dd; color: #832927; }
 [data-stamina-band="tired"] .meter span { background: #aa7419; }
 [data-stamina-band="exhausted"] .meter span { background: #a63c36; }
@@ -492,7 +491,6 @@ svg { display: block; }
   .time-strip { display: flex; align-items: center; gap: 8px; padding: 6px 12px; }
   .time-strip .icon { display: block; width: 18px; }
   .time-strip strong,.time-strip > span { flex: none; font-size: 13px; }
-  .time-strip .meter { height: 8px; }
   .accounts { grid-template-columns: repeat(2,auto); gap: 4px; }
   .accounts .counter { min-width: 112px; gap: 7px; padding: 3px 8px; }
   .accounts .counter > .icon { display: block; }
