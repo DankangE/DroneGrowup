@@ -142,6 +142,16 @@ test('debt over the limit for three quarters in a row ends the run as 빚쟁이'
   assert.equal(state.score, 0);
 });
 
+test('빚쟁이 scores zero even with assets left', () => {
+  let state = at('pilot', { money: 5000 }, ['licensed']);
+  state.s.debt = creditLimit(state) * 2;
+  for (let i = 0; i < RULES.overdueStrikes * 2 && state.phase !== 'ended'; i++) {
+    state = choose(state, state.phase === 'event' ? options(state).find((o) => o.enabled)!.id : 'rest').state;
+  }
+  assert.equal(state.ending, 'debtor');
+  assert.equal(state.score, 0);
+});
+
 test('a run that reaches the last quarter ends with the ending of its career', () => {
   const cases: [Stage, StatMap, string][] = [
     ['student', {}, 'student'], ['pilot', {}, 'pilot'], ['employee', {}, 'employee'], ['instructor', {}, 'instructor'],

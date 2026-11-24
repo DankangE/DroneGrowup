@@ -5,8 +5,10 @@ import { restore } from './game/engine.ts';
 import type { EndingId, GameState } from './game/types.ts';
 import { PLATFORM, pushProgress, submitRun } from './platform.ts';
 
-const RUN_KEY = 'pilot-growup:run:v1';
-const META_KEY = 'pilot-growup:meta:v1';
+// On the platform build every key carries the account id, so two accounts on one browser never share a run or
+// a gallery, and nothing is read from the standalone keys. Until the login is known the scope is 'none'.
+let scope = PLATFORM ? ':u:none' : '';
+const key = (name: 'run' | 'meta' | 'synced') => `pilot-growup:${name}:v1${scope}`;
 const SCORE_MAX = 9_999_999;
 
 /** What survives a finished run: which endings were seen, the best score, how many runs ended. */
@@ -50,23 +52,23 @@ export function cleanProgress(raw: unknown): Progress {
   return { run: run && run.phase !== 'ended' ? run : null, meta: cleanMeta(d.meta) };
 }
 
-export const loadMeta = (): Meta => cleanMeta(read(META_KEY));
+export const loadMeta = (): Meta => cleanMeta(read(key('meta')));
 
 /** The unfinished run to continue, or null. */
 export function loadRun(): GameState | null {
-  const run = restore(read(RUN_KEY));
+  const run = restore(read(key('run')));
   return run && run.phase !== 'ended' ? run : null;
 }
 
 /** Call after every choice. A finished run is not kept (use `recordEnding` for that). */
 export function saveRun(state: GameState) {
   const run = state.phase === 'ended' ? null : state;
-  write(RUN_KEY, run);
+  write(key('run'), run);
   if (PLATFORM) pushProgress({ run, meta: loadMeta() });
 }
 
 export function clearRun() {
-  write(RUN_KEY, null);
+  write(key('run'), null);
   if (PLATFORM) pushProgress({ run: null, meta: loadMeta() });
 }
 
@@ -78,8 +80,8 @@ export function recordEnding(state: GameState, durationSec: number): { meta: Met
   const firstTime = !before.gallery.includes(ending);
   const newBest = state.score > before.best;
   const meta = mergeMeta(before, { gallery: [ending], best: int(state.score, SCORE_MAX), runs: before.runs + 1 });
-  write(META_KEY, meta);
-  write(RUN_KEY, null);
+  write(key('meta'), meta);
+  write(key('run'), null);
   if (PLATFORM) {
     pushProgress({ run: null, meta });
     submitRun(state, durationSec);
@@ -87,9 +89,20 @@ export function recordEnding(state: GameState, durationSec: number): { meta: Met
   return { meta, firstTime, newBest };
 }
 
-/** Platform boot hands over the server copy: the gallery and best score are merged, a server run wins over none. */
-export function adoptServerProgress(server: Progress) {
-  const meta = mergeMeta(loadMeta(), server.meta);
-  write(META_KEY, meta);
-  if (server.run && !loadRun()) write(RUN_KEY, server.run);
+/** The server's `progressAt` this browser last read or wrote for this account; 0 when it never synced. */
+export const markSynced = (progressAt: number) => write(key('synced'), int(progressAt, Number.MAX_SAFE_INTEGER));
+
+/**
+ * Platform boot hands over the server copy for the logged-in account. The gallery and best score are merged.
+ * The run follows the newer side: if the server record changed since this browser last synced (another device
+ * played on, or finished the run), the server's run replaces the local one, also when it is null. Otherwise
+ * the local run stays, because it is the same or has choices that were not uploaded yet.
+ */
+export function adoptServerProgress(server: Progress, userId: string, progressAt: number) {
+  scope = `:u:${encodeURIComponent(userId)}`;
+  write(key('meta'), mergeMeta(loadMeta(), server.meta));
+  if (progressAt > int(read(key('synced')), Number.MAX_SAFE_INTEGER)) {
+    write(key('run'), server.run);
+    markSynced(progressAt);
+  }
 }

@@ -10,7 +10,7 @@
 import { RULES } from './game/data.ts';
 import { netWorth } from './game/engine.ts';
 import type { GameState } from './game/types.ts';
-import { adoptServerProgress, cleanProgress, mergeMeta, type Progress } from './save.ts';
+import { adoptServerProgress, cleanProgress, markSynced, mergeMeta, type Progress } from './save.ts';
 
 export const PLATFORM = import.meta.env.VITE_NG_PLATFORM === '1';
 const GAME_ID = 'pilotgrowup';
@@ -117,7 +117,7 @@ async function attempt() {
     if (!me.nickname) return showGate('nickname');
     const saved = await timed(sdk.progress.get());
     user = me;
-    adoptServerProgress(cleanProgress(saved.data));
+    adoptServerProgress(cleanProgress(saved.data), String(me.id), Number(saved.progressAt) || 0);
     sdk.onChange((u) => {
       if (!user) return;
       if (!u) lost = 'expired';
@@ -174,8 +174,10 @@ async function flush() {
   try {
     const cur = await timed(sdk.progress.get());
     const body: Progress = { run: sending.run, meta: mergeMeta(sending.meta, cleanProgress(cur.data).meta) };
-    const r = await timed(sdk.progress.put(body, Math.max(Date.now(), (Number(cur.progressAt) || 0) + 1)));
+    const stamp = Math.max(Date.now(), (Number(cur.progressAt) || 0) + 1);
+    const r = await timed(sdk.progress.put(body, stamp));
     if (r.conflict) throw err('conflict');
+    markSynced(stamp);
     if (pending === sending) pending = null;
     saveWait = 0;
   } catch (e) {

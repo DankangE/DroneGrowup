@@ -13,6 +13,12 @@ NalidaGame server side needs to register the game. Nothing has been changed in t
   'pilotgrowup', ... })`, blocks the game behind a login / nickname gate, loads server progress once at boot,
   saves progress after every choice (debounced 1.5 s, one request at a time, read-merge-write with a retry on
   conflict), submits one play record per finished run and shows the top 20.
+- Local copies on the platform build are stored per account (`pilot-growup:<name>:v1:u:<user id>`), so two
+  accounts on one browser never share a run or a gallery. At boot the gallery and best score are merged; the
+  run follows the newer side: if the server's `progressAt` is later than the one this browser last read or
+  wrote, the server's run replaces the local one (also when it is `null`, a run finished elsewhere), otherwise
+  the local run stays. Choices made offline on one device are dropped if another device saved after them.
+  `npm run playtest:platform` checks these rules against a stand-in SDK.
 - Nicknames and every other server string reach the DOM through `textContent` only. Numbers from the server
   are coerced to integers before display.
 

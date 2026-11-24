@@ -20,14 +20,15 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
 - `src/save.ts` — localStorage run save and the ending gallery / best score.
 - `src/platform.ts` — nalidagame.online login, server save and leaderboard, behind `VITE_NG_PLATFORM=1`.
 - `scripts/simulate.ts` — balance simulation, `scripts/trace.ts <policy> [seed]` — one bot run step by step,
-  `scripts/playtest.mjs` — headless run through the real UI.
+  `scripts/playtest.mjs` — headless run through the real UI, `scripts/playtest-platform.mjs` — the platform
+  build's save rules against a stand-in SDK.
 - `docs/design.md` (rules and the balance table), `docs/story-events.md` (story and event script),
   `docs/ui-spec.md` (UI contract and test hooks), `docs/nalidagame-integration.md` (server-side contract).
 
 ## Commands
 
 - `npm run dev` — dev server (PORT env, default 5173).
-- `npm run verify` — typecheck, build, unit tests, simulation, headless playtest. Run it before every PR.
+- `npm run verify` — typecheck, build, unit tests, simulation, both headless playtests. Run it before every PR.
 - `npm run simulate` — 11 bot policies x 300 seeds; fails on a softlock, a run that does not end, or an
   ending outside 2%..30%. `SIM_RUNS=1000` for more seeds.
 - `VITE_NG_PLATFORM=1 npm run build` — the nalidagame.online build.

@@ -267,7 +267,8 @@ function finish(state: GameState, ending: EndingId, early: boolean) {
   state.phase = 'ended';
   state.eventId = null;
   state.ending = ending;
-  state.score = clamp(Math.max(0, netWorth(state)) + bonus, 0, RULES.score.max);
+  // A debtor scores nothing, even when three overdue strikes came with assets still on the books.
+  state.score = ending === 'debtor' ? 0 : clamp(Math.max(0, netWorth(state)) + bonus, 0, RULES.score.max);
   state.log.push({ turn: state.turn, text: `엔딩 — ${info.title}`, tone: ending === 'debtor' ? 'bad' : 'good' });
 }
 
