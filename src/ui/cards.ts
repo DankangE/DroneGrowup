@@ -83,7 +83,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     const detail = el('article', 'detail');
     const head = el('div', 'detail-head');
     head.append(el('small', '', PLACES[o.place].name), el('h2', '', o.title));
-    detail.append(head, el('p', 'desc', o.desc), outcomes(o), commitButton(o, '실행 · ' + price(o), choose));
+    detail.append(head, el('p', 'desc', o.desc), outcomes(o), commitButton(o, '실행 · ' + (o.cost ? num(o.cost) + '만원' : '무료'), choose));
     return detail;
   }
 

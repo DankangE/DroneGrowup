@@ -28,12 +28,16 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
 ## Commands
 
 - `npm run dev` — dev server (PORT env, default 5173).
-- `npm run verify` — typecheck, build, unit tests, simulation, both headless playtests, layout check. Run it before every PR.
+- `npm run verify` — typecheck, build, unit tests, simulation, dominance check, both headless playtests, layout check. Run it before every PR.
 - `npm run layout` — every screen, tab and pager page at 390x844, 360x740, 1280x800 and 1366x768; fails on
   page or inner scroll, content outside the viewport, cut-off content, tap targets under 44 px or text under
   11 px. `LAYOUT_SHOTS=<dir>` also writes a screenshot per view.
 - `npm run simulate` — 11 bot policies x 300 seeds; fails on a softlock, a run that does not end, or an
-  ending outside 2%..30%. `SIM_RUNS=1000` for more seeds.
+  ending outside 2%..30%, a planner bot that never rests (or rests over 35% of turns). `SIM_RUNS=1000` for
+  more seeds.
+- `npm run dominance` — fails when one choice of an event (or one action against another with the same
+  requirements) is at least as good in every stat, or when `docs/balance-report.md` is stale.
+  `npm run dominance -- --write` regenerates that report; run it after changing a number in `data.ts`.
 - `VITE_NG_PLATFORM=1 npm run build` — the nalidagame.online build.
 
 ## Rules

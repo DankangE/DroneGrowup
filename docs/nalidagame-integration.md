@@ -69,6 +69,35 @@ is null or an object with `v === 1`, integer `turn` in 0..72 and a known `stage`
 clamps everything it reads back (`restore` in `src/game/engine.ts`, `cleanProgress` in `src/save.ts`), so the
 server check is about storage hygiene, not trust. Progress never feeds the leaderboard.
 
+### Balance update: three new stats in `run.s` (server change needed)
+
+The balance update adds three integer stats to `run.s`. Everything else in the progress shape, including
+`"v": 1`, is unchanged, and the play record is unchanged.
+
+| key | range | meaning |
+|---|---|---|
+| `stamina` | 0..100 | 체력, starts at 100 |
+| `theory` | 0..999 | 이론 |
+| `skill` | 0..999 | 조종 실력 |
+
+What the merged hook (`apps/api/src/games/pilotgrowup.js`) does today: `cleanRun` copies only the keys in its
+`STATS` list, so it accepts the new payload but silently drops these three. Nothing is rejected. The effect is
+that a run loaded back from the server (another device, or cleared local storage) has no `stamina`, `theory`
+or `skill`; the client then treats it like an old save and fills them in (`stamina` 100, `theory` and `skill`
+= `max(floor(xp / 2), 30 once licensed)`), so the run continues but with reset stamina and estimated
+training stats.
+
+Needed in NalidaGame, one line:
+
+- add `'stamina', 'theory', 'skill'` to `STATS` in `apps/api/src/games/pilotgrowup.js` (the existing
+  `±STAT_LIMIT` clamp is enough; the client clamps to the ranges above on restore).
+
+Not needed: no `v` bump, no SQL change, no change to `scorePlay`, `detail` keys or `MAX_SCORE`. The
+simulation maximum after this update is 25,455 over 11,000 bot runs (was 28,736), still under the ~30,000
+note next to `MAX_SCORE = 150_000`.
+
+Old local saves (no such keys) are migrated the same way by `restore`; `tests/engine.test.ts` covers it.
+
 ## Play record (`POST /plays`)
 
 ```jsonc
