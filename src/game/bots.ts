@@ -1,7 +1,7 @@
 // Bot players for the balance simulation (scripts/simulate.ts), the unit tests and the headless playtest
 // (which asks a bot what to tap next and then taps the real button). They only read what a player sees:
 // the option views, plus the public chance modifiers in data.ts.
-import { ACTIONS } from './data.ts';
+import { ACTIONS, RULES } from './data.ts';
 import { options } from './engine.ts';
 import type { GameState, ItemKind, OptionView, Stat } from './types.ts';
 
@@ -23,6 +23,7 @@ const plan = (goals: string[], items: [number, number, number], extra: Partial<P
 export const POLICIES: Record<string, Policy> = {
   ceo: plan(['co_ipo', 'corp_found', 'solo_register', 'st_exam'], [4, 3, 2]),
   chairman: plan(['dir_chair', 'dir_vice', 'assoc_run', 'assoc_join', 'st_exam'], [2, 1, 1]),
+  director: plan(['dir_vice', 'assoc_run', 'assoc_join', 'st_exam'], [2, 1, 1]),
   academy: plan(['ac_accredit', 'inst_examiner', 'academy_found', 'inst_course', 'st_exam'], [1, 1, 0]),
   solo: plan(['solo_sales', 'solo_register', 'st_exam'], [4, 3, 2]),
   employee: plan(['emp_promo3', 'emp_promo2', 'emp_promo1', 'emp_apply', 'st_exam'], [1, 1, 0]),
@@ -85,7 +86,7 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
   const pursue = (o: OptionView, depth: number): string | null => {
     if (o.enabled) {
       const mod = ACTIONS.find((a) => a.id === o.id)?.roll?.mods?.[0];
-      if (o.roll && mod && o.roll.chance < policy.minChance && s[mod.stat] < mod.over + (mod.per * mod.cap) / mod.pct) {
+      if (o.roll && mod && o.roll.chance < policy.minChance && RULES.maxTurns - state.turn > 10 && s[mod.stat] < mod.over + (mod.per * mod.cap) / mod.pct) {
         const trainer = best(turn.filter((t) => t.id !== o.id && ev(t, mod.stat) > 0), (t) => ev(t, mod.stat));
         if (trainer) return trainer.id;
       }
@@ -95,9 +96,12 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
     if (!lack || depth > 3) return null;
     if (lack.stat === 'money') return fund();
     const givers = opts.filter((g) => g.id !== o.id && g.kind !== 'bank' && ev(g, lack.stat) > 0);
-    const ready = best(givers.filter((g) => g.enabled), (g) => ev(g, lack.stat) - g.cost / 1000);
-    if (ready) return ready.id;
-    const next = best(givers, (g) => ev(g, lack.stat));
+    // Givers are ranked by how much of the stat they bring, with the money they make or cost as the tie-breaker.
+    const gain = (g: OptionView) => ev(g, lack.stat) * (lack.stat === 'value' ? 0.05 : 30) + moneyEv(g);
+    // A giver that only lacks money counts as ready: the bot funds it instead of settling for a weaker free one.
+    const ready = best(givers.filter((g) => g.locks.length === (g.missing.some((m) => m.stat === 'money') ? 1 : 0)), gain);
+    if (ready) return ready.enabled ? ready.id : fund();
+    const next = best(givers, gain);
     return next ? pursue(next, depth + 1) : null;
   };
 
@@ -110,26 +114,33 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
     if (s.contracts < 6 && s.money < 700) return 'co_sales';
   }
   if (state.stage === 'academy') {
-    if (s.students >= 8 + s.staff * 8 - 2 && enabled('ac_hire')) return 'ac_hire';
-    if (s.students < 26 && s.money < 300 && enabled('ac_ad')) return 'ac_ad';
+    if (s.students >= 8 + s.staff * 8 - 2 && s.staff < 4) return enabled('ac_hire') ? 'ac_hire' : fund();
+    if (s.students < 8 + s.staff * 8 - 4 && s.students < 30) return enabled('ac_ad') ? 'ac_ad' : fund();
   }
   if (s.money < 40 && s.debt > 0 && policy.style !== 'gambler') return earn(true);
+  if (policy.style !== 'gambler' && s.money >= s.debt + 2500 && enabled('repay:all')) return 'repay:all';
 
-  const goal = policy.goals.map((id) => byId.get(id)).find((o) => o !== undefined);
-  const step = goal ? pursue(goal, 0) : null;
-  if (step) return step;
-
-  if (flies) {
+  const upgrade = (borrowFor: boolean): string | null => {
+    if (!flies) return null;
     for (const kind of ['drone', 'gear', 'car'] as ItemKind[]) {
       const buy = byId.get(`buy:${kind}`);
       if (!buy || s[kind] >= policy.items[kind]) continue;
       if (buy.enabled && (policy.style === 'gambler' || s.money >= buy.cost + 60)) return buy.id;
-      if (policy.style === 'gambler' && room()) return room()!;
+      if (borrowFor && room()) return room();
     }
+    return null;
+  };
+  // Freelancers reinvest first: better gear opens better jobs, which pays for everything after.
+  if (state.stage === 'pilot' || state.stage === 'solo') {
+    const buy = upgrade(policy.style === 'gambler');
+    if (buy) return buy;
   }
-  return earn(false);
-}
 
+  const goal = policy.goals.map((id) => byId.get(id)).find((o) => o !== undefined);
+  const step = goal ? pursue(goal, 0) : null;
+  if (step) return step;
+  return upgrade(false) ?? earn(false);
+}
 /** Small deterministic float generator for the bots (kept apart from the game's own seeded luck). */
 export function botRandom(seed: number): () => number {
   let a = seed >>> 0;

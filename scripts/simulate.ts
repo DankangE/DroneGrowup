@@ -14,6 +14,7 @@ const MAX_SHARE = 30;
 const names = Object.keys(POLICIES);
 const table: Record<string, Record<string, number>> = {};
 const scores: Record<string, number[]> = {};
+const turns: Record<string, number[]> = {};
 const problems: string[] = [];
 let total = 0;
 
@@ -35,17 +36,19 @@ for (const name of names) {
     const id = state.ending as EndingId;
     table[name][id] = (table[name][id] ?? 0) + 1;
     (scores[id] ??= []).push(state.score);
+    (turns[id] ??= []).push(state.turn);
     total++;
   }
 }
 
 const pct = (n: number, of: number) => ((n * 100) / of).toFixed(1).padStart(5) + '%';
 console.log(`\n파일럿 키우기 balance simulation: ${names.length} policies x ${runs} seeds = ${total} runs\n`);
-console.log('ending'.padEnd(12) + 'share'.padStart(7) + 'runs'.padStart(7) + '  median score   max score  title');
+console.log('ending'.padEnd(12) + 'share'.padStart(7) + 'runs'.padStart(7) + '  median score   max score  median age  title');
 for (const e of ENDINGS) {
   const n = names.reduce((sum, p) => sum + (table[p][e.id] ?? 0), 0);
   const sc = (scores[e.id] ?? [0]).sort((a, b) => a - b);
-  console.log(e.id.padEnd(12) + pct(n, total).padStart(7) + String(n).padStart(7) + String(sc[sc.length >> 1]).padStart(14) + String(sc[sc.length - 1]).padStart(12) + '  ' + e.title);
+  const tn = (turns[e.id] ?? [0]).sort((a, b) => a - b);
+  console.log(e.id.padEnd(12) + pct(n, total).padStart(7) + String(n).padStart(7) + String(sc[sc.length >> 1]).padStart(14) + String(sc[sc.length - 1]).padStart(12) + String(RULES.startAge + Math.floor(tn[tn.length >> 1] / 4)).padStart(12) + '  ' + e.title);
   const share = (n * 100) / total;
   if (share < MIN_SHARE) problems.push(`ending ${e.id} is at ${share.toFixed(1)}% (< ${MIN_SHARE}%)`);
   if (share > MAX_SHARE) problems.push(`ending ${e.id} is at ${share.toFixed(1)}% (> ${MAX_SHARE}%)`);

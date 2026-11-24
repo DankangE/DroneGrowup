@@ -15,7 +15,7 @@ export const RULES = {
   overduePct: 120,
   overdueStrikes: 3,
   /** A run that ends with net worth below this is the 빚쟁이 ending whatever the career. */
-  debtorNetWorth: -300,
+  debtorNetWorth: -1500,
   flight: {
     wear: 12, // drone condition lost per flight
     failWear: 15, // more on a failed flight that did not crash
@@ -29,10 +29,10 @@ export const RULES = {
   repairPerLevel: 10,
   itemResalePct: 50,
   score: { turnBonus: 50, max: 9_999_999 },
-  academy: { tuition: 14, baseSeats: 8, seatsPerStaff: 8, pay: 70, overhead: 60, overheadPerLevel: 30, leaveDiv: 12, worthPerLevel: 900, timeoutLevel: 2 },
+  academy: { tuition: 22, baseSeats: 8, seatsPerStaff: 8, pay: 70, overhead: 60, overheadPerLevel: 30, leaveDiv: 8, worthPerLevel: 900, timeoutLevel: 3 },
   solo: { contractPay: 30 },
   examinerPay: 40,
-  company: { perStaff: 2, contractPay: 110, pay: 75, overhead: 90, valuePerContract: 60, worthDiv: 10, timeoutValue: 20000 },
+  company: { perStaff: 2, contractPay: 110, pay: 75, overhead: 90, valuePerContract: 60, worthDiv: 10, timeoutValue: 60000 },
 } as const;
 
 export const STAGES: Record<Stage, { name: string; living: number; salary: number; salaryPerRank: number; credit: number; jobPct: number; ranks: string[]; timeout: EndingId }> = {
@@ -191,11 +191,11 @@ export const ACTIONS: ActionDef[] = [
     roll: { base: 55, mods: [mod('rep', 0, 2, 25)],
       success: { text: '합격 통보. 다음 분기부터 사원증을 목에 건다.', stage: 'employee', set: { rank: 0 } },
       fail: { text: '최종 면접에서 떨어졌다.', add: { xp: 2 } } } },
-  { id: 'inst_course', place: 'academy', when: { stage: ['pilot'] }, need: { min: { xp: 170 } }, cost: 200, title: '지도조종자(교관) 과정', desc: '비행 경력을 채우고 교관 자격에 도전한다.',
+  { id: 'inst_course', place: 'academy', when: { stage: ['pilot'] }, need: { min: { xp: 200 } }, cost: 200, title: '지도조종자(교관) 과정', desc: '비행 경력을 채우고 교관 자격에 도전한다.',
     roll: { base: 62, mods: [mod('teach', 0, 1, 25)],
       success: { text: '교관 자격 취득. 교육원과 전속 계약을 맺었다.', stage: 'instructor', add: { teach: 5 } },
       fail: { text: '구술 평가에서 막혔다.', add: { teach: 3 } } } },
-  { id: 'solo_register', place: 'office', when: { stage: ['pilot'] }, need: { min: { rep: 20 } }, cost: 80, title: '1인 사업자 등록', desc: '사업자등록증을 내고 직접 계약을 받는다. 일거리 수입 +30%.',
+  { id: 'solo_register', place: 'office', when: { stage: ['pilot'] }, need: { min: { rep: 20, drone: 2, car: 1 } }, cost: 80, title: '1인 사업자 등록', desc: '사업자등록증을 내고 직접 계약을 받는다. 일거리 수입 +30%.',
     effect: { text: '사업자등록증이 나왔다. 상호는 한참 고민했다.', stage: 'solo', add: { biz: 3 } } },
 
   // ------------------------------------------------------------ 직장인
@@ -226,8 +226,8 @@ export const ACTIONS: ActionDef[] = [
     roll: { base: 55, mods: [mod('teach', 35, 2, 25)],
       success: { text: '실기평가조종자 자격을 땄다. 이제 시험관 자리에 앉는다.', flag: 'examiner', add: { rep: 4 } },
       fail: { text: '평가 기준 구술에서 떨어졌다.', add: { teach: 2 } } } },
-  { id: 'academy_found', place: 'academy', when: { stage: ['instructor'] }, need: { flags: ['examiner'], min: { teach: 60, rep: 25 } }, cost: 1500, title: '드론 교육원 설립', desc: '실습장 임대와 기체 구입. 대부분 대출로 시작한다.',
-    effect: { text: '간판을 걸었다. 첫 기수 교육생 여섯 명이 등록했다.', stage: 'academy', set: { students: 6, staff: 1, level: 1 } } },
+  { id: 'academy_found', place: 'academy', when: { stage: ['instructor'] }, need: { flags: ['examiner'], min: { teach: 80, rep: 35 } }, cost: 1800, title: '드론 교육원 설립', desc: '실습장 임대와 기체 구입. 대부분 대출로 시작한다.',
+    effect: { text: '간판을 걸었다. 첫 기수 교육생 열 명이 등록했다.', stage: 'academy', set: { students: 10, staff: 1, level: 1 } } },
   { id: 'inst_quit', place: 'academy', when: { stage: ['instructor'] }, title: '교관을 그만두고 프리랜서로', desc: '다시 현장 비행으로 돌아간다.',
     effect: { text: '마지막 수업을 마치고 조종기를 챙겼다.', stage: 'pilot' } },
 
@@ -239,12 +239,14 @@ export const ACTIONS: ActionDef[] = [
       success: { text: '설명회 자리가 모자랐다.', add: { students: 8 } }, fail: { text: '비 오는 날이라 몇 명만 왔다.', add: { students: 2 } } } },
   { id: 'ac_hire', place: 'academy', when: { stage: ['academy'] }, need: { max: { staff: 5 } }, cost: 80, title: '교관 채용', desc: '교관 한 명당 수용 인원이 8명 늘고 분기 급여가 나간다.',
     effect: { text: '새 교관이 출근했다.', add: { staff: 1 } } },
-  { id: 'ac_expand', place: 'academy', when: { stage: ['academy'], max: { level: 2 } }, need: { min: { students: 16 } }, cost: 700, title: '실습장 확장', desc: '교육원 규모 +1. 전문교육기관 인가의 조건이다.',
+  { id: 'ac_expand', place: 'academy', when: { stage: ['academy'], max: { level: 1 } }, need: { min: { students: 16 } }, cost: 800, title: '제2 실습장 증설', desc: '교육원 규모 2단계. 운영비도 함께 오른다.',
     effect: { text: '제2 실습장에 풍향계를 세웠다.', add: { level: 1, rep: 3 } } },
-  { id: 'ac_accredit', place: 'assoc', when: { stage: ['academy'] }, need: { min: { level: 2, students: 26, staff: 3, rep: 45 } }, cost: 400, title: '국가지정 전문교육기관 인가 신청', desc: '통과하면 이 지역 파일럿은 모두 여기서 나온다.',
-    roll: { base: 50, mods: [mod('teach', 80, 4, 15), mod('level', 2, 1, 15)],
+  { id: 'ac_expand2', place: 'academy', when: { stage: ['academy'], min: { level: 2 }, max: { level: 2 } }, need: { min: { students: 28, staff: 3 } }, cost: 1500, title: '종합 교육센터 신축', desc: '교육원 규모 3단계. 전문교육기관 인가의 조건이다.',
+    effect: { text: '강의동과 격납고를 갖춘 교육센터가 문을 열었다.', add: { level: 1, rep: 5 } } },
+  { id: 'ac_accredit', place: 'assoc', when: { stage: ['academy'] }, need: { min: { level: 3, students: 30, staff: 3, rep: 50 } }, cost: 400, title: '국가지정 전문교육기관 인가 신청', desc: '통과하면 이 지역 파일럿은 모두 여기서 나온다.',
+    roll: { base: 35, mods: [mod('teach', 80, 4, 15), mod('rep', 50, 3, 15)],
       success: { text: '인가 통지서가 도착했다. 교육원 현판 옆에 지정 번호가 붙었다.', end: 'academy' },
-      fail: { text: '현장 실사에서 보완 요구가 나왔다.', add: { rep: -2 } } } },
+      fail: { text: '현장 실사에서 보완 요구가 나왔다. 소문을 들은 교육생 몇이 떠났다.', add: { rep: -3, students: -5 } } } },
 
   // ------------------------------------------------------------ 1인 사업자
   { id: 'solo_sales', place: 'office', when: { stage: ['solo'] }, need: { max: { contracts: 4 } }, cost: 20, title: '단골 계약 영업', desc: '고정 계약 한 건마다 분기 30만원이 들어온다 (최대 5건).',
@@ -252,7 +254,7 @@ export const ACTIONS: ActionDef[] = [
       success: { text: '분기 정기 촬영 계약서에 도장을 받았다.', add: { contracts: 1, biz: 2 } }, fail: { text: '견적만 받아 가고 연락이 없다.', add: { biz: 1 } } } },
   { id: 'solo_study', place: 'office', when: { stage: ['solo'] }, cost: 20, title: '세무 · 계약 공부', desc: '부가세 신고를 혼자 해 본다.',
     effect: { text: '장부가 처음으로 맞아떨어졌다.', add: { biz: 7 } } },
-  { id: 'corp_found', place: 'hq', when: { stage: ['solo'] }, need: { min: { biz: 35, rep: 40 } }, cost: 1200, title: '법인 설립', desc: '직원을 뽑고 회사를 키운다. 급여와 임대료가 매 분기 나간다.',
+  { id: 'corp_found', place: 'hq', when: { stage: ['solo'] }, need: { min: { biz: 35, rep: 40, drone: 3, gear: 2 } }, cost: 1200, title: '법인 설립', desc: '직원을 뽑고 회사를 키운다. 급여와 임대료가 매 분기 나간다.',
     effect: { text: '법인 등기를 마쳤다. 첫 직원과 악수했다.', stage: 'company', set: { staff: 1, value: 1000 } } },
 
   // ------------------------------------------------------------ 법인
@@ -268,19 +270,19 @@ export const ACTIONS: ActionDef[] = [
     roll: { base: 50, mods: [mod('biz', 40, 4, 20)],
       success: { text: '자체 설계 기체가 인증 비행을 통과했다.', add: { value: 4000, rep: 3 }, flag: 'tech' }, fail: { text: '시제기가 시험 비행에서 추락했다.', add: { value: 300 } } } },
   { id: 'co_ir', place: 'bank', when: { stage: ['company'], max: { round: 2 } }, need: { min: { value: 5000 } }, title: '투자 유치 (IR)', desc: '투자자 앞에서 발표한다. 성공하면 자금과 기업 가치가 함께 뛴다.',
-    roll: { base: 40, mods: [mod('net', 20, 2, 25), mod('value', 5000, 2000, 10)],
+    roll: { base: 35, mods: [mod('net', 20, 2, 25), mod('value', 5000, 2000, 10)],
       success: { text: '투자 계약 체결. 통장 자릿수가 바뀌었다.', add: { money: 3000, value: 7000, round: 1 } }, fail: { text: '"조금 더 지켜보겠다"는 답이 돌아왔다.', add: { rep: -1 } } } },
-  { id: 'co_ipo', place: 'bank', when: { stage: ['company'] }, need: { min: { value: 30000, round: 2, staff: 8 } }, cost: 800, title: '상장(IPO) 추진', desc: '거대 드론 기업으로 가는 마지막 관문.',
-    roll: { base: 55, mods: [mod('rep', 60, 2, 20)],
-      success: { text: '상장 첫날, 전광판에 회사 이름이 떴다.', end: 'ceo' }, fail: { text: '예비 심사에서 반려됐다. 시장의 눈이 차가워졌다.', add: { value: -4000, rep: -3 } } } },
+  { id: 'co_ipo', place: 'bank', when: { stage: ['company'] }, need: { min: { round: 2, staff: 8, value: 35000 } }, cost: 800, title: '상장(IPO) 추진', desc: '거대 드론 기업으로 가는 마지막 관문.',
+    roll: { base: 45, mods: [mod('rep', 60, 2, 20)],
+      success: { text: '상장 첫날, 전광판에 회사 이름이 떴다.', end: 'ceo' }, fail: { text: '예비 심사에서 반려됐다. 시장의 눈이 차가워졌다.', add: { value: -6000, rep: -3 } } } },
 
   // ------------------------------------------------------------ 협회
   { id: 'assoc_join', place: 'assoc', when: { stage: LICENSED, notFlags: ['member'] }, cost: 40, title: '파일럿 협회 가입', desc: '회비를 내고 정회원이 된다. 임원 선거에 나갈 자격이 생긴다.',
     effect: { text: '회원증과 배지를 받았다.', flag: 'member', add: { net: 3 } } },
   { id: 'assoc_volunteer', place: 'assoc', when: { stage: LICENSED, flags: ['member'] }, title: '협회 봉사 · 안전 교육 지원', desc: '돈은 안 되지만 사람이 남는다.',
     effect: { text: '행사장 뒷정리까지 하고 나니 다들 이름을 기억한다.', add: { net: 6, rep: 2 } } },
-  { id: 'assoc_run', place: 'assoc', when: { stage: LICENSED, flags: ['member'] }, need: { min: { net: 35, rep: 30 } }, cost: 150, title: '협회 이사 선거 출마', desc: '당선되면 현업을 접고 협회 일을 맡는다.',
-    roll: { base: 40, mods: [mod('net', 35, 2, 30)],
+  { id: 'assoc_run', place: 'assoc', when: { stage: LICENSED, flags: ['member'] }, need: { min: { net: 50, rep: 40 } }, cost: 150, title: '협회 이사 선거 출마', desc: '당선되면 현업을 접고 협회 일을 맡는다.',
+    roll: { base: 35, mods: [mod('net', 50, 2, 30)],
       success: { text: '이사로 선출됐다. 회관에 내 자리가 생겼다.', stage: 'director', set: { rank: 0, support: 20 } },
       fail: { text: '몇 표 차이로 낙선했다.', add: { net: 3 } } } },
   { id: 'dir_forum', place: 'assoc', when: { stage: ['director'] }, title: '정책 간담회', desc: '회원들의 불만을 듣고 정리한다.',
@@ -290,12 +292,12 @@ export const ACTIONS: ActionDef[] = [
   { id: 'dir_tour', place: 'coast', when: { stage: ['director'] }, title: '지역 지부 순회', desc: '지부마다 분위기가 다르다.',
     roll: { base: 60, mods: [mod('net', 40, 3, 20)],
       success: { text: '지부장들이 지지를 약속했다.', add: { support: 13, net: 2 } }, fail: { text: '냉랭한 지부에서 시간만 보냈다.', add: { support: 2 } } } },
-  { id: 'dir_vice', place: 'assoc', when: { stage: ['director'], max: { rank: 0 } }, need: { min: { support: 40 } }, cost: 200, title: '부회장 선거 출마', desc: '회장으로 가는 디딤돌.',
-    roll: { base: 50, mods: [mod('support', 40, 1, 30)],
+  { id: 'dir_vice', place: 'assoc', when: { stage: ['director'], max: { rank: 0 } }, need: { min: { support: 60 } }, cost: 200, title: '부회장 선거 출마', desc: '회장으로 가는 디딤돌.',
+    roll: { base: 45, mods: [mod('support', 60, 1, 25)],
       success: { text: '부회장으로 선출됐다.', add: { rank: 1, rep: 5 } }, fail: { text: '현 집행부 후보에게 밀렸다.', add: { support: -8 } } } },
-  { id: 'dir_chair', place: 'assoc', when: { stage: ['director'], min: { rank: 1 } }, need: { min: { support: 65 } }, cost: 500, title: '총협회장 선거 출마', desc: '전국 파일럿의 대표를 뽑는 선거.',
-    roll: { base: 45, mods: [mod('support', 65, 1, 30)],
-      success: { text: '개표 결과, 과반 득표. 전국 파일럿의 대표가 됐다.', end: 'chairman' }, fail: { text: '결선 투표에서 졌다. 지지층이 흩어졌다.', add: { support: -22 } } } },
+  { id: 'dir_chair', place: 'assoc', when: { stage: ['director'], min: { rank: 1 } }, need: { min: { support: 75 } }, cost: 600, title: '총협회장 선거 출마', desc: '전국 파일럿의 대표를 뽑는 선거.',
+    roll: { base: 25, mods: [mod('support', 75, 1, 20)],
+      success: { text: '개표 결과, 과반 득표. 전국 파일럿의 대표가 됐다.', end: 'chairman' }, fail: { text: '결선 투표에서 졌다. 지지층이 흩어졌다.', add: { support: -30 } } } },
 ];
 
 export const EVENTS: EventDef[] = [

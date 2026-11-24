@@ -139,14 +139,16 @@ function unmet(state: GameState, cond: Cond | undefined): { locks: string[]; mis
 }
 const met = (state: GameState, cond: Cond | undefined) => unmet(state, cond).locks.length === 0;
 
-const won = (n: number) => `${n > 0 ? '+' : ''}${n.toLocaleString('ko-KR')}만원`;
+/** 12345 -> "12,345" (hand-rolled: toLocaleString is slow enough to dominate the simulation). */
+export const num = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const won = (n: number) => `${n > 0 ? '+' : ''}${num(n)}만원`;
 
 function summarize(add: StatMap, effect: Effect): string {
   const parts: string[] = [];
   if (add.money) parts.push(won(add.money));
   for (const [k, v] of entries(add)) {
     if (k === 'money' || v === 0 || HIDDEN_IN_SUMMARY.includes(k)) continue;
-    parts.push(`${STAT_LABEL[k]} ${v > 0 ? '+' : ''}${v.toLocaleString('ko-KR')}`);
+    parts.push(`${STAT_LABEL[k]} ${v > 0 ? '+' : ''}${num(v)}`);
   }
   if (effect.set?.cond === 100) parts.push('기체 상태 회복');
   if (effect.flag) parts.push(`${FLAG_LABEL[effect.flag] ?? effect.flag} 획득`);
@@ -181,7 +183,7 @@ function view(state: GameState, id: string, kind: OptionKind, place: PlaceId, ch
   const { locks, missing } = unmet(state, choice.need);
   const cost = choice.cost ?? 0;
   if (state.s.money < cost) {
-    locks.push(`자금 부족 (${cost.toLocaleString('ko-KR')}만원 필요)`);
+    locks.push(`자금 부족 (${num(cost)}만원 필요)`);
     missing.push({ stat: 'money', need: cost });
   }
   const payPct = flight ? STAGES[state.stage].jobPct : 100;
@@ -218,7 +220,7 @@ function freeChoices(state: GameState): { id: string; kind: OptionKind; place: P
   const room = creditLimit(state) - s.debt;
   for (const amount of LOAN_STEPS) {
     out.push({ id: `loan:${amount}`, kind: 'bank', place: 'bank', choice: {
-      title: `대출 ${amount}만원`, desc: `분기 이자 ${RULES.interestPct}%. 남은 한도 ${Math.max(0, room).toLocaleString('ko-KR')}만원.`,
+      title: `대출 ${amount}만원`, desc: `분기 이자 ${RULES.interestPct}%. 남은 한도 ${num(Math.max(0, room))}만원.`,
       need: room >= amount ? undefined : { max: { debt: Math.max(0, creditLimit(state) - amount) } },
       effect: { text: `${amount}만원을 빌렸다.`, add: { money: amount, debt: amount } },
     } });
@@ -228,7 +230,7 @@ function freeChoices(state: GameState): { id: string; kind: OptionKind; place: P
       const pay = Math.min(amount, s.debt);
       if (pay <= 0 || (amount !== LOAN_STEPS[0] && pay <= LOAN_STEPS[0])) continue;
       out.push({ id: amount === LOAN_STEPS[0] ? `repay:${amount}` : 'repay:all', kind: 'bank', place: 'bank', choice: {
-        title: `상환 ${pay.toLocaleString('ko-KR')}만원`, desc: `남은 빚 ${s.debt.toLocaleString('ko-KR')}만원.`, cost: pay,
+        title: `상환 ${num(pay)}만원`, desc: `남은 빚 ${num(s.debt)}만원.`, cost: pay,
         effect: { text: `${pay}만원을 갚았다.`, add: { debt: -pay } },
       } });
     }
