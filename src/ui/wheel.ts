@@ -26,14 +26,16 @@ export function resultWheel(roll: NonNullable<Result['roll']>) {
   face.dataset.value = String(roll.value);
   const machine = el('div', 'wheel-machine');
   const legend = el('div', 'wheel-legend');
+  const caption = el('small', 'roll-caption');
   legend.append(el('span', 'success', '● 성공'), el('span', 'failure', '● 실패'));
-  machine.append(el('strong', '', `성공 확률 ${roll.chance}%`), face, legend);
+  machine.append(el('strong', '', `성공 확률 ${roll.chance}%`), face, caption, legend);
   function spin(done: () => void) {
     const stop = `rotate(${-1080 - (roll.value + .5) * 3.6}deg)`;
     disc.style.transform = stop;
     const finish = () => {
       face.dataset.outcome = roll.success ? 'success' : 'fail';
       hub.textContent = String(roll.value).padStart(2, '0');
+      caption.textContent = `굴림 ${roll.value} · ${roll.chance} 미만이면 성공`;
       done();
     };
     if (reducedMotion()) finish();

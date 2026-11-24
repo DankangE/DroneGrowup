@@ -135,6 +135,7 @@ let viewCount = 0;
 
 for (const [width, height] of SIZES) {
   const size = `${width}x${height}`;
+  const minHomeRows = { '390x844': 4, '360x740': 3 }[size];
   const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce', deviceScaleFactor: 1, hasTouch: width < 600, locale: 'ko-KR' });
   const page = await context.newPage();
   const screenIs = (name) => page.waitForFunction((n) => document.querySelector(`[data-screen="${n}"]`), name, { timeout: 8000 });
@@ -146,6 +147,14 @@ for (const [width, height] of SIZES) {
       await page.waitForTimeout(120);
       const where = `${size} ${view}${tab ? ` tab ${tab}` : ''}${index ? ` page ${index + 1}` : ''}`;
       viewCount++;
+      if (minHomeRows && index === 0 && tab === 'all'
+        && await page.locator('[data-phase="action"] [data-nav="home"][aria-pressed="true"]').count()) {
+        const offered = await page.evaluate(() => window.__game.options().filter(option => !option.free).length);
+        const visible = await page.locator('[data-pick]:visible').count();
+        if (offered >= minHomeRows && visible < minHomeRows) {
+          failures.push(`${where}: 홈 shows ${visible} rows on its first page (min ${minHomeRows}, ${offered} offered)`);
+        }
+      }
       for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) failures.push(`${where}: ${problem}`);
       if (first && shotDir) await page.screenshot({ path: join(shotDir, `${size}-${view}.png`) });
       first = false;

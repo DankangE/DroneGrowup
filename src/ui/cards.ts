@@ -121,7 +121,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
   }
 
   const sizes = new Map<OptionView, { row: number; detail: number }>();
-  let listRoom = 0, rowGap = 0;
+  let rowGap = 0;
   function pageHeight(items: OptionView[]) {
     let rows = 0, detail = 0;
     for (const item of items) {
@@ -131,7 +131,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     }
     return rows + Math.max(0, items.length - 1) * rowGap + detail;
   }
-  function actionPages(list: OptionView[], room = listRoom) {
+  function actionPages(list: OptionView[], room: number) {
     const pages: OptionView[][] = [[]];
     for (const item of list) {
       const last = pages[pages.length - 1];
@@ -143,13 +143,6 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
 
   function fit() {
     body.replaceChildren();
-    panel.style.height = '';
-    const desktop = matchMedia('(min-width: 900px)').matches;
-    const budget = panel.offsetHeight;
-    const style = getComputedStyle(body);
-    const chrome = panel.offsetHeight - body.clientHeight;
-    const frame = chrome + 44 + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2 * parseFloat(style.rowGap);
-
     // Measure at the real column width. A long locked choice only reduces
     // capacity on the page containing it.
     const probe = el('div', 'panel-probe');
@@ -164,15 +157,6 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     }
     probe.remove();
 
-    listRoom = Math.floor(budget - frame);
-    if (!desktop) {
-      // All five views share the height of the first full home page. Allow
-      // enough room to select even the longest single detail on a later page.
-      const preferred = pageHeight(actionPages(actions)[0]);
-      const longest = Math.max(0, ...actions.map(o => pageHeight([o])));
-      listRoom = Math.ceil(Math.max(longest, preferred));
-      panel.style.height = (frame + listRoom) + 'px';
-    }
     render();
   }
   function render() {
@@ -209,7 +193,10 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
       }
       header.append(tabs);
       const list = actions.filter(o => tab === 'all' || (tab === 'place' ? o.place === place : o.kind === tab));
-      const pages = actionPages(list);
+      const style = getComputedStyle(body);
+      const room = body.getBoundingClientRect().bottom - header.getBoundingClientRect().bottom
+        - parseFloat(style.paddingBottom) - 2 * parseFloat(style.rowGap);
+      const pages = actionPages(list, room);
       if (picked) {
         const selectedPage = pages.findIndex(items => items.some(o => o.id === picked));
         if (selectedPage >= 0) page = selectedPage;

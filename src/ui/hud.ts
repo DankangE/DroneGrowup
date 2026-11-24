@@ -78,7 +78,13 @@ export function hud(state: GameState, choices: OptionView[], numbers: boolean, o
         cell.append(bar);
         if (feedback && previous && !reducedMotion()) bar.firstElementChild?.animate([{width: previous.s.stamina + '%'}, {width: state.s.stamina + '%'}], 480);
       }
-      if (numbers) cell.append(el('small', 'next-grade', held.next === null ? '최고 등급' : '다음 등급까지 ' + num(held.next - state.s[stat])));
+      if (numbers) {
+        const next = el('small', 'next-grade', held.next === null ? '최고' : '다음 ');
+        const suffix = el('span', 'grade-explanation', held.next === null ? ' 등급' : '등급까지 ');
+        next.append(suffix);
+        if (held.next !== null) next.append(el('span', 'grade-plus', '+'), num(held.next - state.s[stat]));
+        cell.append(next);
+      }
       if (feedback && previous && previous.s[stat] !== state.s[stat]) {
         if (numbers) countNumber(badge, previous.s[stat], state.s[stat], num);
         changePop(cell, state.s[stat] - previous.s[stat]);
@@ -111,8 +117,10 @@ export function hud(state: GameState, choices: OptionView[], numbers: boolean, o
   const target = el('span', 'next-rung');
   target.append(el('strong', '', next.length ? '다음 랭크 ▶ ' + next[0].rank.title : '50세에 은퇴'));
   if (next.length) {
-    target.append(requirements(next[0].requirements));
-    if (next[0].enabled) target.append(el('b', 'ready', '도전 가능'));
+    const conditions = el('span', 'rung-conditions');
+    conditions.append(requirements(next[0].requirements));
+    if (next[0].enabled) conditions.append(el('b', 'ready', '도전 가능'));
+    target.append(conditions);
   }
   ladder.append(here, target, el('b', 'ladder-more', next.length > 1 ? '+' + (next.length - 1) : '›'));
   return { status, ladder };

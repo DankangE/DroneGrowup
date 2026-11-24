@@ -224,17 +224,19 @@ export function showRankCard(root: HTMLElement, change: RankChange, onContinue: 
   const { to } = change;
   const title = el('h3', '', to.title);
   title.dataset.rankTitle = to.title;
-  const level = el('b', 'rank-level', 'Lv ' + to.level);
+  const level = el('b', 'rank-level');
+  level.append(el('small', '', 'Lv'), String(to.level));
   level.dataset.rankLevel = String(to.level);
-  copy.append(el('small', '', to.field), title, level, stars(to));
-  hero.append(chibi(to), copy);
+  if (to.field !== to.title) copy.append(el('small', '', to.field));
+  copy.append(title, stars(to));
+  hero.append(chibi(to), level, copy);
   sheet.body.append(hero);
   const perks = el('dl', 'rank-perks');
   for (const perk of change.perks) {
     if (!perk.value && !perk.gain) continue;
     const row = el('div');
     const amount = el('dd', '', num(perk.value) + perk.unit);
-    amount.append(el('small', perk.gain < 0 ? 'negative' : 'positive', (perk.gain ? signed(perk.gain) : '±0') + perk.unit));
+    if (perk.gain) amount.append(el('small', perk.gain < 0 ? 'negative' : 'positive', signed(perk.gain) + perk.unit));
     row.append(el('dt', '', perk.label), amount);
     perks.append(row);
   }

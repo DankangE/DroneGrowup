@@ -1,5 +1,6 @@
 import './styles.css';
 import { rankChange } from './game/career.ts';
+import type { RankChange } from './game/career.ts';
 import { yearBoard } from './ui/board.ts';
 import { ENDINGS } from './game/data.ts';
 import { choose, currentEvent, newGame, num, options } from './game/engine.ts';
@@ -111,7 +112,7 @@ function startRun() {
   renderPlay('home');
 }
 
-function renderPlay(nav: Nav, previous?: GameState) {
+function renderPlay(nav: Nav, previous?: GameState, change?: RankChange | null) {
   const choices = options(state);
   const event = currentEvent(state);
   if (event) dronePlace = event.place;
@@ -157,11 +158,17 @@ function renderPlay(nav: Nav, previous?: GameState) {
   setScreen('play', shell);
   activePanel = panel;
   fitMap = () => map?.fit();
-  root.dataset.phase = state.phase;
+  root.dataset.phase = change ? 'rankup' : state.phase;
   panel.fit();
   map?.fit();
   animate();
-  if (event) showEvent(root,event,state,choices,takeOption);
+  const resume = () => {
+    choosing = false;
+    root.dataset.phase = state.phase;
+    if (event) showEvent(root, event, state, choices, takeOption);
+  };
+  if (change) showRankCard(root, change, resume);
+  else resume();
 }
 
 function takeOption(id: string) {
@@ -184,15 +191,7 @@ function takeOption(id: string) {
   root.dataset.phase = 'result';
   showResult(root, next.result, previous, state, () => {
     if (state.phase === 'ended') { showEnding(); return; }
-    const resume = () => {
-      choosing = false;
-      renderPlay(option.free ? nav : 'home', previous);
-    };
-    const change = rankChange(previous, state);
-    if (change) {
-      root.dataset.phase = 'rankup';
-      showRankCard(root, change, resume);
-    } else resume();
+    renderPlay(option.free ? nav : 'home', previous, rankChange(previous, state));
   });
 }
 
