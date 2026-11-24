@@ -95,6 +95,7 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
   const rand = botRandom(seed);
   let clicks = 0;
   let reloaded = false;
+  let calm = false;
   while (state.phase !== 'ended') {
     assert.ok(clicks++ < 20000, 'run did not end');
     const shown = await page.evaluate(() => window.__game.options().map((o) => `${o.id}:${o.enabled}`));
@@ -106,6 +107,11 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
       await page.locator('[data-action="continue-run"]').click();
       await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
       assert.deepEqual(await pageState(page), state, 'the saved run continues exactly where it stopped');
+    }
+    if (!calm && reloaded && state.turn >= 16 && Object.keys(shotsAt).length === 0) {
+      // Four animated years and every picture are enough: the other 26 years of the run play without motion.
+      calm = true;
+      await page.emulateMedia({ reducedMotion: 'reduce' });
     }
     const id = pick(POLICIES[policy], state, rand);
     const option = options(state).find((o) => o.id === id);

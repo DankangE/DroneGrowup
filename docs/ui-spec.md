@@ -128,7 +128,7 @@ action window share the middle row. The toolbar and status bar span both columns
      season’s upkeep lines. 체력, 이론 and 조종 실력 are listed even at zero. Paged if it does not fit.
    - **기록** — the recent log (`state.log`), newest first, paged.
 4. **Bottom status bar.** At the left, the career emblem accompanies the stage name and rank. The middle
-   shows `dateLabel` and “이번 계절 행동 N회” from `state.s.acts`. Two sunken LCD readouts on
+   shows `dateLabel` and “계절 행동 N회” from `state.s.acts`. Two sunken LCD readouts on
    the right show 자금 in 만원 and 빚 / 한도. Debt near or over the limit turns the readout red. The
    readouts stack on narrow screens and retain the count-up and floating change animations.
 

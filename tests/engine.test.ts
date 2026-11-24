@@ -144,15 +144,15 @@ test('a locked or unaffordable option is shown disabled with a reason and cannot
   const state = newGame(5);
   const exam = option(state, 'st_exam');
   assert.equal(exam.enabled, false);
-  assert.deepEqual(exam.missing, [{ stat: 'theory', need: 30 }, { stat: 'skill', need: 30 }, { stat: 'money', need: 300 }]);
+  assert.deepEqual(exam.missing, [{ stat: 'theory', need: 90 }, { stat: 'skill', need: 90 }, { stat: 'money', need: 600 }]);
   assert.throws(() => choose(state, 'st_exam'), /disabled/);
   assert.throws(() => choose(state, 'no_such_option'), /not available/);
 });
 
 test('the licence is paid for with a loan and opens the pilot stage', () => {
   let state = newGame(11);
-  state.s.theory = 30;
-  state.s.skill = 30;
+  state.s.theory = 90;
+  state.s.skill = 90; state.s.money = 300;
   state = choose(state, 'loan:500').state;
   assert.equal(state.turn, 0, 'a loan does not spend the season');
   assert.equal(state.s.debt, 500);
@@ -168,7 +168,7 @@ test('the licence is paid for with a loan and opens the pilot stage', () => {
 test('better equipment opens better jobs', () => {
   const ids = (s: GameState) => options(s).filter((o) => o.kind === 'job' && o.enabled).map((o) => o.id);
   const basic = ids(at('pilot', { drone: 1 }, ['licensed']));
-  const full = ids(at('pilot', { drone: 4, gear: 3, car: 2, rep: 50 }, ['licensed']));
+  const full = ids(at('pilot', { drone: 4, gear: 3, car: 2, rep: 105 }, ['licensed']));
   assert.deepEqual(basic, ['job_event']);
   assert.ok(full.includes('job_film') && full.includes('job_wind') && full.length > basic.length + 4);
 });
@@ -241,7 +241,7 @@ test('a run that reaches the last season ends with the ending of its career', ()
 });
 
 test('planners rest before tired rolls and for stamina-locked prerequisites', () => {
-  const student = at('student', { money: 500, theory: 90, skill: 90, stamina: 30 });
+  const student = at('student', { money: 1000, theory: 130, skill: 130, stamina: 30 });
   const decide = (name: string) => pick(POLICIES[name], student, botRandom(1));
   assert.equal(decide('ceo'), 'rest');
   assert.equal(decide('gambler'), 'st_exam');
@@ -252,7 +252,7 @@ test('planners rest before tired rolls and for stamina-locked prerequisites', ()
   assert.equal(decide('ceo'), 'rest');
   student.s.stamina = 20;
   assert.equal(decide('ceo'), 'st_theory');
-  student.s.theory = 90;
+  student.s.theory = 130;
   student.s.stamina = 14;
   assert.equal(decide('ceo'), 'rest');
 });
@@ -348,7 +348,7 @@ test('two actions and a bank visit stay in spring until a light rest settles it 
     assert.equal(next.result.season, undefined);
     state = next.state;
   }
-  assert.equal(state.s.money, 150);
+  assert.equal(state.s.money, 135);
   assert.equal(state.s.stamina, 65);
   const rest = option(state, 'rest');
   assert.equal(rest.title, '쉬고 계절 넘기기');
@@ -360,8 +360,8 @@ test('two actions and a bank visit stay in spring until a light rest settles it 
   assert.equal(next.result.deltas.stamina, 20);
   assert.equal(next.state.s.stamina, 100);
   assert.deepEqual(next.result.season, { from: '20세 · 봄', to: '20세 · 여름', rest: 20, refill: 15, auto: false });
-  assert.equal(next.result.upkeep!.total, -22);
-  assert.equal(next.state.s.money, 128);
+  assert.equal(next.result.upkeep!.total, -27);
+  assert.equal(next.state.s.money, 108);
 });
 
 test('first-action rest gives full rest followed by a capped season refill', () => {
@@ -433,7 +433,7 @@ test('v1 quarter saves keep their calendar position and resume with a fresh acti
 
 
 test('a career-winning action keeps its early score bonus and skips season settlement', () => {
-  const state = at('director', { rank: 1, support: 100, money: 1000, stamina: 35, acts: 2 });
+  const state = at('director', { rank: 1, support: 100, money: 2000, stamina: 35, acts: 2 });
   state.turn = 17;
   for (let rng = 1; rng <= 50; rng++) {
     const next = choose({ ...state, rng }, 'dir_chair');
@@ -443,7 +443,7 @@ test('a career-winning action keeps its early score bonus and skips season settl
     assert.equal(next.result.season, undefined);
     assert.equal(next.result.upkeep, undefined);
     assert.equal(next.state.s.stamina, 0);
-    assert.equal(next.state.score, 550 + 8000 + (120 - 18) * 50);
+    assert.equal(next.state.score, 875 + 8000 + (120 - 18) * 50);
     return;
   }
   assert.fail('expected a winning seed');

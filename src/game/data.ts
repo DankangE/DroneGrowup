@@ -60,7 +60,7 @@ export const STAT_LABEL: Record<Stat, string> = {
   money: '자금', debt: '빚', stamina: '체력', theory: '이론', skill: '조종 실력', xp: '경험치', rep: '평판', biz: '사업 감각', teach: '교육 경력', net: '인맥',
   drone: '드론 등급', gear: '장비 등급', car: '차량 등급', cond: '기체 상태',
   rank: '직급', staff: '직원', contracts: '고정 계약', value: '기업 가치', round: '투자 라운드', students: '수강생', level: '교육원 규모', support: '지지율',
-  acts: '이번 계절 행동', overdue: '연체', flights: '비행', crashes: '추락', wins: '성공', losses: '실패',
+  acts: '계절 행동', overdue: '연체', flights: '비행', crashes: '추락', wins: '성공', losses: '실패',
 };
 
 /** Upper bounds; every stat is also kept at 0 or above. */
@@ -159,7 +159,7 @@ export const ACTIONS: ActionDef[] = [
     effect: { text: '새벽 근무를 버텼다.', add: { money: 70 } } },
   { id: 'st_assist', place: 'town', when: { stage: ['student'] }, need: { min: { skill: 45 } }, tire: 30, title: '촬영 보조 알바', desc: '선배 파일럿의 현장을 따라다닌다.',
     effect: { text: '배터리를 나르며 현장을 눈에 담았다.', add: { money: 55, xp: 5, skill: 2 } } },
-  { id: 'st_exam', place: 'exam', when: { stage: ['student'] }, need: { min: { theory: 90, skill: 90 } }, cost: 750, tire: 30, title: '조종자 자격증 과정 · 실기 시험', desc: '전문교육기관 수강료와 응시료. 대부분 빚을 내서 치른다.',
+  { id: 'st_exam', place: 'exam', when: { stage: ['student'] }, need: { min: { theory: 90, skill: 90 } }, cost: 600, tire: 30, title: '조종자 자격증 과정 · 실기 시험', desc: '전문교육기관 수강료와 응시료. 대부분 빚을 내서 치른다.',
     roll: { base: 50, mods: [{ stat: 'theory', over: 90, per: 2, pct: 1, cap: 20 }, { stat: 'skill', over: 90, per: 2, pct: 1, cap: 20 }],
       success: { text: '합격! 조종자 증명서에 내 이름이 찍혔다. 이제 프리랜서 파일럿이다.', add: { xp: 20, rep: 3 }, stage: 'pilot', flag: 'licensed' },
       fail: { text: '측풍에 밀려 실격. 수강료는 돌아오지 않는다.', add: { xp: 6, skill: 3 } } } },
