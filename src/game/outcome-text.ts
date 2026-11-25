@@ -67,7 +67,7 @@ export function forecastLines(f: Forecast): ForecastLine[] {
       stage: b.stage !== base?.stage ? b.stage : undefined, end: b.end !== base?.end ? b.end : undefined }));
     if (!parts.length) parts.push('변화 없음');
     if (b.endsSeason) parts.push('→ 계절 종료');
-    const label = { sure: '확정', success: '성공', fail: '실패', crash: `추락 시(${f.crashPct}%)` }[b.id];
+    const label = { sure: '확정', success: '성공', fail: '실패', crash: `추락 시(실패 중 ${f.crashPct}%)` }[b.id];
     if (base) parts.unshift('실패 수치 대체');
     lines.push({ id: b.id, text: label + ': ' + parts.join(' · ') });
   }

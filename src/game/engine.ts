@@ -452,9 +452,12 @@ export function forecast(prev: GameState, optionId: string): Forecast {
   const { r, v } = resolveOption(prev, optionId);
   const ids: BranchId[] = v.roll ? ['success', 'fail'] : ['sure'];
   if (v.roll?.crashPct) ids.push('crash');
+  // A locked option the player cannot afford is previewed as if the price were in hand,
+  // so the lines show the price and not a loan that choose() would never grant.
+  const before = prev.s.money < v.cost ? { ...prev.s, money: v.cost } : prev.s;
   const branches = ids.map((id): BranchForecast => {
-    const state = { ...prev, s: { ...prev.s }, flags: [...prev.flags], seen: { ...prev.seen }, log: [...prev.log] };
-    const result = applyBranch(state, prev.s, r, v, id);
+    const state = { ...prev, s: { ...before }, flags: [...prev.flags], seen: { ...prev.seen }, log: [...prev.log] };
+    const result = applyBranch(state, before, r, v, id);
     const branch: BranchForecast = { id, deltas: result.deltas, endsSeason: !!result.season };
     if (result.flag) branch.flag = result.flag;
     if (result.stageTo !== result.stageFrom) branch.stage = result.stageTo;

@@ -8,6 +8,12 @@ import { BOOKKEEPING, detailLabel, forecastLines, parseTokens, restGain, resultC
 import type { BranchId, Choice, Cond, GameState, OptionView, Result, Stat, StatMap } from '../src/game/types.ts';
 
 const stats = Object.keys(STAT_LABEL) as Stat[];
+// The counters the player never sees as outcome numbers, listed here on purpose: a stat added to the
+// renderer's set by mistake (say, debt) must fail this check instead of vanishing from both sides.
+const HIDDEN: Stat[] = ['acts', 'flights', 'crashes', 'wins', 'losses', 'overdue'];
+if (!isDeepStrictEqual([...BOOKKEEPING].sort(), [...HIDDEN].sort())) {
+  throw new Error('outcome-text BOOKKEEPING changed: ' + [...BOOKKEEPING].join(', '));
+}
 const expected = new Map<string, BranchId[]>();
 const covered = new Set<string>();
 const failures = new Set<string>();
@@ -74,7 +80,7 @@ function inspect(before: GameState, o: OptionView, force = false) {
   const claims = new Map<BranchId, StatMap>();
   for (const b of f.branches) {
     const body = text(b.id);
-    const label = { sure: '확정', success: '성공', fail: '실패', crash: `추락 시(${o.roll?.crashPct}%)` }[b.id];
+    const label = { sure: '확정', success: '성공', fail: '실패', crash: `추락 시(실패 중 ${o.roll?.crashPct}%)` }[b.id];
     equal(key + ' label', body.startsWith(label + ': '), true);
     const numbers = parseTokens(body);
     if (b.id === 'crash') {

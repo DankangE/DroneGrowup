@@ -466,7 +466,8 @@ test('cram enrolment pays on both branches and clamps the failed stamina loss', 
   assert.deepEqual(state, before);
   state.s.money = 5;
   assert.equal(option(state, 'ev:0').enabled, false);
-  assert.deepEqual(forecast(state, 'ev:0').branches[1].deltas, { money: -5, debt: 55, stamina: -4, losses: 1 });
+  // Locked for lack of money: previewed as if the price were in hand, never as a loan.
+  assert.deepEqual(forecast(state, 'ev:0').branches[1].deltas, { money: -60, stamina: -4, losses: 1 });
 });
 
 test('forecasts resolve sets against current values and keep wind-down and its RNG private', () => {

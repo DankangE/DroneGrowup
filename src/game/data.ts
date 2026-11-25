@@ -322,7 +322,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'co_sales', place: 'hq', when: { stage: ['company'] }, tire: 25, title: '영업 · 수주', desc: '계약 한 건마다 계절 90만원 (직원이 맡을 수 있을 때).',
     roll: { base: 55, mods: [mod('biz', 90, 3, 25)],
       success: { text: '연간 점검 계약을 따냈다.', add: { contracts: 1, value: 175, biz: 1 } }, fail: { text: '제안서가 2순위로 밀렸다.', add: { money: -30 } } } },
-  { id: 'co_bid', place: 'assoc', when: { stage: ['company'] }, need: { min: { staff: 3 } }, cost: 300, tire: 25, title: '공공 입찰 참여', desc: '지자체 드론 사업. 따내면 계약 3건이 한 번에 들어온다.',
+  { id: 'co_bid', place: 'assoc', when: { stage: ['company'] }, need: { min: { staff: 3 } }, cost: 300, tire: 25, title: '공공 입찰 참여', desc: '지자체 드론 사업. 따내면 계약이 한꺼번에 들어온다.',
     roll: { base: 40, mods: [mod('rep', 120, 3, 25)],
       success: { text: '낙찰! 군청 방제 · 측량 사업을 통째로 맡았다.', add: { contracts: 3, value: 600, rep: 4 } }, fail: { text: '0.3점 차이로 떨어졌다.', add: { biz: 1 } } } },
   { id: 'co_rnd', place: 'hq', when: { stage: ['company'] }, cost: 1500, tire: 20, title: '자체 기체 연구개발', desc: '성공하면 기업 가치가 크게 뛴다.',
