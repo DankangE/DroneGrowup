@@ -1,4 +1,4 @@
-import { CAREER, STAGES } from './data.ts';
+import { CAREER, CAREER_TOP_LEVEL, ENDINGS, STAGES } from './data.ts';
 import type { EndingId, GameState, Stage } from './types.ts';
 
 export type CareerRank = {
@@ -28,8 +28,13 @@ function rung(at: Standing): number {
   }
 }
 
-export function careerRank(at: Standing): CareerRank {
+export function careerRank(at: Standing, achievement?: EndingId | null): CareerRank {
   const rungs = CAREER[at.stage];
+  const field = STAGES[at.stage].name;
+  if (achievement) {
+    const ending = ENDINGS.find(e => e.id === achievement)!;
+    return { stage: at.stage, field, title: ending.title, level: CAREER_TOP_LEVEL, stars: rungs.length, maxStars: rungs.length, ending: achievement };
+  }
   const i = Math.min(rungs.length - 1, Math.max(0, rung(at)));
-  return { stage: at.stage, field: STAGES[at.stage].name, title: rungs[i].title, level: rungs[i].level, stars: i + 1, maxStars: rungs.length };
+  return { stage: at.stage, field, title: rungs[i].title, level: rungs[i].level, stars: i + 1, maxStars: rungs.length };
 }

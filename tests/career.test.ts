@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
 import { GRADED_STATS, careerPerks, careerRank, grade, nextRanks, rankChange } from '../src/game/career.ts';
 import { ACTIONS, CAREER, EVENTS, GRADES, GRADE_STEPS, RULES, STAGES, STAT_MAX } from '../src/game/data.ts';
-import { actionViews, choose, derived, newGame } from '../src/game/engine.ts';
+import { actionViews, choose, derived, newGame, options } from '../src/game/engine.ts';
 import type { Choice, GameState, Stage, Stat, StatMap } from '../src/game/types.ts';
 
 function at(stage: Stage, stats: StatMap = {}, flags: string[] = []): GameState {
@@ -89,6 +89,19 @@ test('next ranks come from the offered options with their requirements, grades a
   assert.deepEqual([ipo.rank.title, ipo.rank.ending, ipo.rank.level], ['거대 드론 기업 CEO', 'ceo', 9]);
   // The ladder is still readable while an event waits for its answer.
   assert.deepEqual(nextRanks({ ...student, phase: 'event', eventId: EVENTS[0].id }), nextRanks(student));
+});
+
+test('the ladder shows the exam ready when the landing waives its stamina cost', () => {
+  const state = at('student', { money: 600, theory: 90, skill: 90, stamina: 20 });
+  assert.equal(nextRanks(state)[0].enabled, false);
+  Object.assign(state.board, { pos: 7, step: 'space', roll: 1 });
+  const offered = options(state).find(o => o.id === 'st_exam')!;
+  const [exam] = nextRanks(state);
+  assert.equal(exam.optionId, offered.id);
+  assert.equal(exam.enabled, true);
+  assert.deepEqual(exam.locks, offered.locks);
+  assert.equal(exam.tire, 0);
+  assert.equal(exam.cost, offered.cost);
 });
 
 test('a rank change reports the new rank and what it pays, straight from the engine', () => {

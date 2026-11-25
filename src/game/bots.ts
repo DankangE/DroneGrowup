@@ -97,8 +97,10 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
   const allowed = (o: OptionView) => o.kind !== 'board' &&
     (!(o.sure?.stage || o.roll?.success.stage || o.roll?.success.end) || policy.goals.includes(o.id));
   const candidates = turn.filter(allowed);
-  // A space waives tire, so the normal action planner can miss a goal that is already playable here.
-  const readyGoal = goal && candidates.find(o => o.id === goal.id);
+  // Reconsider the goal at the landing's waived cost, including any training available here.
+  const waivedGoal = goal && localGoal?.enabled && localGoal.tire < goal.tire ? localGoal : undefined;
+  const trainer = waivedGoal && chanceTrainer(policy, state, waivedGoal, candidates);
+  const readyGoal = trainer ? undefined : waivedGoal;
   // Compare progress toward each outstanding requirement. An airfield visit can build skill
   // while theory is still missing, even when the planner's preferred classroom is elsewhere.
   const needs = (goal?.missing ?? []).filter(m => m.stat !== 'stamina' && m.stat !== 'money');
@@ -111,7 +113,7 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
       const stat = key as Stat;
       return state.s[stat] < (STAT_MAX[stat] ?? Infinity) && ev(o, stat) > 0;
     }));
-  const choice = readyGoal ?? (wanted && allowed(wanted) ? wanted : useful[0] ?? best(training, eventValue));
+  const choice = readyGoal ?? (wanted && allowed(wanted) ? wanted : trainer ?? useful[0] ?? best(training, eventValue));
   if (choice && !(policy.style === 'planner' && state.board.step === 'bonus' && choice.roll &&
     state.s.stamina - choice.tire < RULES.stamina.tired)) return choice.id;
   return state.board.step === 'space' ? 'skip' : 'end';
@@ -119,6 +121,14 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
 
 function onlyNeedsStamina(o: OptionView) {
   return o.locks.length === 1 && o.missing[0]?.stat === 'stamina';
+}
+
+function chanceTrainer(policy: Policy, state: GameState, goal: OptionView, choices: OptionView[]) {
+  if (!goal.roll || goal.roll.chance >= policy.minChance) return;
+  const mod = ACTIONS.find(a => a.id === goal.id)?.roll?.mods?.[0];
+  if (mod && state.s[mod.stat] < mod.over + (mod.per * mod.cap) / mod.pct) {
+    return best(choices.filter(o => o.id !== goal.id && ev(o, mod.stat) > 0), o => ev(o, mod.stat));
+  }
 }
 
 function plannedPick(policy: Policy, state: GameState, opts: OptionView[]): string {
@@ -143,11 +153,7 @@ function plannedPick(policy: Policy, state: GameState, opts: OptionView[]): stri
   const pursue = (o: OptionView, depth: number): string | null => {
     if (onlyNeedsStamina(o)) return 'end';
     if (o.enabled) {
-      const mod = ACTIONS.find((a) => a.id === o.id)?.roll?.mods?.[0];
-      if (o.roll && mod && o.roll.chance < policy.minChance && RULES.maxTurns - state.turn > 10 && s[mod.stat] < mod.over + (mod.per * mod.cap) / mod.pct) {
-        const trainer = best(turn.filter((t) => t.id !== o.id && ev(t, mod.stat) > 0), (t) => ev(t, mod.stat));
-        if (trainer) return trainer.id;
-      }
+      if (RULES.maxTurns - state.turn > 10) return chanceTrainer(policy, state, o, turn)?.id ?? o.id;
       return o.id;
     }
     const lack = o.missing[0];

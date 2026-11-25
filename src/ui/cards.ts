@@ -170,21 +170,25 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     (commit ?? panel.querySelector<HTMLButtonElement>('[data-action="back-to-options"]'))?.focus();
   }
 
+  function requireDetail(card: HTMLButtonElement, id: string) {
+    delete card.dataset.option;
+    card.dataset.pick = id;
+    card.setAttribute('aria-expanded', String(id === picked));
+  }
+
   function optionCard(o: OptionView) {
     const f = preview(o);
     // A locked card opens a read-only detail (full forecast, disabled commit) so the player can see what it would do.
     const confirm = !o.enabled || o.cost >= CONFIRM_COST || f.branches.some(b => b.stage || b.end);
     const card = button('', 'option-card', () => {
-      if (confirm) {
+      if (card.dataset.pick) {
         picked = o.id;
         render();
         focusDetail();
       } else choose(o.id);
     });
-    if (confirm) {
-      card.dataset.pick = o.id;
-      card.setAttribute('aria-expanded', String(o.id === picked));
-    } else card.dataset.option = o.id;
+    if (confirm) requireDetail(card, o.id);
+    else card.dataset.option = o.id;
     card.classList.toggle('locked', !o.enabled);
     const head = el('span', 'option-head');
     head.append(icon(symbols[o.place]), el('strong', '', o.title));
@@ -320,6 +324,11 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
         const items = pages[page];
         items.slice(0, 9).forEach((card, index) => card.setAttribute('aria-keyshortcuts', String(index + 1)));
         grid.replaceChildren(...items);
+        for (const card of items) {
+          if (card.dataset.option && [...card.querySelectorAll('.outcomes > span')].some(line => line.scrollWidth > line.clientWidth)) {
+            requireDetail(card, card.dataset.option);
+          }
+        }
         const current = actions.find(o => o.id === picked);
         if (current && body.querySelector(`[data-pick="${current.id}"]`)) {
           const detail = detailFor(current);

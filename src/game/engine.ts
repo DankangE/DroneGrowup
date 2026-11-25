@@ -270,6 +270,10 @@ type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: bool
 const placeAt = (state: GameState) => BOARD_PLACES[state.stage][state.board.pos];
 const nodeAt = (state: GameState) => BOARD.nodes[state.board.pos];
 const forkIndex = (pos: number) => BOARD.forks.findIndex(f => f.at === pos);
+const stops = ACTIONS.filter(a => RANKUP_STOPS.includes(a.id));
+function rankStopAt(state: GameState, pos: number) {
+  return BOARD.nodes[pos].kind === 'rankup' && stops.some(a => met(state, a.when) && !unmet(state, a.need, true).locks.length);
+}
 
 export function boardView(state: GameState) {
   const { pos, route, step } = state.board;
@@ -284,7 +288,11 @@ export function boardView(state: GameState) {
   const reachable: Record<number, number[]> = {};
   let frontier = [pos];
   for (let face = 1; face <= RULES.board.die; face++) {
-    frontier = [...new Set(frontier.flatMap(at => face === 1 && route >= 0 ? [nodes[at].next[route]] : nodes[at].next))];
+    frontier = [...new Set(frontier.flatMap(at => {
+      if (face === 1 && route >= 0) return [nodes[at].next[route]];
+      if (face > 1 && rankStopAt(state, at)) return [at];
+      return nodes[at].next;
+    }))];
     reachable[face] = frontier;
   }
   return { nodes, pos, step, reachable };
@@ -450,7 +458,6 @@ function land(state: GameState, result: Result) {
   enterBonus(state, result);
 }
 
-const stops = ACTIONS.filter(a => RANKUP_STOPS.includes(a.id));
 function move(state: GameState, result: Result, steps: number) {
   const b = state.board;
   const movement: NonNullable<Result['move']> = { roll: b.roll, path: [], landed: b.pos };
@@ -471,7 +478,7 @@ function move(state: GameState, result: Result, steps: number) {
     movement.landed = b.pos;
     if (nodeAt(state).kind === 'pay') payLedger(state, result);
     if (BOARD.forks.some(f => f.join === b.pos)) b.forks++;
-    if (steps && nodeAt(state).kind === 'rankup' && stops.some(a => met(state, a.when) && !unmet(state, a.need, true).locks.length)) {
+    if (steps && rankStopAt(state, b.pos)) {
       movement.stop = 'rankup';
       result.notes.push('승급에 도전할 수 있어 이곳에 멈췄다.');
       break;
@@ -534,7 +541,7 @@ function applyBranch(state: GameState, before: GameState['s'], r: Resolved, v: O
   }
   const level = careerRank(state).level;
   const flag = applyEffect(state, effect, outcome.add);
-  if (careerRank(state).level > level) state.board.rankups++;
+  if (careerRank(state, effect.end).level > level) state.board.rankups++;
   if (flag) result.flag = flag;
   result.stageTo = state.stage;
   state.log.push({ turn: state.turn, text: `${v.title} — ${result.text}`, tone: branch === 'sure' ? 'info' : success ? 'good' : 'bad' });
@@ -625,7 +632,9 @@ function restoreBoard(raw: unknown): BoardState {
     typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
   if (inRange(data.pos, 0, BOARD.nodes.length - 1)) board.pos = data.pos;
   const kind = BOARD.nodes[board.pos].kind;
-  if (inRange(data.roll, 1, RULES.board.die)) {
+  // Answering a pre-board event can open a bonus at the start without a die roll.
+  const minRoll = data.pos === 0 && data.step === 'bonus' ? 0 : 1;
+  if (inRange(data.roll, minRoll, RULES.board.die)) {
     if (data.step === 'bonus' || (data.step === 'space' && ['train', 'job', 'rankup', 'fork'].includes(kind))) {
       board.step = data.step;
     } else if (kind === 'fork' && data.step === 'fork' && inRange(data.left, 1, data.roll)) {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
+import { nextRanks, rankChange } from '../src/game/career.ts';
 import { ACTIONS, BOARD, BOARD_PLACES, CONTEST_EVENTS, SPACE_MENU, ENDINGS, EVENTS, PLACES, RULES, STAGES, STAT_MAX } from '../src/game/data.ts';
 import { actionViews, boardView, choose, creditLimit, dateLabel, derived, finalRank, forecast, newGame, options, restore, serverRun, staminaBand } from '../src/game/engine.ts';
 import type { GameState, Stage, StatMap } from '../src/game/types.ts';
@@ -230,6 +231,16 @@ test('a planner saves stamina before a tiring rolled bonus, even with its goal a
   assert.equal(pick(POLICIES.ceo, state, botRandom(1)), 'st_exam');
 });
 
+test('a pilot planner trains on a rank-up landing when the exam is below its chance threshold', () => {
+  const state = space(at('student', { money: 600, theory: 90, skill: 90, stamina: 100 }), 7);
+  assert.equal(option(state, 'st_exam').roll!.chance, 54);
+  assert.equal(pick(POLICIES.pilot, state, botRandom(1)), 'st_theory');
+  state.s.stamina = 20;
+  state.s.theory = state.s.skill = 150;
+  assert.ok(option(state, 'st_exam').roll!.chance >= POLICIES.pilot.minChance);
+  assert.equal(pick(POLICIES.pilot, state, botRandom(1)), 'st_exam');
+});
+
 test('every bot policy finishes within the turn limit with a known ending', () => {
   const known = new Set(ENDINGS.map((e) => e.id));
   for (const policy of Object.keys(POLICIES)) {
@@ -346,11 +357,13 @@ test('a career-winning action keeps its early score bonus and skips season settl
     const next = choose({ ...state, rng }, 'dir_chair');
     if (!next.result.roll!.success) continue;
     assert.equal(next.result.ended, 'chairman');
+    assert.equal(next.state.board.rankups, state.board.rankups + 1);
+    assert.deepEqual(rankChange(state, next.state)?.to, nextRanks(state).find(r => r.optionId === 'dir_chair')!.rank);
     assert.equal(next.state.turn, 18);
     assert.equal(next.result.season, undefined);
     assert.equal(next.result.upkeep?.total, 50);
     assert.equal(next.state.s.stamina, 0);
-    assert.equal(next.state.score, 925 + 8000 + (120 - 18) * 50);
+    assert.equal(next.state.score, 925 + 8000 + RULES.board.achievement.rankup + (120 - 18) * 50);
     return;
   }
   assert.fail('expected a winning seed');
@@ -501,6 +514,13 @@ test('passing a join counts a fork, stopping for an eligible rank ignores cash a
   assert.equal(choose(state, 'spin').result.move?.stop, 'fork');
 });
 
+test('every die face from node 6 lands on an eligible rank-up at node 7', () => {
+  const state = at('student', { theory: 90, skill: 90 });
+  state.board.pos = 6;
+  const { reachable } = boardView(state);
+  for (let face = 1; face <= RULES.board.die; face++) assert.deepEqual(reachable[face], [7]);
+});
+
 test('contest wins count only rolled successes from contest spaces', () => {
   const state = newGame(1);
   state.phase = 'event';
@@ -600,6 +620,16 @@ test('finalRank includes the final accrual, caps combined bonuses and awards a d
   assert.equal(next.score, r.total);
   assert.ok(r.gradeTitle && /^[SABCD]$/.test(r.grade));
   assert.deepEqual(next.board.ledger, {});
+});
+
+test('answering a migrated event at the start preserves the bonus turn across reloads', () => {
+  const { board, ...legacy } = newGame(3);
+  const migrated = restore({ ...legacy, phase: 'event', eventId: 'scholarship' })!;
+  assert.deepEqual(migrated.board, board);
+  const { state } = choose(migrated, 'ev:1');
+  assert.equal(state.board.step, 'bonus');
+  assert.equal(state.s.acts, 1);
+  assert.deepEqual(restore(state), state);
 });
 
 test('restore migrates a stripped board and sanitizes malformed board fields', () => {

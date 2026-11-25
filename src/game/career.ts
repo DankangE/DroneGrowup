@@ -1,8 +1,8 @@
 // Read-only views for the board UI: letter grades, the rank a run stands on, the ranks it can reach next and
 // what a rank-up changed. Pure and DOM-free like engine.ts. Nothing here changes a state, a roll or a payout:
 // every figure comes from `options`, `derived` and the data tables.
-import { ACTIONS, CAREER_TOP_LEVEL, ENDINGS, FLAG_LABEL, GRADES, GRADE_STEPS, STAGES, STAT_LABEL } from './data.ts';
-import { actionViews, derived } from './engine.ts';
+import { ACTIONS, FLAG_LABEL, GRADES, GRADE_STEPS, STAGES, STAT_LABEL } from './data.ts';
+import { actionViews, derived, options } from './engine.ts';
 import type { Effect, GameState, PlaceId, Stat } from './types.ts';
 
 import { careerRank, type CareerRank } from './rank.ts';
@@ -31,15 +31,10 @@ export function grade(stat: Stat, value: number): Grade | null {
 
 /** Where the run would stand once `effect` has been applied. */
 function rankAfter(state: GameState, effect: Effect): CareerRank {
-  if (effect.end) {
-    const ending = ENDINGS.find((e) => e.id === effect.end)!;
-    const here = careerRank(state);
-    return { ...here, title: ending.title, level: CAREER_TOP_LEVEL, stars: here.maxStars, ending: ending.id };
-  }
   const s = { ...state.s };
   for (const [k, v] of Object.entries(effect.add ?? {}) as [Stat, number][]) s[k] += v;
   Object.assign(s, effect.set);
-  return careerRank({ stage: effect.stage ?? state.stage, s, flags: effect.flag ? [...state.flags, effect.flag] : state.flags });
+  return careerRank({ stage: effect.stage ?? state.stage, s, flags: effect.flag ? [...state.flags, effect.flag] : state.flags }, effect.end);
 }
 
 export type Perk = { id: 'income' | 'credit' | 'jobPct'; label: string; value: number; unit: '만원' | '%' };
@@ -89,7 +84,9 @@ export function nextRanks(state: GameState): NextRank[] {
   if (state.phase === 'ended') return [];
   const here = careerRank(state);
   const out: NextRank[] = [];
-  for (const o of actionViews(state)) {
+  const offered = new Map(options(state).map(o => [o.id, o]));
+  for (const catalog of actionViews(state)) {
+    const o = offered.get(catalog.id) ?? catalog;
     const action = ACTIONS.find((a) => a.id === o.id);
     const effect = action?.roll?.success ?? action?.effect;
     if (!action || !effect) continue;
@@ -120,7 +117,8 @@ export type RankChange = {
 /** What changed between the states before and after one choice; null while the rung is the same. */
 export function rankChange(before: GameState, after: GameState): RankChange | null {
   const from = careerRank(before);
-  const to = careerRank(after);
+  // A direct career win ends on the action. Season settlement resets the board to spin.
+  const to = careerRank(after, after.board.step === 'spin' ? null : after.ending);
   if (from.stage === to.stage && from.level === to.level) return null;
   const old = careerPerks(before);
   const perks = careerPerks(after).map((perk, i) => ({ ...perk, gain: perk.value - old[i].value }));

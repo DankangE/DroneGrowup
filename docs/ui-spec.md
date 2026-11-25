@@ -194,13 +194,16 @@ the player plate spans the top and the tabs sit in the plate's row or under the 
        branch lines, and a locked card's reasons instead of its lines. On phones each visible branch or lock line
        uses one line with an ellipsis when needed. The card’s title attribute includes the full forecast and locks.
        선불 applies on every branch, 추락 시 replaces the listed failure changes, and 계절 종료 marks wind-down.
-     - Tap an ordinary card to commit immediately. A choice costing at least `CONFIRM_COST` (100만원)
-       upfront, or with a forecast branch that changes stage or ends the run, opens an inline confirmation.
-       It shows the title, description, preview wheel for a roll, full outcomes, and the gold commit button
+     - An ordinary card commits in one tap when its lines fit. If a forecast or lock line is truncated on
+       the rendered grid page, the first tap opens the inline detail. Choices costing at least
+       `CONFIRM_COST` (100만원) upfront or with a branch that changes stage or ends the run also open it.
+       The card carries `data-pick` and the commit button carries `data-option` for the same choice.
+       The detail shows the title, description, preview wheel for a roll, full outcomes, and the gold commit button
        labelled by `detailLabel`. “선택지로” returns to the same grid page. The strip uses the grid's space
        when both cannot fit together. A locked card always opens this strip read-only: full outcomes, its
        reasons, and a disabled commit button, so the player can see what the choice would do.
-     - Keys 1–9 press the visible cards in reading order. Enter confirms a focused commit button.
+     - Keys 1–9 press the visible cards in reading order. Opening the detail focuses its enabled commit
+       button so Enter confirms the choice.
        Held keys cannot repeat through a confirmation. Shortcuts yield to typing and open sheets.
    - **상점** — `shop` and `repair` options as upgrade cards (a grid, paged if needed): item icon, title,
      description, full sure forecast, and the price as the button label. Marked "계절 소모 없음". Locked cards are

@@ -302,7 +302,7 @@ export const ACTIONS: ActionDef[] = [
       fail: { text: '현장 실사에서 보완 요구가 나왔다. 소문을 들은 교육생 몇이 떠났다.', add: { rep: -3, students: -5 } } } },
 
   // ------------------------------------------------------------ 1인 사업자
-  { id: 'solo_sales', place: 'office', when: { stage: ['solo'] }, need: { max: { contracts: 4 } }, cost: 50, tire: 20, title: '단골 계약 영업', desc: '고정 계약 한 건마다 계절 30만원이 들어온다 (최대 5건).',
+  { id: 'solo_sales', place: 'office', when: { stage: ['solo'] }, need: { max: { contracts: 4 } }, cost: 50, tire: 20, title: '단골 계약 영업', desc: `고정 계약 한 건마다 계절 ${RULES.solo.contractPay}만원이 들어온다 (최대 5건).`,
     roll: { base: 50, mods: [mod('biz', 0, 2, 30)],
       success: { text: '계절 정기 촬영 계약서에 도장을 받았다.', add: { contracts: 1, biz: 2 } }, fail: { text: '견적만 받아 가고 연락이 없다.', add: { biz: 1 } } } },
   { id: 'solo_study', place: 'office', when: { stage: ['solo'] }, cost: 50, tire: 15, title: '세무 · 계약 공부', desc: '부가세 신고를 혼자 해 본다.',
