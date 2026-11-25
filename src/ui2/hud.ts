@@ -19,18 +19,25 @@ export const HUD_STYLE = `
 .life2 .life2-stats { font-size:11px; line-height:14px; }
 
 .life2 .life2-grades { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:1px 3px; font-size:11px; line-height:12px; }
-/* At 600px: 16px app padding + 60px HUD + 412px board + 50px choices + 44px nav + 18px gaps.
-   Detailed abilities remain in My Life; no tile or control shrinks below 44px. */
+/* Short screens: the visible heading shares a 44px row with the pager;
+   the single choice gets the full width and another 44px row.
+   Options = 2px border + 10px padding + 4px gap + 44px + 44px = 104px.
+   At 500x679: 16px app padding + 60px HUD + 437px board + 104px options
+   + 44px nav + 18px gaps. The board cell is (437 - 16) / 9 = 46.78px.
+   Detailed abilities remain in My Life. No clipped, 1px heading: its wrapped
+   text can otherwise enlarge the root's scrollable overflow despite clip-path. */
 @media (max-width:899px) and (max-height:739px) {
-  .life2 .life2-shell { --life2-hud-height:60px; grid-template-rows:60px minmax(0,1fr) 50px 44px; }
+  .life2 .life2-shell { --life2-hud-height:60px; grid-template-rows:60px minmax(0,1fr) 104px 44px; }
   .life2 .life2-hud { padding:2px 8px; gap:2px; }
   .life2 .life2-date { line-height:18px; }
   .life2 .life2-grades,.life2 .life2-change-strip { display:none; }
   .life2 .life2-options,.life2 .life2-options[data-single-page] {
-    position:relative; padding:2px; gap:4px; grid-template: minmax(0,1fr) / minmax(0,1fr) auto;
+    padding:5px; gap:4px;
+    grid-template:'heading pager' 44px 'choices choices' minmax(0,1fr) / minmax(0,1fr) auto;
   }
-  .life2 .life2-options > h2 { position:absolute; width:1px; height:1px; clip-path:inset(50%); }
-  .life2 .life2-pager { gap:4px; font-size:11px; }
+  .life2 .life2-options > h2 { grid-area:heading; align-self:center; }
+  .life2 .life2-option-list { grid-area:choices; }
+  .life2 .life2-pager { grid-area:pager; gap:4px; font-size:11px; }
   .life2 .life2-pager button { padding:0 6px; }
 }
 @media (min-width:900px) {
