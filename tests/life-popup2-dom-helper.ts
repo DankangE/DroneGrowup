@@ -1,26 +1,75 @@
 // DOM-only assertions; this double deliberately does not claim to measure browser layout.
 export class TestNode {
   className = ''; textContent = ''; disabled = false;
+  parentElement?: TestNode;
+  style = { setProperty: (_key: string, _value: string) => {} };
+  get firstElementChild() { return this.children[0]; }
+  get childNodes() { return [...this.children]; }
   dataset: Record<string, string> = {}; attributes: Record<string, string> = {};
   children: TestNode[] = []; listeners: Record<string, ((event: KeyboardEvent) => void)[]> = {};
   classList = { add: (value: string) => { this.className += ` ${value}`; } };
   readonly tagName: string;
-  constructor(tagName: string) { this.tagName = tagName; }
+  constructor(tagName: string) {
+    this.tagName = tagName;
+    const self = this;
+    Object.defineProperty(this.attributes, Symbol.iterator, { value: function* () {
+      const entries = { ...self.attributes, class: self.className,
+        ...Object.fromEntries(Object.entries(self.dataset).map(([key, value]) =>
+          [`data-${key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`, value])) };
+      for (const [name, value] of Object.entries(entries)) yield { name, value };
+    } });
+  }
   get lastChild() { return this.children.at(-1); }
-  setAttribute(key: string, value: string) { this.attributes[key] = value; }
-  append(...nodes: TestNode[]) { this.children.push(...nodes); }
-  replaceChildren(...nodes: TestNode[]) { this.children = nodes; }
-  insertBefore(node: TestNode, before: TestNode) { this.children.splice(this.children.indexOf(before), 0, node); }
+  setAttribute(key: string, value: string) {
+    this.attributes[key] = value;
+    if (key === 'class') this.className = value;
+    if (key.startsWith('data-')) this.dataset[key.slice(5).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())] = value;
+  }
+  append(...nodes: TestNode[]) {
+    for (const node of nodes) { node.remove(); node.parentElement = this; this.children.push(node); }
+  }
+  remove() {
+    if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(node => node !== this);
+    this.parentElement = undefined;
+  }
+  replaceChildren(...nodes: TestNode[]) {
+    for (const child of [...this.children]) child.remove();
+    this.append(...nodes);
+  }
+  replaceWith(node: TestNode) {
+    const parent = this.parentElement!; parent.insertBefore(node, this); this.remove();
+  }
+  insertBefore(node: TestNode, before: TestNode) {
+    node.remove(); node.parentElement = this; this.children.splice(this.children.indexOf(before), 0, node);
+  }
+  contains(node: TestNode): boolean { return node === this || this.children.some(child => child.contains(node)); }
+  closest(selector: string): TestNode | undefined {
+    return this.matches(selector) ? this : this.parentElement?.closest(selector);
+  }
+  matches(selector: string): boolean {
+    if (selector.includes(',')) return selector.split(',').some(part => this.matches(part.trim()));
+    if (selector === '*') return true;
+    if (selector.endsWith(':not(:disabled)')) return !this.disabled && this.matches(selector.replace(':not(:disabled)', ''));
+    const tag = /^[a-z][a-z0-9]*/.exec(selector)?.[0];
+    if (tag && tag !== this.tagName) return false;
+    for (const [, name] of selector.matchAll(/\.([\w-]+)/g)) if (!this.className.split(/\s+/).includes(name)) return false;
+    for (const [, name, value] of selector.matchAll(/\[([\w-]+)(?:="?([^"\]]+)"?)?\]/g)) {
+      const key = name.slice(5).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+      const actual = name.startsWith('data-') ? this.dataset[key] : this.attributes[name];
+      if (actual === undefined || (value !== undefined && value !== actual)) return false;
+    }
+    return true;
+  }
   addEventListener(type: string, listener: (event: KeyboardEvent) => void) { (this.listeners[type] ??= []).push(listener); }
   querySelectorAll(selector: string): TestNode[] {
     return this.children.flatMap(child => [child, ...child.querySelectorAll('*')]).filter(node =>
-      selector === '*' || (selector === 'button:not(:disabled)' ? node.tagName === 'button' && !node.disabled : node.tagName === selector));
+      node.matches(selector));
   }
   querySelector(selector: string) { return this.querySelectorAll(selector)[0]; }
   focus() { dom.activeElement = this; }
   fire(type: string, key = '', shiftKey = false) {
     let prevented = false;
-    const event = { key, shiftKey, preventDefault() { prevented = true; }, stopPropagation() {} } as KeyboardEvent;
+    const event = { key, shiftKey, target: this, preventDefault() { prevented = true; }, stopPropagation() {} } as unknown as KeyboardEvent;
     for (const listener of this.listeners[type] ?? []) listener(event);
     return prevented;
   }

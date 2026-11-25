@@ -58,7 +58,8 @@ export const LIFE_COPY = {
 export const PHONE_TABS = { all: '전체', shop: '상점', repair: '정비', bank: '은행', retire: '조기 은퇴' } as const;
 export type PhoneTab = keyof typeof PHONE_TABS;
 export const COPY = {
-  exit: '그냥 지나간다', previous: '이전', next: '다음', details: '상세', back: '목록',
+  exit: '그냥 지나간다', reopen: '다시 열기',
+  quitTitle: '퇴사 확인', quitQuestion: '퇴사하고 구직자가 될까요?', quitConfirm: '퇴사한다', cancel: '취소', previous: '이전', next: '다음', details: '상세', back: '목록',
   empty: '지금 가능한 선택지가 없습니다.', success: '성공', fail: '실패', sure: '확정', crash: '추락',
   expected: '예상 결과', locked: '잠김', noChange: '변화 없음', endsSeason: '계절 마감',
   pages: (page: number, count: number) => `${page + 1} / ${count}`,

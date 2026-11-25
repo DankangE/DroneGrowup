@@ -1,6 +1,5 @@
-import { choose, derived, forecast, newGame, options, restore } from '../life/engine.ts';
-import type { OptionView } from '../life/engine.ts';
-import { reachable } from '../life/move.ts';
+import { choose, derived, forecast, newGame, options, reachable, restore } from '../life/engine.ts';
+import type { OptionView, Result } from '../life/engine.ts';
 import type { GameState } from '../life/types.ts';
 import { PLACES, WORLD } from '../life/world.ts';
 import { button, el, reducedMotion } from '../ui/dom.ts';
@@ -11,8 +10,10 @@ import { destinationDetails, destinationName, pick, PICK_STYLE } from './pick.ts
 import { movementFrames, playback, MOVE_STYLE } from './move.ts';
 import type { Frame } from './move.ts';
 import { transfer, TRANSFER_STYLE } from './transfer.ts';
+import { mountPopup, phoneChoices, popupModel } from './popups/index.ts';
+import { COPY } from './popups/data.ts';
 
-const PAGE_SIZE = 2;
+const DESTINATION_PAGE_SIZE = 2;
 const PHASE_LABEL = { spin: '이번 계절', pick: '갈 곳 고르기', space: '이곳에서 할 일',
   bonus: '추가 행동', event: '사건', chapter: '인생 결산', move: '이동 중', transfer: '지도 환승' } as const;
 
@@ -24,6 +25,7 @@ declare global {
 
 export function mountLife(root: HTMLElement, seed: number, debug = false): void {
   let state = newGame(seed), page = 0;
+  let result: Result | undefined, menu: 'my-life' | 'phone' | undefined, dismissed = false;
   let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
   root.classList.add('life2');
   const skip = () => frame?.phase === 'spin' ? sequence?.next() : sequence?.finish();
@@ -39,11 +41,14 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     if (event.matches) sequence?.finish();
   });
   function takeOption(id: string) {
-    if (sequence || !options(state).some(option => option.id === id && option.enabled)) return;
+    if (sequence || result || !options(state, menu === 'phone' ? 'phone' : 'board')
+      .some(option => option.id === id && option.enabled)) return;
     before = state;
     const outcome = choose(state, id);
     state = outcome.state;
-    page = 0;
+    page = 0; dismissed = false;
+    // Travel already has its wheel/path presentation; preserve all other choose() results.
+    result = id === 'spin' || id.startsWith('go:') ? undefined : outcome.result;
     const frames = movementFrames(before.board.pos, outcome.result, id === 'spin');
     const done = () => { frame = undefined; before = undefined; sequence = undefined; render(true); };
     if (!frames.length || reducedMotion()) { done(); return; }
@@ -53,11 +58,15 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
   function render(focus = false) {
     const shown = frame && before ? { ...before, board: { ...before.board, pos: frame.pos } } : state;
     const offered = frame ? [] : options(state), view = derived(shown);
+    const model = frame ? undefined : result ? popupModel(state, { kind: 'result', result })
+      : menu === 'phone' ? phoneModel() : popupModel(state, menu ? { kind: menu, offered: [] } : {});
     const phase = frame?.phase ?? (state.phase === 'action' ? state.board.step : state.phase === 'ended' ? 'chapter' : 'event');
     root.dataset.screen = state.phase === 'ended' ? 'ending' : 'play';
-    root.dataset.phase = phase;
-    const shell = el('main', 'life2-shell'), bands = hud(shown, view, offered, takeOption);
-    const mode = frame?.phase ?? (offered.some(option => option.id === 'spin') ? 'ready' : 'idle');
+    root.dataset.phase = !dismissed && model ? model.phase : phase;
+    const shell = el('main', 'life2-shell'), bands = hud(shown, view, offered, takeOption, frame || result ? undefined : next => {
+      menu = next; dismissed = false; render(true);
+    });
+    const mode = frame?.phase ?? (!result && !menu && offered.some(option => option.id === 'spin') ? 'ready' : 'idle');
     const center = wheel(state.board.dice, mode, () => sequence ? skip() : takeOption('spin'));
     bands.bottom.querySelector('.life2-spin, .life2-dice')!.replaceWith(center);
     const map = board(state, shown.board.pos);
@@ -76,10 +85,10 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     const decorate = moves.length ? pick(map, state.board.pos, moves, heading, takeOption) : undefined;
     panel.setAttribute('aria-label', PHASE_LABEL[phase]);
     const list = el('div', 'life2-option-list');
-    const choices = offered.filter(option => option.id !== 'spin');
-    const pages = Math.max(1, Math.ceil(choices.length / PAGE_SIZE));
+    const choices = model ? [] : offered.filter(option => option.id !== 'spin');
+    const pages = Math.max(1, Math.ceil(choices.length / DESTINATION_PAGE_SIZE));
     page = Math.min(page, pages - 1);
-    for (const option of choices.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
+    for (const option of choices.slice(page * DESTINATION_PAGE_SIZE, (page + 1) * DESTINATION_PAGE_SIZE)) {
       const preview = forecast(state, option.id);
       const move = moves.find(move => option.id === `go:${move.node}`);
       const control = button('', 'life2-option', () => takeOption(option.id));
@@ -97,7 +106,9 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
       }
       list.append(control);
     }
-    if (!choices.length) {
+    if (model) {
+      list.append(button(COPY.reopen, '', () => { dismissed = false; render(true); }, 'popup-reopen'));
+    } else if (!choices.length) {
       const node = WORLD.find(node => node.id === shown.board.pos)!;
       list.append(el('strong', '', PLACES[node.place].name),
         el('p', '', offered[0]?.desc ?? state.log.at(-1)?.text ?? PHASE_LABEL[phase]));
@@ -111,7 +122,22 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     shell.append(bands.top, map, panel, bands.bottom);
     const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE);
     root.replaceChildren(style, shell);
-    if (focus) (frame ? center : heading).focus({ preventScroll: true });
+    if (model && !dismissed) {
+      mountPopup(panel, model, { choose: takeOption, returnFocus: heading,
+        dismiss: () => {
+          if (result) result = undefined;
+          else if (menu) menu = undefined;
+          else dismissed = true;
+          render(true);
+        },
+        ...(menu === 'phone' && { phoneTab: phoneModel }),
+      });
+    } else if (focus) (frame ? center : heading).focus({ preventScroll: true });
+  }
+  function phoneModel(tab: Parameters<typeof phoneChoices>[1] = 'all') {
+    const offered = phoneChoices(options(state, 'phone'), tab);
+    return popupModel(state, { kind: 'phone', offered,
+      previews: Object.fromEntries(offered.map(option => [option.id, forecast(state, option.id)])) })!;
   }
   if (debug) window.__life = {
     state: () => structuredClone(state), options: () => options(state),
@@ -119,7 +145,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
       const loaded = restore(raw);
       if (!loaded) throw new Error('Invalid life layout fixture');
       sequence?.cancel(); sequence = undefined; frame = undefined; before = undefined;
-      state = loaded; page = 0; render();
+      state = loaded; page = 0; result = undefined; menu = undefined; dismissed = false; render();
     },
   };
   render();

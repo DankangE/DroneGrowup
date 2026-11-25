@@ -16,57 +16,104 @@ const SIZES = [[390, 844], [360, 740], [1280, 800], [1366, 768]];
 
 // Importable without building or opening a port so Node can regress the traversal.
 export function pagingChecks(page, check, activate = control => control.click()) {
-  const previous = page.locator('.life2-pager [data-action="page-prev"]');
-  const next = page.locator('.life2-pager [data-action="page-next"]');
-  const choices = page.locator('.life2-option-list [data-option]');
+  const popupSelector = '.life2-popup[data-popup]';
+  const popup = page.locator(popupSelector);
+  const wheel = page.locator('.life2-bottom .life2-wheel');
   const renderedOptions = nodes => nodes.map(node => ({ id: node.dataset.option, enabled: !node.disabled }));
   const engineOptions = () => page.evaluate(() => window.__life.options().map(({ id, enabled }) => ({ id, enabled })));
+  const actual = () => page.evaluate(() => window.__life.state());
+  const controls = async () => {
+    const inPopup = await popup.count() > 0;
+    const prefix = inPopup ? popupSelector : '.life2-pager';
+    const action = inPopup ? 'popup-page' : 'page';
+    return {
+      previous: page.locator(`${prefix} [data-action="${action}-prev"]`),
+      next: page.locator(`${prefix} [data-action="${action}-next"]`),
+      choices: inPopup ? `${popupSelector} [data-option]` : '.life2-option-list [data-option]',
+    };
+  };
   const clickAndRender = async control => {
-    const panel = await page.locator('.life2-options').elementHandle();
+    const panel = await (await popup.count() ? popup : page.locator('.life2-options')).elementHandle();
     assert.ok(panel, 'the life option panel is mounted');
     try {
       await activate(control);
-      // Both paging and choosing replace the panel. Wait for that render, even
-      // when the new page has the same phase or number of options as the old one.
+      // Popup paging/details replace only the inner popup; choosing and plain
+      // paging replace the whole shell. Either operation detaches this handle.
       await page.waitForFunction(oldPanel => !oldPanel.isConnected, panel);
     } finally { await panel.dispose(); }
   };
+  const dismissResults = async name => {
+    let count = 0;
+    while (await popup.count() && await popup.getAttribute('data-popup') === 'result') {
+      assert.ok(count++ < 100, 'result dismissal terminates');
+      await check(`${name} result ${count}`);
+      const before = await actual();
+      const close = page.locator(`${popupSelector} [data-action="popup-close"]`);
+      assert.equal(await close.count(), 1, 'a result has a way to continue');
+      await clickAndRender(close);
+      assert.deepEqual(await actual(), before, 'dismissing a result never chooses again');
+    }
+  };
+  const prepare = async name => {
+    await dismissResults(name);
+    const reopen = page.locator('.life2-option-list [data-action="popup-reopen"]');
+    if (!await popup.count() && await reopen.count()) {
+      const before = await actual();
+      await clickAndRender(reopen);
+      assert.deepEqual(await actual(), before, 'reopening choices does not change the engine state');
+    }
+  };
   const firstPage = async () => {
+    const { previous, next } = await controls();
+    assert.equal(await previous.count(), 1, 'the current choice view has a previous-page control');
+    assert.equal(await next.count(), 1, 'the current choice view has a next-page control');
     let count = 0;
     while (await previous.isEnabled()) {
       assert.ok(count++ < 100, 'rewinding the pager terminates');
       await clickAndRender(previous);
     }
+    return controls();
   };
   return {
     async checkPages(name) {
+      await prepare(name);
       // A prior audit leaves the pager at its end. Always include earlier pages
       // on repeated audits of the same state (e.g. after spin, then season play).
-      await firstPage();
+      const { previous, next, choices } = await firstPage();
       const offered = await engineOptions();
       const expected = offered.filter(option => option.id !== 'spin');
-      assert.deepEqual(await page.locator('.life2-bottom [data-option]').evaluateAll(renderedOptions),
-        offered.filter(option => option.id === 'spin'), 'spin is handled by the plain footer button');
+      assert.equal(await wheel.count(), 1, 'the bottom bar contains one wheel');
+      assert.equal(await wheel.evaluate(node => node.matches('button:not(:disabled)')),
+        offered.some(option => option.id === 'spin' && option.enabled), 'spin is available through the wheel exactly when offered');
       const seen = [];
-      const pages = Math.max(1, Math.ceil(expected.length / 2));
-      for (let index = 0; index < pages; index++) {
+      for (let index = 0; ; index++) {
+        assert.ok(index < 100, 'auditing pages terminates');
         await check(`${name} page ${index + 1}`);
-        const visible = await choices.evaluateAll(renderedOptions);
-        assert.deepEqual(visible, expected.slice(index * 2, (index + 1) * 2),
-          `${name} page ${index + 1}: two engine options in order, including disabled choices`);
-        seen.push(...visible.map(option => option.id));
+        // Read each rendered page: popup and plain views use different page
+        // sizes, and presentation may reorder engine choices (e.g. promo/quit).
+        const visible = await page.locator(choices).evaluateAll(renderedOptions);
+        for (const option of visible) {
+          assert.deepEqual(option, expected.find(row => row.id === option.id), `${name}: ${option.id} matches the engine`);
+          assert.ok(!seen.some(row => row.id === option.id), `${name}: ${option.id} appears only once`);
+          seen.push(option);
+        }
         assert.equal(await previous.isDisabled(), index === 0, 'previous stops at the first page');
-        assert.equal(await next.isDisabled(), index === pages - 1, 'next stops at the last page');
-        if (index < pages - 1) await clickAndRender(next);
+        if (await next.isDisabled()) break;
+        assert.ok(visible.length > 0, 'a non-final page contains choices');
+        await clickAndRender(next);
       }
-      assert.deepEqual(seen, expected.map(option => option.id), 'every engine option is reachable by paging');
+      const byId = (a, b) => a.id.localeCompare(b.id);
+      assert.deepEqual(seen.sort(byId), expected.sort(byId), `${name}: every engine option is reachable by paging, including disabled choices`);
     },
     async clickChoice(id) {
+      await prepare(`before ${id}`);
       assert.ok((await engineOptions()).some(option => option.id === id && option.enabled), `${id} is enabled`);
-      const control = page.locator(id === 'spin' ? '.life2-bottom [data-option="spin"]'
-        : `.life2-option-list [data-option="${id}"]`);
-      if (id !== 'spin') {
-        await firstPage();
+      let control = wheel;
+      if (id === 'spin') {
+        assert.equal(await wheel.evaluate(node => node.matches('button:not(:disabled)')), true, 'spin has an active wheel');
+      } else {
+        const { next, choices } = await firstPage();
+        control = page.locator(`${choices}[data-option="${id}"]`);
         let count = 0;
         while (!(await control.count())) {
           assert.ok(count++ < 100, 'finding an option terminates');
@@ -75,6 +122,12 @@ export function pagingChecks(page, check, activate = control => control.click())
         }
       }
       await clickAndRender(control);
+      // Quitting opens a confirmation before it calls choose().
+      if (id === 'quit' && await popup.count() && await popup.getAttribute('data-confirm') === 'quit') {
+        await check('quit confirmation');
+        await clickAndRender(page.locator(`${popupSelector} [data-action="popup-confirm"]`));
+      }
+      await dismissResults(`after ${id}`);
     },
   };
 }
@@ -140,7 +193,7 @@ async function movementChecks(page, load, check) {
   // Freeze browser timers so exact boundaries are reliable even on slow CI workers.
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.clock.install({ time: 0 }); await page.clock.pauseAt(1000);
-  await startRun(1); await press('[data-option="spin"]');
+  await startRun(1); await press('.life2-bottom .life2-wheel');
   assert.equal(await phase(), 'spin'); await check('rolling wheels');
   await page.clock.runFor(699); assert.equal(await phase(), 'spin');
   await page.clock.runFor(1); assert.equal(await phase(), 'pick'); await check('pick after 700ms');
@@ -155,7 +208,7 @@ async function movementChecks(page, load, check) {
     window.__lifePhaseObserver = new MutationObserver(records => window.__lifePhases.push(...records.map(record => record.oldValue)));
     window.__lifePhaseObserver.observe(document.querySelector('#app'), { attributes: true, attributeFilter: ['data-phase'], attributeOldValue: true });
   });
-  await press('[data-option="spin"]'); await page.keyboard.press('Enter'); // stop wheels early
+  await press('.life2-bottom .life2-wheel'); await page.keyboard.press('Enter'); // stop wheels early
   assert.equal(await phase(), 'move'); assert.equal(await pawn(), 'A-o1');
   await page.keyboard.press('Escape'); assert.equal(await phase(), 'space');
   assert.equal(await pawn(), 'A-o4');
@@ -196,7 +249,7 @@ async function movementChecks(page, load, check) {
     assert.equal(await pawn(), 'B-o1', 'skip and reduced-motion changes finish immediately');
   }
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await startRun(1); await press('[data-option="spin"]');
+  await startRun(1); await press('.life2-bottom .life2-wheel');
   await load(newGame(42)); await page.clock.runFor(2000);
   assert.deepEqual(await actual(), newGame(42), 'loading cancels stale animation callbacks');
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -408,7 +461,8 @@ async function main() {
             assert.deepEqual(await page.evaluate(() => window.__life.state()), expected, 'destination calls the engine');
           }
           assert.equal(await page.locator('[data-pawn]').getAttribute('data-pawn'), expected.board.pos);
-          // Finish the first season through only the plain option buttons.
+          // Finish through the current choice view, acknowledging each result
+          // before the next engine choice (including the final season result).
           for (let step = 0; expected.turn === 0 && step < 8; step++) {
             await checkPages(`${map} ${expected.phase}-${expected.board.step}`);
             const offered = options(expected).filter(option => option.enabled);
@@ -416,7 +470,7 @@ async function main() {
             await clickChoice(id); expected = choose(expected, id).state;
             assert.deepEqual(await page.evaluate(() => window.__life.state()), expected);
           }
-          assert.equal(expected.turn, 1, 'plain buttons finish a season'); seasons++;
+          assert.equal(expected.turn, 1, 'choice controls finish a season'); seasons++;
           await check(`${map} next season`);
           for (const step of ['pick', 'space', 'bonus']) {
             const fixture = structuredClone(started);

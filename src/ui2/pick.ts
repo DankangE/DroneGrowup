@@ -6,7 +6,7 @@ import { GRID, gridCell } from './board.ts';
 
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 export const destinationDetails = (move: Move): string =>
-  `${move.steps}걸음 · 통행료 ${move.fare}만${move.stop ? ' · 심사 정차' : ''}`;
+  `${move.steps}걸음${move.fare ? ` · 통행료 ${move.fare}만` : ''}${move.stop ? ' · 심사 정차' : ''}`;
 export function destinationName(move: Move, origin: string): string {
   const node = BY_ID.get(move.node)!;
   return `${node.map !== BY_ID.get(origin)!.map ? `⇄ ${MAPS[node.map].name} · ` : ''}${PLACES[node.place].name}`;
@@ -21,11 +21,12 @@ export function pathSegments(origin: string, path: readonly string[], map: MapId
 }
 
 export const PICK_STYLE = `
+.life2 .life2-tile { z-index:1; }
 .life2 button.life2-tile { padding:0; min-width:0; gap:0; box-shadow:inset 0 0 0 2px #6c3ec4; background:#e8dcff; }
 .life2 button.life2-tile .life2-glyph { font-size:15px; line-height:16px; }
 .life2 .life2-tile .life2-fare { font-size:11px; line-height:11px; }
 .life2 [data-dest]:focus-visible { outline:3px solid #ad361b; outline-offset:-3px; }
-.life2 .life2-preview { position:absolute; inset:0; width:100%; height:100%; z-index:2; pointer-events:none; }
+.life2 .life2-preview { position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; }
 .life2 .life2-preview line { stroke:#ad361b; stroke-width:.065; stroke-dasharray:.12 .1; }
 .life2 .life2-transfer-badge { border:2px solid #6c3ec4; background:#e8dcff; }
 `;
@@ -59,7 +60,8 @@ export function pick(frame: HTMLElement, origin: string, moves: readonly Move[],
     const control = button('', tile.className, () => take(`go:${move.node}`));
     for (const attribute of tile.attributes) control.setAttribute(attribute.name, attribute.value);
     control.append(...tile.childNodes);
-    control.querySelector('.life2-tile-label')!.textContent = `${move.steps}걸음${move.stop ? '!' : ''}`;
+    const label = control.querySelector('.life2-tile-label')!;
+    label.textContent = `${label.textContent} ${move.steps}${move.stop ? '!' : ''}`;
     if (move.fare) control.append(el('small', 'life2-fare', `${move.fare}만`));
     decorate(control, move); tile.replaceWith(control);
   }

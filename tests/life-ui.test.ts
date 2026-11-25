@@ -7,6 +7,8 @@ import { EVENTS } from '../src/life/compat.ts';
 import type { GameState } from '../src/life/types.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
 import { GRID, gridCell } from '../src/ui2/board.ts';
+import { mountLife } from '../src/ui2/app.ts';
+import { action, panelAt, TestNode, withDOM } from './life-popup2-dom-helper.ts';
 
 test('board places all 212 tiles in their original appendix A grid cells on all six maps', () => {
   const spec = readFileSync(new URL('../docs/design/life-board.md', import.meta.url), 'utf8');
@@ -32,55 +34,73 @@ test('grid placement handles all 63 floored percentage centers without collision
   assert.equal(cells.size, 63);
 });
 
-// Exercise the real check helpers without starting Vite or Chromium. This narrow
-// page double delays each render until waitForFunction, catching stale-page reads.
+// Mount the current UI without Vite/Chromium. Only the Playwright transport is
+// doubled: clicks render on waitForFunction, catching stale reads and waits for
+// the wrong node (popup paging keeps the options host connected).
 const { pagingChecks } = await import(new URL('../scripts/layout-check-life.mjs', import.meta.url).href);
 type TestPanel = { isConnected: boolean; dispose: () => Promise<void> };
-type TestOption = { dataset: { option: string }; disabled: boolean };
-const panel = (): TestPanel => ({ isConnected: true, dispose: async () => {} });
 class PagingPage {
-  state: GameState;
-  index = 0;
-  currentPanel = panel();
+  root = new TestNode('main');
+  browser = { matchMedia: () => ({ matches: true, addEventListener() {} }) } as unknown as Window;
+  api: NonNullable<Window['__life']>;
   pending?: () => void;
-  constructor(state: GameState) { this.state = structuredClone(state); }
-  visible() { return options(this.state).filter(option => option.id !== 'spin').slice(this.index * 2, (this.index + 1) * 2); }
+  popupRenders = 0;
+  shellRenders = 0;
+  constructor(state: GameState) {
+    this.inDOM(() => mountLife(this.root.element(), 11, true));
+    this.api = this.browser.__life!;
+    this.inDOM(() => this.api.load(state));
+  }
+  inDOM(run: () => void) {
+    withDOM(() => {
+      const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: this.browser });
+      try { run(); } finally {
+        if (original) Object.defineProperty(globalThis, 'window', original); else Reflect.deleteProperty(globalThis, 'window');
+      }
+    });
+  }
+  get state() { return this.api.state(); }
+  get index() {
+    const pager = this.root.querySelector('.life2-popup-footer') ?? this.root.querySelector('.life2-pager');
+    return Number(pager?.querySelector('span')?.textContent.split(' / ')[0] ?? 1) - 1;
+  }
+  visible() {
+    const panel = panelAt(this.root) ?? this.root.querySelector('.life2-option-list')!;
+    return panel.querySelectorAll('[data-option]').map(node => ({ id: node.dataset.option, enabled: !node.disabled }));
+  }
   async evaluate(fn: () => unknown) {
-    return structuredClone(runInNewContext(`(${fn.toString()})()`, { window: { __life: { options: () => options(this.state) } } }));
+    return structuredClone(runInNewContext(`(${fn.toString()})()`, { window: this.browser }));
   }
   async waitForFunction(fn: (oldPanel: TestPanel) => boolean, oldPanel: TestPanel) {
     assert.ok(this.pending, 'a click scheduled a render');
+    const host = this.root.querySelector('.life2-options')!;
     this.pending(); this.pending = undefined;
-    assert.equal(fn(oldPanel), true, 'waits for the old panel to detach');
+    assert.equal(fn(oldPanel), true, 'waits for the old popup or plain panel to detach');
+    if (this.root.contains(host)) this.popupRenders++; else this.shellRenders++;
   }
   locator(selector: string) {
-    const direction = selector === '.life2-pager [data-action="page-prev"]' ? -1
-      : selector === '.life2-pager [data-action="page-next"]' ? 1 : 0;
-    const id = /\[data-option="([^"]+)"\]/.exec(selector)?.[1];
-    assert.ok(direction || selector === '.life2-options' ||
-      /^\.life2-(option-list|bottom) \[data-option(?:="[^"]+")?\]$/.test(selector), selector);
-    const nodes = (): TestOption[] => {
-      const offered = selector.startsWith('.life2-bottom') ? options(this.state).filter(option => option.id === 'spin') : this.visible();
-      return offered.filter(option => !id || option.id === id).map(option => ({ dataset: { option: option.id }, disabled: !option.enabled }));
-    };
-    const disabled = () => direction === -1 ? this.index === 0 : direction === 1
-      ? (this.index + 1) * 2 >= options(this.state).filter(option => option.id !== 'spin').length
-      : nodes()[0]?.disabled;
+    const nodes = () => selector.split(' ').reduce((parents, part) => parents.flatMap(node => node.querySelectorAll(part)), [this.root]);
+    const single = () => { const found = nodes(); assert.equal(found.length, 1, selector); return found[0]; };
     return {
-      isEnabled: async () => !disabled(),
-      isDisabled: async () => disabled(),
+      isEnabled: async () => !single().disabled,
+      isDisabled: async () => single().disabled,
       count: async () => nodes().length,
-      evaluateAll: async (fn: (nodes: TestOption[]) => unknown) => fn(nodes()),
-      elementHandle: async () => { assert.equal(selector, '.life2-options'); return this.currentPanel; },
+      evaluateAll: async (fn: (nodes: TestNode[]) => unknown) => fn(nodes()),
+      evaluate: async (fn: (node: TestNode) => unknown) => fn(single()),
+      getAttribute: async (name: string) => {
+        const node = single();
+        return name.startsWith('data-') ? node.dataset[name.slice(5).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())] ?? null
+          : node.attributes[name] ?? null;
+      },
+      elementHandle: async () => {
+        const node = single(), root = this.root;
+        return { get isConnected() { return root.contains(node); }, dispose: async () => {} };
+      },
       click: async () => {
-        assert.equal(disabled(), false, `${selector} is enabled`);
+        const node = single(); assert.equal(node.disabled, false, `${selector} is enabled`);
         assert.equal(this.pending, undefined, 'the last render was awaited');
-        this.pending = () => {
-          if (direction) this.index += direction;
-          else { assert.ok(id); this.state = choose(this.state, id).state; this.index = 0; }
-          this.currentPanel.isConnected = false;
-          this.currentPanel = panel();
-        };
+        this.pending = () => this.inDOM(() => node.fire('click'));
       },
     };
   }
@@ -98,9 +118,11 @@ test('life layout paging can audit the same four-option state twice from the las
   assert.equal(page.index, 1);
   await checkPages('same season');
   assert.deepEqual(seen, [
-    ['act:st_theory', 'act:st_sim'], ['act:st_flight', 'skip'],
-    ['act:st_theory', 'act:st_sim'], ['act:st_flight', 'skip'],
+    ['act:st_theory', 'act:st_sim', 'act:st_flight'], ['skip'],
+    ['act:st_theory', 'act:st_sim', 'act:st_flight'], ['skip'],
   ]);
+  assert.equal(page.popupRenders, 3, 'paging only replaces the popup, including rewind');
+  assert.equal(page.shellRenders, 0);
   assert.deepEqual(page.state, state, 'paging never changes the game');
 });
 
@@ -118,11 +140,92 @@ test('life layout choice lookup rewinds to an earlier page and waits for the res
   assert.equal(page.pending, undefined);
 });
 
+test('life layout still traverses plain destination pages and can choose an earlier destination', async () => {
+  const state = choose(newGame(1), 'start:school').state;
+  state.board.step = 'pick'; state.board.dice = [6, 6]; state.s.car = 2;
+  const page = new PagingPage(state), seen: string[][] = [];
+  const { checkPages, clickChoice } = pagingChecks(page, async () => { seen.push(page.visible().map(option => option.id)); });
+  assert.equal(panelAt(page.root), undefined);
+  await checkPages('destinations'); await checkPages('destinations again');
+  const ids = options(state).map(option => option.id);
+  assert.deepEqual(seen, [ids.slice(0, 2), ids.slice(2, 4), ids.slice(4), ids.slice(0, 2), ids.slice(2, 4), ids.slice(4)]);
+  assert.ok(page.shellRenders > 0); assert.equal(page.popupRenders, 0);
+  await clickChoice(ids[0]); assert.deepEqual(page.state, choose(state, ids[0]).state);
+});
+
+test('life layout reopens dismissed choices and dismisses an already mounted result before auditing', async () => {
+  const page = new PagingPage(newGame(11)), checked: string[] = [];
+  const { checkPages } = pagingChecks(page, async (name: string) => { checked.push(name); });
+  page.inDOM(() => action(page.root, 'popup-close').fire('click'));
+  assert.equal(panelAt(page.root), undefined);
+  await checkPages('reopened');
+  assert.equal(panelAt(page.root).dataset.popup, 'start'); assert.deepEqual(page.state, newGame(11));
+  page.inDOM(() => page.root.querySelector('[data-option="start:school"]')!.fire('click'));
+  assert.equal(panelAt(page.root).dataset.popup, 'result');
+  await checkPages('ready');
+  assert.ok(checked.includes('ready result 1'));
+  assert.equal(panelAt(page.root), undefined);
+  assert.deepEqual(page.state, choose(newGame(11), 'start:school').state);
+});
+
+test('life layout spins through the wheel without relying on its data-option hook', async () => {
+  const state = choose(newGame(11), 'start:school').state, page = new PagingPage(state);
+  delete page.root.querySelector('.life2-wheel')!.dataset.option;
+  const { checkPages, clickChoice } = pagingChecks(page, async () => {});
+  await checkPages('wheel'); await clickChoice('spin');
+  assert.deepEqual(page.state, choose(state, 'spin').state);
+});
+
+test('life layout rejects missing engine choices, duplicate choices and incorrect enabled states', async () => {
+  const missing = new PagingPage(newGame(11));
+  missing.root.querySelector('[data-option="start:self"]')!.remove();
+  await assert.rejects(pagingChecks(missing, async () => {}).checkPages('missing'), /every engine option is reachable/);
+  const duplicate = new PagingPage(newGame(11));
+  duplicate.root.querySelector('[data-option="start:self"]')!.dataset.option = 'start:school';
+  await assert.rejects(pagingChecks(duplicate, async () => {}).checkPages('duplicate'), /appears only once/);
+  const locked = new PagingPage(newGame(11));
+  locked.root.querySelector('[data-option="start:self"]')!.disabled = true;
+  await assert.rejects(pagingChecks(locked, async () => {}).checkPages('locked'), /matches the engine/);
+});
+
+test('life layout allows presentation ordering and confirms quit before acknowledging its result', async () => {
+  const state = choose(newGame(11), 'start:school').state;
+  state.status = 'working'; state.track = 'service'; state.job.tracks = ['service'];
+  state.job.tenure = state.job.total = 4; state.s.xp = 100;
+  state.board.pos = WORLD.find(node => node.map === 'A' && node.kind === 'rankup')!.id;
+  state.board.step = 'space'; state.board.dice = [1, 1];
+  const page = new PagingPage(state), checked: string[] = [];
+  assert.deepEqual(page.visible().map(option => option.id), ['promo', 'skip', 'quit']);
+  assert.notDeepEqual(page.visible().map(option => option.id), options(state).map(option => option.id));
+  const { checkPages, clickChoice } = pagingChecks(page, async (name: string) => { checked.push(name); });
+  await checkPages('rankup'); await clickChoice('quit');
+  assert.ok(checked.includes('quit confirmation')); assert.ok(checked.includes('after quit result 1'));
+  assert.deepEqual(page.state, choose(state, 'quit').state);
+  assert.notEqual(panelAt(page.root)?.dataset.popup, 'result');
+});
+
+test('life layout audits rolled results and resumes the next choices without repeating the action', async () => {
+  const state = choose(newGame(11), 'start:school').state;
+  state.phase = 'event'; state.eventId = EVENTS[0].id; state.board.step = 'space'; state.board.dice = [1, 1];
+  const id = options(state).find(option => option.enabled && option.roll)!.id, expected = choose(state, id);
+  const page = new PagingPage(state), rolls: string[] = [];
+  const { checkPages, clickChoice } = pagingChecks(page, async () => {
+    const roll = page.root.querySelector('[data-result-wheel]'); if (roll) rolls.push(roll.textContent);
+  });
+  await clickChoice(id);
+  assert.deepEqual(rolls, [String(expected.result.roll!.value)]);
+  assert.deepEqual(page.state, expected.state);
+  assert.equal(panelAt(page.root).dataset.popup, 'bonus');
+  await checkPages('bonus'); await clickChoice('end');
+  assert.deepEqual(page.state, choose(expected.state, 'end').state);
+  assert.equal(page.state.turn, 1); assert.notEqual(panelAt(page.root)?.dataset.popup, 'result');
+});
+
 test('life layout fixtures restore, page every option, and finish a season on all six maps', async () => {
   const startPage = new PagingPage(newGame(11));
   const startChecks = pagingChecks(startPage, async () => {});
   await startChecks.checkPages('start choices');
-  assert.equal(startPage.index, 1, 'all three start choices span two pages');
+  assert.equal(startPage.index, 0, 'all three start choices fit on one popup page');
   await assert.rejects(startChecks.clickChoice('spin'), /spin is enabled/);
   await startChecks.clickChoice('start:school');
   const started = choose(newGame(11), 'start:school').state;
