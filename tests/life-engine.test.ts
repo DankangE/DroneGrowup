@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { CONTEST_EVENTS, RULES, STAGES } from '../src/game/data.ts';
 import { creditLimit, netWorth, upkeepLines } from '../src/life/economy.ts';
 import { ACTIONS, EVENTS } from '../src/life/compat.ts';
-import { choose, currentEvent, derived, forecast, HOOKS, lifeEvent, met, newGame, options, reachable, restore,
+import { ALL_EVENTS, choose, currentEvent, derived, eventCandidates, forecast, HOOKS, lifeEvent, met, newGame, options, reachable, restore,
   yearEnd } from '../src/life/engine.ts';
 import { LIFE_RULES, SPACE_MENU, STATS } from '../src/life/life-data.ts';
 import { randInt, rollDice } from '../src/life/move.ts';
@@ -238,7 +238,7 @@ test('tile menus preserve v1 kind/when filters; extra actions use place, when an
 
 test('events use weighted cooldown selection, contest preference and normal fallback', () => {
   const state = at('A-o7', 'pick');
-  let pool = EVENTS.filter(event => met(state, event.when) && CONTEST_EVENTS.includes(event.id));
+  let pool: ReturnType<typeof eventCandidates> = EVENTS.filter(event => met(state, event.when) && CONTEST_EVENTS.includes(event.id));
   const expected = structuredClone(state);
   let weight = randInt(expected, pool.reduce((sum, event) => sum + event.weight, 0));
   const event = pool.find(event => { weight -= event.weight; return weight < 0; })!;
@@ -254,17 +254,17 @@ test('events use weighted cooldown selection, contest preference and normal fall
   const skipped = choose(next, 'skip').state;
   assert.equal(skipped.board.step, 'bonus'); assert.equal(skipped.eventId, null);
   state.turn = 7;
-  for (const event of EVENTS) state.seen[event.id] = 0;
+  for (const event of ALL_EVENTS) state.seen[event.id] = 0;
   const exhausted = choose(state, 'go:A-o8').state;
   assert.equal(exhausted.phase, 'action'); assert.deepEqual(options(exhausted).map(option => option.id), ['skip']);
-  state.turn = 8;
+  state.turn = 24;
   assert.equal(choose(state, 'go:A-o8').state.phase, 'event', 'cooldown boundary is inclusive');
   state.seen = Object.fromEntries(pool.map(event => [event.id, state.turn]));
   const fallback = choose(state, 'go:A-o8').state;
   assert.equal(fallback.phase, 'event'); assert.ok(!CONTEST_EVENTS.includes(fallback.eventId!));
   // The ordinary event tile uses the full pool, with the same weighted RNG procedure.
   state.board.pos = 'A-o4'; state.seen = {};
-  pool = EVENTS.filter(event => met(state, event.when));
+  pool = eventCandidates(state);
   const normalPreview = structuredClone(state);
   weight = randInt(normalPreview, pool.reduce((sum, event) => sum + event.weight, 0));
   const normal = pool.find(event => { weight -= event.weight; return weight < 0; })!;
@@ -298,9 +298,10 @@ test('v2 accounting replaces compatibility amounts while preserving business clo
   }
   let state = at('A-o1', 'bonus', { debt: 50000 });
   for (let count = 1; count <= RULES.overdueStrikes + 2; count++) {
+    if (state.phase === 'event') state = choose(state, 'skip').state;
     state.board.step = 'bonus';
     state = choose(state, 'end').state;
-    assert.equal(state.s.overdue, count % 4); assert.equal(state.phase, 'action'); assert.equal(state.ending, null);
+    assert.equal(state.s.overdue, count % 4); assert.notEqual(state.phase, 'ended'); assert.equal(state.ending, null);
   }
   state.s.debt = 0; state.board.ledger = {}; state.board.step = 'bonus';
   assert.equal(choose(state, 'end').state.s.overdue, 0);
@@ -423,7 +424,7 @@ function randomRun(seed: number, check: boolean): GameState {
     assert.ok(steps < 204 * 7, `seed ${seed}: stuck`);
     const offered = options(state), enabled = offered.filter(option => option.enabled);
     assert.ok(enabled.length > 0);
-    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|home:(rent|sell|move):[1-6]|home:buy:[3-6](:mortgage)?|biz:(buy|up|sell|check):[a-z_]+|fund:(in|out|kind):\d+|luck:(promote|wait|shortcut:[a-z]+)|graduate:enroll|express:[A-F]-o0|date|wed:[0-2]|dual:[01]|baby|edu:[0-2]|gift:[0-2]|leisure:[a-z]+|skip|end)$/.test(option.id)));
+    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|home:(rent|sell|move):[1-6]|home:buy:[3-6](:mortgage)?|biz:(buy|up|sell|check):[a-z_]+(:\d+)?|event:(franchise|retire:[01])|fund:(in|out|kind):\d+|luck:(promote|wait|shortcut:[a-z]+)|graduate:enroll|express:[A-F]-o0|date|wed:[0-2]|dual:[01]|baby|edu:[0-2]|gift:[0-2]|leisure:[a-z]+|skip|end)$/.test(option.id)));
     const exits = enabled.filter(option => option.id === 'skip' || option.id === 'end' || option.id === 'job:none'
       || (option.id.startsWith('ev:') && !option.cost && !option.tire));
     if (state.board.step === 'spin' || state.board.step === 'pick') {

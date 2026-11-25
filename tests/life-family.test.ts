@@ -156,7 +156,9 @@ for (const [age, stage, kind] of [[7, 0, 'edu'], [13, 1, 'edu'], [16, 2, 'edu'],
       const skipped = checked(next, 'skip').state;
       assert.equal(skipped.family.kids[0].stage, stage + 1); assert.equal(skipped.turn, next.turn);
       assert.equal(skipped.board.step, 'spin'); assert.equal(skipped.s.acts, 0);
-      assert.equal(familyPopup(skipped), null); assert.ok(options(skipped).some(row => row.id === 'spin'));
+      assert.equal(familyPopup(skipped), null);
+      const resumed = skipped.phase === 'event' ? choose(skipped, 'skip').state : skipped;
+      assert.ok(options(resumed).some(row => row.id === 'spin'));
       for (const offset of [1, 2, 3]) {
         const later = structuredClone(due); later.turn += offset; assert.equal(familyPopup(later), null);
       }

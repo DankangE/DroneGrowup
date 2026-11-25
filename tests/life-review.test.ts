@@ -358,7 +358,8 @@ test('60-year spring offers pension, rehire and switch; salaried retirement neve
   assert.deepEqual(options(next).map(row => row.id), ['retire:pension', 'retire:rehire', 'retire:switch', 'job:none']);
   for (const mode of ['pension', 'rehire', 'switch'] as const) {
     const result = choose(frozen(next), `retire:${mode}`), preview = forecast(next, `retire:${mode}`);
-    assert.equal(result.state.turn, next.turn); assert.equal(result.state.phase, 'action');
+    assert.equal(result.state.turn, next.turn); assert.equal(result.state.phase, 'event');
+    assert.equal(result.state.eventId, next.eventId, 'retirement preserves the pending life event');
     assert.equal(result.state.ending, null); assert.equal(result.state.rng, next.rng);
     assert.deepEqual(result.result.deltas, preview.branches[0].deltas);
     assert.deepEqual(choose(saved(next), `retire:${mode}`), result); saved(result.state);
