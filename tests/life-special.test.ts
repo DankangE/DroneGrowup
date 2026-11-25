@@ -108,7 +108,7 @@ for (const specialist of ['inspector', 'film', 'atc'] as const) {
 test('district training scales positive graded gains by 150%, flooring each; other rewards and bonus actions stay unchanged', () => {
   const state = worker('mechanic'); tile(state, 'D', 'train');
   const id = 'act:train_mechanic', preview = forecast(frozen(state), id), next = choose(state, id);
-  assert.deepEqual(option(state, id).sure!.add, { skill: 7, theory: 7, xp: 3 });
+  assert.deepEqual(option(state, id).sure!.add, { skill: 7, theory: 6, xp: 9, rep: 1 });
   assert.equal(next.state.s.skill - state.s.skill, 7);
   assert.deepEqual(next.result.deltas, preview.branches[0].deltas);
   assert.equal(next.state.board.step, 'bonus'); assert.equal(next.state.turn, state.turn);

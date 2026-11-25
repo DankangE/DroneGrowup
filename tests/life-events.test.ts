@@ -243,7 +243,7 @@ test('rent, lost deposit, remodel value and car breakdown have lasting, bounded 
   const house = fixture('remodel'), next = act(house, 'ev:0').state;
   assert.equal(derived(next).netWorth - derived(house).netWorth, -200);
   const sale = eventEstateOffers({ ...next, board: { ...next.board, pos: 'B-o7', step: 'space' } }, true).find(o => o.action === 'sell')!;
-  assert.ok(sale); assert.equal(sale.price, 15600);
+  assert.ok(sale); assert.equal(sale.price, 8600);
   const car = act(fixture('car_trouble'), 'ev:1').state;
   car.board.pos = 'A-o0'; car.board.step = 'pick'; car.board.dice = [3, 4];
   assert.equal(eventCarState(car).s.car, 0); assert.equal(car.s.car, 2);

@@ -10,9 +10,9 @@ const salaried = (s: GameState) => !!careerTrack(s)?.salaried;
 const notPublic = (s: GameState) => salaried(s) && s.track !== 'public';
 const promotable = (s: GameState) => salaried(s) && !!careerTrack(s)?.ranks[s.job.rank + 1];
 export const EVENTS_C: LifeEvent[] = [
-  { id: 'special_promo', title: '특별 승진', text: '최근 성과를 인정받아 특별 승진 제안이 왔다.', place: 'office', when: {}, weight: 3,
+  { id: 'special_promo', title: '특별 승진', text: '최근 성과를 인정받아 특별 승진 제안이 왔다.', place: 'office', when: {}, weight: 8,
     eligible: s => promotable(s) && s.job.perf >= 80, choices: [answer('받는다', {}, 0, { promote: 1, perfSet: 60 }), answer('정식 심사를 기다린다', { rep: 3 }, 0, { perf: 10 })] },
-  { id: 'parachute', title: '낙하산 제안', text: '아는 사람이 빈 자리를 소개하며 승진을 약속한다.', place: 'office', when: { min: { net: 150 } }, weight: 2,
+  { id: 'parachute', title: '낙하산 제안', text: '아는 사람이 빈 자리를 소개하며 승진을 약속한다.', place: 'office', when: { min: { net: 150 } }, weight: 4,
     eligible: promotable, choices: [answer('수락', { rep: -10 }, 0, { promote: 1, perfSet: 40 }), answer('거절', { rep: 6 })] },
   { id: 'team_fault', title: '팀 사고 책임', text: '팀의 실수에 대해 책임 소재를 정해야 한다.', place: 'office', when: {}, weight: 3,
     eligible: s => salaried(s) && s.job.rank >= 1, choices: [answer('책임진다', { rep: 8 }, 0, { perf: -20 }),

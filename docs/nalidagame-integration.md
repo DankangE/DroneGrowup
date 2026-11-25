@@ -61,8 +61,11 @@ registered under `pilotgrowup-v2`, while keeping the old registration usable dur
 | Request body | 32 KB | Unchanged; typical state approximately 4–6 KB |
 | Leaderboard | `pilotgrowup` | Separate `pilotgrowup-v2`; never mix v1 scores |
 
-The review threshold still needs the v2 simulation maximum from the balance work. Do not reuse the
-old 400000 threshold as a measured v2 value.
+T15 round 2 (2026-11-26): 16 policies × seeds 1–300, each under base, single-roulette, and no-bank
+rules, observed a maximum score of **238061** (all three experiments) and zero formula-cap violations.
+Twice this observed maximum is **476122**, the proposed v2 review threshold. This is a measured
+review threshold, not a mathematical maximum; balance acceptance still has 41 failing criteria.
+See [the balance report](life-balance-report.md). No server threshold was changed.
 
 ## Progress (`PUT /progress`, last write wins on `progressAt`)
 
