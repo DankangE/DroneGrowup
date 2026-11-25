@@ -80,6 +80,31 @@ test('timed policy excludes cross-map routes even when a transfer is reachable',
   assert.ok(selected.path.every(node => node.startsWith('A-')));
 });
 
+for (const [map, eventId, destination] of [
+  ['A', 'hq_call', 'B'], ['C', 'hq_call', 'B'], ['F', 'hq_call', 'B'],
+  ['B', 'posting', 'C'], ['E', 'posting', 'C'],
+]) {
+  test(`timed policy stays on ${map} during ${eventId} without changing ordinary playtest choices`, () => {
+    const state = mapFixture(map);
+    state.phase = 'event'; state.eventId = eventId;
+    state.board.step = 'space'; state.board.dice = [1, 1];
+    const before = structuredClone(state);
+    assert.deepEqual(restore(state), state);
+
+    const ordinary = pickLifeOption(state);
+    assert.equal(ordinary, 'ev:0');
+    assert.equal(mapOf(choose(state, ordinary).state), destination, 'the event still transfers in normal play');
+
+    const local = pickLifeOption(state, { stayMap: map });
+    assert.equal(local, 'ev:1');
+    const after = choose(state, local).state;
+    assert.equal(mapOf(after), map);
+    assert.equal(after.eventId, null, 'the local response resolves the event');
+    assert.equal(after.board.step, 'bonus');
+    assert.deepEqual(state, before, 'policy forecasts do not consume RNG or mutate the input');
+  });
+}
+
 test('promotion completes the playtest target immediately, but entering a job does not', async () => {
   let state = choose(newGame(1), 'start:work').state;
   state = choose(state, 'job:service').state;

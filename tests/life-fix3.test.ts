@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { choose, derived, forecast, newGame, options } from '../src/life/engine.ts';
+import { EVENT_KEYS } from '../src/life/events-a.ts';
 import type { GameState } from '../src/life/types.ts';
 import { WORLD } from '../src/life/world.ts';
 import { mountLife } from '../src/ui2/app.ts';
@@ -63,7 +64,11 @@ test('F3: a successful engine promotion mounts the fullscreen rank card with the
 });
 
 test('F3: winter warning is on both the annual and review face; acknowledging uses job:none exactly once', () => {
-  const state = worker(), expected = choose(state, 'end');
+  const state = worker();
+  // Isolate the review: this spring's periodic life event has already been drawn.
+  state.timers[EVENT_KEYS.lifeAt] = state.turn + 1;
+  const expected = choose(state, 'end');
+  assert.equal(expected.state.eventId, null);
   inApp(state, (root, api) => {
     pick(root, 'end'); assert.equal(panelAt(root).dataset.popup, 'year-end');
     assert.match(root.querySelector('p')!.textContent, /성과 26: 경고 기준 30 미만/);

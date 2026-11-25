@@ -5,7 +5,7 @@ import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { choose, derived, newGame, options, reachable } from '../src/life/engine.ts';
+import { choose, derived, forecast, newGame, options, reachable } from '../src/life/engine.ts';
 import { rankChange } from '../src/life/career2.ts';
 import { WORLD } from '../src/life/world.ts';
 import { audit, keyboardActivate, pagingChecks } from './layout-check-life.mjs';
@@ -35,7 +35,11 @@ export function pickLifeOption(state, { stayMap } = {}) {
     assert.ok(moves.length, `no route remains on map ${stayMap}`);
     return `go:${moves[0].node}`;
   }
-  const event = offered.filter(option => option.id.startsWith('ev:')).sort((a, b) => a.cost - b.cost)[0];
+  // Events can relocate the pawn too. Timed runs only accept responses whose
+  // forecast branches stay local; ordinary playtest choices keep their ordering.
+  const event = offered.filter(option => option.id.startsWith('ev:') && (!stayMap ||
+    forecast(state, option.id).branches.every(branch => !branch.effects ||
+      nodes.get(branch.effects.position).map === stayMap))).sort((a, b) => a.cost - b.cost)[0];
   if (event) return event.id;
   for (const prefix of ['work', 'train', 'prep']) {
     const duty = find(`act:${prefix}_${state.track}`);
