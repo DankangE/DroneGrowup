@@ -21,7 +21,7 @@ export const LIFE_RULES = {
   spring: 0,
   restGain: 60,
   eventCooldown: RULES.eventCooldown,
-  start: { ...RULES.start, happy: 0, fans: 0, homeIndex: 100, capStamina: 100 },
+  start: { ...RULES.start, happy: 100, fans: 0, homeIndex: 100, capStamina: 100 },
   startNode: 'A-o0',
   percent: 100,
   uintMax: 0xffffffff,
@@ -86,6 +86,70 @@ export const HOME_TEXT = {
   occupied: '거주할 집을 마련했다.', rented: '추가 주택을 세놓았다.', sold: '집을 팔거나 임대 계약을 끝냈다.',
   moved: '거주지를 옮겼다.', maxOwned: '집은 최대 4채까지 보유할 수 있습니다.',
   maxEstates: '세놓은 집은 최대 3채입니다. 먼저 한 채를 팔아 주세요.',
+} as const;
+
+// §8.2–8.4. Leisure reuses the camping/domestic/overseas rows of §9.2.
+export const WEDDINGS = [
+  { title: '작은 결혼식', cost: 300, add: { happy: 20 } },
+  { title: '예식장', cost: 1200, add: { happy: 35, net: 10 } },
+  { title: '호화 예식', cost: 3500, add: { happy: 50, net: 20, rep: 10 } },
+] satisfies { title: string; cost: number; add: StatMap }[];
+export const EDU = [
+  { age: 7, title: '특기 교육', cost: 800 },
+  { age: 13, title: '특목 준비', cost: 1500 },
+  { age: 16, title: '유학', cost: 3000 },
+] as const;
+export const INDEPENDENCE = [
+  { min: 0, happy: 20, points: 200 }, { min: 3, happy: 40, points: 500 },
+  { min: 6, happy: 70, points: 1000 },
+] as const;
+export const GIFTS = [
+  { cost: 0, happy: 0 }, { cost: 500, happy: 8 }, { cost: 2000, happy: 20 },
+] as const;
+export const HAPPY_YEAR = {
+  living: [-2, 0, 3, 6], spouse: 3, homeFocus: 2, child: 2, exhausted: -1,
+  debt: -2, jobless: -3, retiredResort: 3, crowded: -3,
+} as const;
+export const FAMILY_RULES = {
+  partner: 'partner', dateCost: 30, dateChance: 45, repPer: 15, repCap: 20, wait: 4,
+  marriageTier: 2, babyCost: 150, babyHappy: 30, babyMaxAge: 45, maxKids: 3,
+  independentAge: 20, independentStage: 4, schoolFee: 20, schoolPoints: 1,
+  specialPoints: 2, extraPoints: 1, educationChance: 60, maxPoints: 9,
+  focusRecovery: 3, singlePct: 150, exhaustedBelow: 20, resortMap: 'F',
+  datePlaces: ['culture', 'waterfront_park'] as readonly string[],
+  weddingPlaces: ['wedding', 'resort'] as readonly string[], babyPlace: 'hospital',
+  feat: (kid: number) => `kid_independent:${kid}`,
+} as const;
+export const FAMILY_KEYS = {
+  dual: 'family_choose_dual', season: 'family_season', year: 'family_year',
+  exhausted: 'family_exhausted', lastExhausted: 'family_last_exhausted',
+  school: (kid: number) => `family_school:${kid}`,
+} as const;
+export const LEISURE = [
+  { id: 'camping', title: '캠핑 취미', cost: 200, happy: 8, stamina: 10,
+    places: ['park', 'culture', 'waterfront_park', 'golf'] },
+  { id: 'domestic', title: '국내 여행', cost: 150, happy: 8, stamina: 10,
+    places: ['waterfront_park', 'resort'] },
+  { id: 'overseas', title: '해외 여행', cost: 600, happy: 20, stamina: 20,
+    places: ['waterfront_park', 'resort'] },
+] as const;
+export const FAMILY_TEXT = {
+  date: '소개팅', dateDesc: '비용 30만원. 기본 45%, 평판 15마다 +1%p(최대 +20).',
+  partner: '새로운 인연을 만났다.', missed: '서로의 다음 인연을 응원했다.',
+  wedding: '결혼식을 올렸다.', weddingDesc: (cost: number, happy: number) => `비용 ${cost}만원 · 행복 +${happy}.`,
+  wait: '인연이 생긴 뒤 4계절이 지나야 합니다.', home: '결혼하려면 등급 2 이상의 집이 필요합니다.',
+  dual: ['가정 중심', '맞벌이'], dualDesc: ['연말 행복 +2 · 계절 회복 +3.', '계절 수입 +80부터.'],
+  dualDone: '부부의 생활 방식을 정했다.', baby: '아이 맞이하기', babyDone: '새 식구를 맞이했다.',
+  babyDesc: '비용 150만원 · 행복 +30.', married: '기혼일 때 가능합니다.',
+  age: '45세까지만 아이를 맞이할 수 있습니다.', capacity: '집의 자녀 정원 또는 최대 3명에 도달했습니다.',
+  school: '학교에 맡긴다', academy: '학원', educationDone: '아이의 교육 방향을 정했다.',
+  specialDone: '교육을 통해 아이의 재능이 자랐다.', educationDesc: (kid: number, age: number, cost: number, points: number) =>
+    `${kid + 1}번째 자녀 · ${age}세. 비용 ${cost}만원 · 장래 +${points}.`,
+  academyDesc: '다음 교육 팝업까지 계절당 20만원 · 장래 +1.', specialDesc: '60% 확률로 장래 +1 추가.',
+  gift: (cost: number) => `독립 지원금 ${cost}만원`, independent: '자녀가 독립했다.',
+  giftDesc: (kid: number, happy: number, points: number) => `${kid + 1}번째 자녀 · 행복 +${happy} · 업적 ${points}점.`,
+  leisureDone: '여가를 즐기며 재충전했다.', leisureDesc: (cost: number, happy: number, stamina: number) =>
+    `비용 ${cost}만원 · 행복 +${happy} · 체력 +${stamina}.`,
 } as const;
 
 const actionIds = new Set(ACTIONS.map(action => action.id));
