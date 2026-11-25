@@ -18,7 +18,9 @@ const MAX_PLANNER_FULL_REST_PCT = 35;
 const MAX_SCORE = 100_000;
 const MIN_ACTIONS_PER_SEASON = 1.0;
 const MAX_ACTIONS_PER_SEASON = 4.0;
-const ACTION_SECONDS = 6;
+// Seconds a player spends per decision. An action is one tap on its card (two for a costly or career-changing one), a
+// 0.7 s skippable wheel and one tap on 계속: about 4.5 s, down from 6 s with the old three-tap list and 1.6 s locked spin.
+const ACTION_SECONDS = 4.5;
 const REST_SECONDS = 3;
 const EVENT_SECONDS = 8;
 const FREE_SECONDS = 4;

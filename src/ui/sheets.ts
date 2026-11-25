@@ -95,7 +95,9 @@ export function showResult(root: HTMLElement, result: Result, previous: GameStat
   const reveal = el('div', 'result-details');
   const continueButton = button('계속', 'primary full-width', () => { sheet.close(); onContinue(); }, 'continue');
   continueButton.append(icon('arrow'));
+  const skipInput = new AbortController();
   const showDetails = () => {
+    skipInput.abort();
     if (!sheet.dialog.isConnected) return;
     live.replaceChildren(el('p', `result-status ${result.roll?.success === false ? 'negative' : 'positive'}`, result.roll ? result.roll.success ? '성공!' : '실패' : '확정'), el('p', 'result-text', result.text));
     const chips = el('div', 'delta-chips');
@@ -120,6 +122,7 @@ export function showResult(root: HTMLElement, result: Result, previous: GameStat
     if (result.eventId) reveal.append(el('p', 'event-notice', '새로운 소식이 도착했어요. 계속해서 확인해 보세요.'));
     sheet.dialog.dataset.spin = 'done';
     continueButton.disabled = false;
+    continueButton.focus({ preventScroll: true });
   };
   const wheel = result.roll && resultWheel(result.roll);
   if (wheel) {
@@ -129,8 +132,18 @@ export function showResult(root: HTMLElement, result: Result, previous: GameStat
   }
   sheet.body.append(live, reveal, continueButton);
   sheet.open();
-  if (wheel) wheel.spin(showDetails);
-  else showDetails();
+  if (!wheel) { showDetails(); return; }
+  const animation = wheel.spin(showDetails);
+  if (animation) {
+    const skip = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      animation.finish();
+    };
+    const listener = { capture: true, signal: skipInput.signal };
+    sheet.dialog.addEventListener('click', skip, listener);
+    document.addEventListener('keydown', skip, listener);
+  }
 }
 
 export function confirmNewRun(root: HTMLElement, onConfirm: () => void) {

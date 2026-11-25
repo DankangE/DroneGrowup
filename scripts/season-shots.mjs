@@ -31,10 +31,10 @@ try {
     await page.goto(server.resolvedUrls.local[0] + '?debug=1&seed=7');
     await page.locator('[data-action="new"]').click();
     await page.locator('[data-acts="0"]').waitFor();
-    // Give the opening home view an activity detail, then select the full rest card.
+    // Capture the comparison grid, then highlight the separate season-end action.
     await revealOption(page, { id: 'st_theory' });
     await shot('home');
-    await revealOption(page, { id: 'rest' });
+    await (await revealOption(page, { id: 'rest' })).focus();
     await page.locator('[data-option="rest"][data-rest="full"]').waitFor();
     await shot('rest-full');
 
@@ -44,7 +44,7 @@ try {
     await page.locator('[data-acts="2"]').waitFor();
     await revealOption(page, { id: 'st_sim' });
     await shot('mid-season');
-    await revealOption(page, { id: 'rest' });
+    await (await revealOption(page, { id: 'rest' })).focus();
     await page.locator('[data-option="rest"][data-rest="light"]').waitFor();
     await shot('rest-light');
 

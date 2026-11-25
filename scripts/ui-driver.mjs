@@ -35,20 +35,25 @@ export async function eachTabAndPage(page, each) {
 
 /**
  * Brings the button that commits one option on screen the way a player would and returns it: looks at the
- * current view, then through its tabs and pages, then through the bottom navigation. An option shown as a
- * list row (data-pick) is selected first, which puts its commit button (data-option) on screen.
+ * current view, then through its tabs and pages, then through the bottom navigation. A regular card commits directly. A
+ * confirmation card opens its inline commit button first.
  */
 export async function revealOption(page, option) {
   const target = shown(page, `[data-option="${option.id}"]`);
   const here = async () => {
     if (await has(target)) return true;
-    const row = shown(page, `[data-pick="${option.id}"]`);
-    if (!(await has(row))) return false;
-    await row.click();
+    const pick = shown(page, `[data-pick="${option.id}"]`);
+    if (!(await has(pick))) return false;
+    await pick.click();
     await target.waitFor({ state: 'visible', timeout: 3000 });
     return true;
   };
   if (await here()) return target;
+  const back = shown(page, '[data-action="back-to-options"]:enabled');
+  if (await has(back)) {
+    await back.click();
+    if (await here()) return target;
+  }
   const nav = ['shop', 'repair'].includes(option.kind) ? 'shop' : option.kind === 'bank' ? 'bank' : 'home';
   const tab = page.locator(`[data-nav="${nav}"]:enabled`);
   if (await tab.count() && await tab.getAttribute('aria-pressed') !== 'true') await tab.click();

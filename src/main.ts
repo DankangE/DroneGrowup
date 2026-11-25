@@ -128,6 +128,7 @@ function renderPlay(nav: Nav, previous?: GameState, change?: RankChange | null) 
   toggle.setAttribute('role', 'group');
   toggle.setAttribute('aria-label', '보기 전환');
   function updateStage(view: StageView) {
+    const restoreFocus = toggle.contains(document.activeElement);
     if (stageView !== view) {
       stageView = view;
       try { sessionStorage.setItem(viewKey, view); } catch { /* Keep the in-memory preference. */ }
@@ -146,6 +147,7 @@ function renderPlay(nav: Nav, previous?: GameState, change?: RankChange | null) 
       sceneWindow.replaceChildren(map.element, toggle);
       map.fit();
     }
+    if (restoreFocus) (field ? fieldButton : mapButton).focus({ preventScroll: true });
   }
   const fieldButton = button('현장', '', () => updateStage('field'));
   const mapButton = button('지도', '', () => updateStage('map'));
@@ -170,6 +172,31 @@ function renderPlay(nav: Nav, previous?: GameState, change?: RankChange | null) 
   if (change) showRankCard(root, change, resume);
   else resume();
 }
+
+// A held Enter must not run through a confirmation: the first press opens it and moves focus to its commit button.
+const typing = (event: KeyboardEvent) =>
+  event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.matches('input, textarea, select'));
+document.addEventListener('keydown', event => {
+  if (event.repeat && (event.key === 'Enter' || event.key === ' ') && !typing(event)) event.preventDefault();
+}, true);
+
+document.addEventListener('keydown', event => {
+  if (typing(event) || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey
+    || root.dataset.phase !== 'action' || activePanel?.currentNav() !== 'home' || root.querySelector('dialog[open]')) return;
+  const panel = activePanel.panel;
+  let target: HTMLButtonElement | null | undefined;
+  if (/^[1-9]$/.test(event.key)) target = panel.querySelectorAll<HTMLButtonElement>('.option-card')[Number(event.key) - 1];
+  else if (event.key.toLowerCase() === 'r') {
+    // The rest bar can give its row to a tall confirmation, so R goes through the panel rather than the button.
+    event.preventDefault();
+    if (!event.repeat) activePanel.rest();
+    return;
+  }
+  if (target) {
+    event.preventDefault();
+    if (!event.repeat) target.click();
+  }
+});
 
 function takeOption(id: string) {
   if (choosing || state.phase === 'ended') return;

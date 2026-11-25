@@ -38,11 +38,13 @@ export function resultWheel(roll: NonNullable<Result['roll']>) {
       caption.textContent = `굴림 ${roll.value} · ${roll.chance} 미만이면 성공`;
       done();
     };
-    if (reducedMotion()) finish();
-    else {
-      const turning = disc.animate([{ transform: 'rotate(0deg)' }, { transform: stop }], { duration: 1600, easing: 'cubic-bezier(.16,.69,.18,1)' });
-      turning.onfinish = finish;
+    if (reducedMotion()) {
+      finish();
+      return;
     }
+    const turning = disc.animate([{ transform: 'rotate(0deg)' }, { transform: stop }], { duration: 700, easing: 'cubic-bezier(.16,.69,.18,1)' });
+    turning.onfinish = finish;
+    return turning;
   }
   return { machine, spin };
 }

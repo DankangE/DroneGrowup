@@ -49,10 +49,13 @@ export const STAGE_PLACE: Record<Stage, PlaceId> = {
 
 const EVENT_SPEAKER: Record<string, SpeakerId> = {
   neglect: 'mechanic', typhoon: 'anchor', used_deal: 'broker', theft: 'friend', bird: 'mechanic',
-  scholarship: 'professor', senior: 'senior', club: 'senior', cram: 'examiner',
+  scholarship: 'professor', senior: 'senior', club: 'senior', cram: 'examiner', practice_bursary: 'senior',
   illegal: 'broker', regular: 'client', grant: 'banker', expo: 'client', friend: 'friend',
+  market_map: 'client', coast_archive: 'client',
   restructure: 'manager', scout: 'manager', taskforce: 'manager',
+  battery_log: 'inspector', field_handover: 'manager', new_hire: 'trainee',
   trainee_crash: 'trainee', best_instructor: 'examiner', rival_academy: 'trainee', inspection: 'inspector',
+  silent_lesson: 'trainee', landing_marks: 'senior', workshop_bus: 'client',
   tax: 'inspector', subcontract: 'manager', key_staff: 'engineer', angel: 'investor', dumping: 'client',
   hearing: 'inspector', audit: 'banker', advisor: 'professor',
 };

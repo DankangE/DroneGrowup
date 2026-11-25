@@ -108,6 +108,7 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
   let clicks = 0;
   let reloaded = false;
   let calm = false;
+  let skips = 0;
   while (state.phase !== 'ended') {
     assert.ok(clicks++ < 20000, 'run did not end');
     const shown = await page.evaluate(() => window.__game.options().map((o) => `${o.id}:${o.enabled}`));
@@ -143,10 +144,11 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
     const target = await revealOption(page, option);
     assert.equal(await target.isEnabled(), true, option.id);
     if (option.roll) {
-      const preview = state.phase === 'event' ? target.locator('[data-wheel-preview]') : page.locator('.detail [data-wheel-preview]');
-      assert.equal(await preview.getAttribute('data-chance'), String(option.roll.chance));
+      const chance = await target.evaluate(button => button.closest('.answer, .detail, .option-card')
+        .querySelector('[data-wheel-preview]')?.dataset.chance);
+      assert.equal(chance, String(option.roll.chance));
     }
-    const outcomeLines = await target.evaluate(button => [...button.closest('.answer, .detail, .service-card')
+    const outcomeLines = await target.evaluate(button => [...button.closest('.answer, .detail, .service-card, .option-card, .rest-bar')
       .querySelectorAll('.outcomes > :is(.upfront, .success, .failure, .risk)')].map(line => line.textContent));
     assert.deepEqual(outcomeLines, forecastLines(forecast(state, id)).map(line => line.text), id);
     await target.click();
@@ -159,10 +161,17 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
       }));
       assert.equal(spin.disabled, spin.spinning, 'continue is locked while the wheel turns');
       if (spin.reduced) assert.equal(spin.spinning, false, 'reduced motion stops immediately');
+      if (spin.spinning && skips < 2) {
+        if (skips === 0) await page.keyboard.press('Enter');
+        else await page.locator('.result-sheet .sheet-header').click();
+        skips++;
+        await stoppedResult(page).waitFor({ timeout: 350 });
+      }
     }
     const card = stoppedResult(page);
     await card.waitFor();
     const wheel = card.locator('[data-wheel]');
+    assert.ok(await card.locator('[data-action="continue"]').evaluate(button => button === document.activeElement), 'focus moves to 계속');
     assert.equal(await wheel.count(), Number(!!next.result.roll));
     if (next.result.roll) {
       const { chance, value, success } = next.result.roll;

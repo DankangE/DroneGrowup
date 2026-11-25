@@ -62,7 +62,8 @@ try {
     await page.locator('[data-stamina="exhausted"]').waitFor();
     await page.locator('[data-tab="job"]').click();
     await revealOption(page, { id: 'job_spray' });
-    await page.locator('.detail .lock-reasons', { hasText: '체력 부족' }).waitFor();
+    await page.locator('.detail:has([data-option="job_spray"]) .lock-reasons, [data-option="job_spray"] .lock-reasons')
+      .filter({ hasText: '체력 부족' }).waitFor();
     await shot('low-stamina');
     await context.close();
   }

@@ -43,7 +43,8 @@ try {
     await page.locator('[data-token][data-season="0"][data-step="2"]').waitFor();
     await shot('mid-season');
     const roll = await revealOption(page, { id: 'st_flight' });
-    await page.locator('.detail [data-wheel-preview]').waitFor();
+    assert.ok(await roll.evaluate(button => button.closest('.option-card, .detail')
+      .querySelector('[data-wheel-preview]').checkVisibility()));
     await shot('spinner-before');
     await roll.click();
     await stoppedResult(page).locator('[data-wheel][data-outcome]').waitFor();

@@ -6,8 +6,11 @@ import { dateLabel, derived, forecast, num } from '../game/engine.ts';
 import type { Forecast, GameState, OptionView, PlaceId, Stat } from '../game/types.ts';
 import { button, el, meter, paginateRows } from './dom.ts';
 import { icon, type IconName } from './icons.ts';
-import { detailLabel, forecastLines, price, restGain, signed, statValue } from '../game/outcome-text.ts';
+import { detailLabel, forecastLines, price, signed, statValue } from '../game/outcome-text.ts';
 import { shortNames } from './scene.ts';
+
+// Home choices charging this many 만원 upfront require a second tap.
+export const CONFIRM_COST = 100;
 
 export type Nav = 'home' | 'shop' | 'bank' | 'info' | 'log';
 type Tab = 'all' | 'job' | 'action' | 'place';
@@ -38,7 +41,14 @@ export function commitButton(o: OptionView, label: string, onChoose: (id: string
 export function pager(page: number, total: number, change: (page: number) => void) {
   const bar = el('div', 'pager');
   for (const step of [-1, 1]) {
-    const b = button('', 'page-arrow', () => change(page + step), step < 0 ? 'page-prev' : 'page-next');
+    const action = step < 0 ? 'page-prev' : 'page-next';
+    const b = button('', 'page-arrow', () => {
+      const owner = b === document.activeElement ? b.closest('.panel, dialog') : null;
+      change(page + step);
+      const next = owner?.querySelector<HTMLButtonElement>(`[data-action="${action}"]:enabled`)
+        ?? owner?.querySelector<HTMLButtonElement>('.pager button:enabled');
+      next?.focus({ preventScroll: true });
+    }, action);
     b.setAttribute('aria-label', step < 0 ? '이전 페이지' : '다음 페이지');
     b.disabled = step < 0 ? page === 0 : page >= total - 1;
     b.append(icon('arrow'));
@@ -70,7 +80,9 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
   }
   for (const line of d.upkeep.lines) statEntries.push(['다음 계절 · ' + line.label, signed(line.amount) + '만원']);
   statEntries.push(['다음 계절 합계', signed(d.upkeep.total) + '만원']);
-  const actions = choices.filter(o => !o.free && o.kind !== 'event');
+  const rest = choices.find(o => o.id === 'rest');
+  const actions = choices.filter(o => !o.free && o.kind !== 'event' && o !== rest)
+    .sort((a, b) => Number(b.enabled) - Number(a.enabled) || Number(a.kind === 'job') - Number(b.kind === 'job'));
   const logs = [...state.log].reverse();
   function reset() { page = 0; picked = ''; }
   function switchView(value: Nav) { view = value; tab = 'all'; infoTab = 'stats'; reset(); render(); }
@@ -96,75 +108,87 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     const detail = el('article', 'detail');
     const head = el('div', 'detail-head');
     head.append(el('small', '', PLACES[o.place].name), el('h2', '', o.title));
-    const rest = o.id === 'rest';
     const f = preview(o);
-    const label = detailLabel(o.title, f, rest ? restMode : undefined);
-    const commit = commitButton(o, label, choose);
-    if (rest) {
-      commit.dataset.rest = restMode;
-      commit.setAttribute('aria-label', label);
-    }
-    const effects = el('div', 'detail-effects');
-    if (o.roll) effects.append(previewWheel(o.roll.chance));
-    effects.append(outcomes(o, f));
-    detail.append(head, el('p', 'desc', o.desc), effects, commit);
+    const commit = commitButton(o, detailLabel(o.title, f), choose);
+    if (o.roll) head.append(previewWheel(o.roll.chance));
+    const back = button('선택지로', 'secondary', () => {
+      picked = '';
+      render();
+      panel.querySelector<HTMLButtonElement>(`[data-pick="${o.id}"]`)?.focus();
+    }, 'back-to-options');
+    const controls = el('div', 'detail-controls');
+    controls.append(back, commit);
+    detail.append(head, el('p', 'desc', o.desc), outcomes(o, f), controls);
     return detail;
   }
 
-  function pickRow(o: OptionView, selected: boolean) {
-    const row = button('', 'pick-row' + (o.enabled ? '' : ' locked'), () => { picked = o.id; render(); });
-    row.dataset.pick = o.id;
-    if (o.roll) row.style.setProperty('--chance', o.roll.chance + '%');
-    if (o.id === 'rest') row.dataset.rest = restMode;
-    row.setAttribute('aria-pressed', String(selected));
-    const patch = el('span', 'row-icon');
-    patch.append(icon(o.enabled ? symbols[o.place] : 'lock'));
-    const title = el('strong', '', o.title);
-    if (o.roll?.staminaPct) title.append(el('small', 'row-reason', staminaReason(o)));
-    row.append(patch, title, el('small', 'row-price', o.id === 'rest' ? restGain(preview(o)) : price(o)),
-      el('b', o.roll ? 'odds' : 'odds sure', o.roll ? o.roll.chance + '%' : '확정'));
-    return row;
+  function focusDetail() {
+    const commit = panel.querySelector<HTMLButtonElement>('.detail [data-option]:enabled');
+    (commit ?? panel.querySelector<HTMLButtonElement>('[data-action="back-to-options"]'))?.focus();
   }
 
-  const sizes = new Map<OptionView, { row: number; detail: number }>();
-  let rowGap = 0;
-  function pageHeight(items: OptionView[]) {
-    let rows = 0, detail = 0;
-    for (const item of items) {
-      const size = sizes.get(item)!;
-      rows += size.row;
-      detail = Math.max(detail, size.detail);
+  function optionCard(o: OptionView) {
+    const f = preview(o);
+    // A locked card opens a read-only detail (full forecast, disabled commit) so the player can see what it would do.
+    const confirm = !o.enabled || o.cost >= CONFIRM_COST || f.branches.some(b => b.stage || b.end);
+    const card = button('', 'option-card', () => {
+      if (confirm) {
+        picked = o.id;
+        render();
+        focusDetail();
+      } else choose(o.id);
+    });
+    if (confirm) {
+      card.dataset.pick = o.id;
+      card.setAttribute('aria-expanded', String(o.id === picked));
+    } else card.dataset.option = o.id;
+    card.classList.toggle('locked', !o.enabled);
+    const head = el('span', 'option-head');
+    head.append(icon(symbols[o.place]), el('strong', '', o.title));
+    if (o.roll) {
+      const odds = el('b', 'odds', o.roll.chance + '%');
+      odds.dataset.wheelPreview = '';
+      odds.dataset.chance = String(o.roll.chance);
+      odds.style.setProperty('--chance', o.roll.chance + '%');
+      head.append(odds);
     }
-    return rows + Math.max(0, items.length - 1) * rowGap + detail;
-  }
-  function actionPages(list: OptionView[], room: number) {
-    const pages: OptionView[][] = [[]];
-    for (const item of list) {
-      const last = pages[pages.length - 1];
-      if (last.length >= 6 || (last.length && pageHeight([...last, item]) > room)) pages.push([item]);
-      else last.push(item);
-    }
-    return pages;
+    card.append(head);
+    // A sure card's 확정 line already lists the money and stamina it costs, so only rolls and locked cards need the price line.
+    if (o.roll || !o.enabled) card.append(el('small', 'option-price', o.roll?.staminaPct ? price(o) + ' · ' + staminaReason(o) : price(o)));
+    card.append(outcomes(o, f));
+    return card;
   }
 
-  function fit() {
-    body.replaceChildren();
-    // Measure at the real column width. A long locked choice only reduces
-    // capacity on the page containing it.
-    const probe = el('div', 'panel-probe');
-    const rows = el('div', 'action-rows');
-    const samples = actions.map(option => ({ option, row: pickRow(option, false), detail: detailFor(option) }));
-    rows.append(...samples.map(sample => sample.row));
-    probe.append(rows, ...samples.map(sample => sample.detail));
-    body.append(probe);
-    rowGap = parseFloat(getComputedStyle(rows).rowGap);
-    for (const { option, row, detail } of samples) {
-      sizes.set(option, { row: row.getBoundingClientRect().height, detail: detail.getBoundingClientRect().height });
-    }
-    probe.remove();
-
+  // A rest that ends the run (the last season, or a final overdue strike) asks for a second tap like any other ending.
+  function restEnds(o: OptionView) {
+    return preview(o).branches.some(b => b.end);
+  }
+  function takeRest(o: OptionView) {
+    if (!o.enabled) return;
+    if (!restEnds(o)) return choose(o.id);
+    view = 'home';
+    picked = o.id;
     render();
+    focusDetail();
   }
+
+  function restBar(o: OptionView) {
+    const f = preview(o);
+    // The outcome line beside the label carries the numbers (체력 +N · → 계절 종료).
+    const label = !f.branches[0].deltas.stamina ? '계절 넘기기' : restMode === 'full' ? '푹 쉬기' : '쉬고 계절 넘기기';
+    const ends = restEnds(o);
+    const bar = button('', 'rest-bar', () => takeRest(o));
+    bar.setAttribute('aria-keyshortcuts', 'R');
+    if (ends) {
+      bar.dataset.pick = o.id;
+      bar.setAttribute('aria-expanded', String(o.id === picked));
+    } else bar.dataset.option = o.id;
+    bar.dataset.rest = restMode;
+    bar.disabled = !o.enabled;
+    bar.append(el('strong', '', label), outcomes(o, f));
+    return bar;
+  }
+
   function render() {
     const focusKey = panel.contains(document.activeElement) ? Object.entries((document.activeElement as HTMLElement).dataset)[0] : undefined;
     body.replaceChildren();
@@ -199,30 +223,53 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
       }
       header.append(tabs);
       const list = actions.filter(o => tab === 'all' || (tab === 'place' ? o.place === place : o.kind === tab));
+      const grid = el('div', 'option-grid');
+      const cards = list.map(optionCard);
+      body.append(grid);
+      const bar = rest && restBar(rest);
+      if (bar) body.append(bar);
       const style = getComputedStyle(body);
-      const room = body.getBoundingClientRect().bottom - header.getBoundingClientRect().bottom
-        - parseFloat(style.paddingBottom) - 2 * parseFloat(style.rowGap);
-      const pages = actionPages(list, room);
+      const gap = parseFloat(style.rowGap);
+      const room = body.getBoundingClientRect().bottom - parseFloat(style.paddingBottom)
+        - grid.getBoundingClientRect().top - (bar ? bar.offsetHeight + gap : 0);
+      // A long forecast can use the full row if a half-width card alone would overflow.
+      grid.style.alignItems = 'start';
+      grid.append(...cards);
+      const wide = cards.filter(card => card.offsetHeight > room);
+      grid.style.removeProperty('align-items');
+      for (const card of wide) card.classList.add('full-row');
+      grid.replaceChildren();
+      const pages = paginateRows(grid, cards, 1, room);
       if (picked) {
-        const selectedPage = pages.findIndex(items => items.some(o => o.id === picked));
+        const selectedPage = pages.findIndex(items => items.some(card => card.dataset.pick === picked || card.dataset.option === picked));
         if (selectedPage >= 0) page = selectedPage;
       }
       pageControl(pages.length);
       const items = pages[page];
-      const current = items.find(o => o.id === picked) ?? items.find(o => o.enabled) ?? items[0];
-      if (current) {
-        picked = current.id;
-        const rows = el('div', 'action-rows');
-        rows.append(...items.map(o => pickRow(o, o === current)));
-        body.append(rows, detailFor(current));
-      } else if (tab === 'place' && place && choices.some(o => o.free && o.place === place)) {
-        const bankHere = place === 'bank';
-        const facility = empty(bankHere ? 'bank' : 'bag', PLACES[place].desc);
-        facility.append(button(bankHere ? '은행 이용하기' : '상점 · 정비 이용하기', 'secondary', () => switchView(bankHere ? 'bank' : 'shop')));
-        body.append(facility);
-      } else if (state.phase !== 'event') {
-        const message = tab === 'job' ? '이번 계절에 받은 일감이 없어요.' : '이곳에는 이번 계절 활동이 없어요.';
-        body.append(empty('map', message));
+      items.slice(0, 9).forEach((card, index) => card.setAttribute('aria-keyshortcuts', String(index + 1)));
+      grid.replaceChildren(...items);
+      const current = rest && picked === rest.id ? rest : list.find(o => o.id === picked);
+      if (current && body.querySelector(`[data-pick="${current.id}"]`)) {
+        const detail = detailFor(current);
+        grid.after(detail);
+        if (grid.offsetHeight + detail.offsetHeight + gap > room) grid.remove();
+        if (detail.offsetHeight > room) header.remove();
+        // A long locked forecast on a short screen also borrows the rest bar's row until the player goes back.
+        if (bar && current !== rest && body.scrollHeight > body.clientHeight + 1) bar.remove();
+      }
+      if (!cards.length) {
+        grid.remove();
+        if (body.querySelector('.detail')) {
+          // The rest confirmation already fills the panel.
+        } else if (tab === 'place' && place && choices.some(o => o.free && o.place === place)) {
+          const bankHere = place === 'bank';
+          const facility = empty(bankHere ? 'bank' : 'bag', PLACES[place].desc);
+          facility.append(button(bankHere ? '은행 이용하기' : '상점 · 정비 이용하기', 'secondary', () => switchView(bankHere ? 'bank' : 'shop')));
+          header.after(facility);
+        } else if (state.phase !== 'event') {
+          const message = tab === 'job' ? '이번 계절에 받은 일감이 없어요.' : '이곳에는 이번 계절 활동이 없어요.';
+          header.after(empty('map', message));
+        }
       }
     } else {
       if (view === 'shop' || view === 'bank') {
@@ -306,16 +353,20 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     }
     if (focusKey) {
       const [key,value] = focusKey;
-      [...panel.querySelectorAll('button')].find(b => b.dataset[key] === value && !b.disabled)?.focus({preventScroll:true});
+      const same = [...panel.querySelectorAll<HTMLButtonElement>('button:enabled')].find(b => b.dataset[key] === value);
+      same?.focus({ preventScroll: true });
     }
   }
-  return { panel, nav, fit, currentNav: () => view, place(id: PlaceId) {
+  return { panel, nav, fit: render, currentNav: () => view, rest() {
+    if (rest) takeRest(rest);
+  }, place(id: PlaceId) {
     place = id;
     view = 'home'; tab = 'place'; reset(); render();
   }, goal(id: string) {
     view = 'home'; tab = 'all'; picked = id;
     render();
-    panel.querySelector<HTMLButtonElement>('[aria-pressed="true"][data-pick]')?.focus({preventScroll:true});
+    if (panel.querySelector('.detail')) focusDetail();
+    else panel.querySelector<HTMLButtonElement>(`[data-option="${id}"]`)?.focus({ preventScroll: true });
   }};
 }
 function empty(symbol: IconName, text: string) {

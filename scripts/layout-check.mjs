@@ -43,7 +43,7 @@ let stageUp = null; // a luck roll whose result changes the career stage (the fu
 let anyRoll = null;
 let windDown = null;
 let lastStep = null; // the choice that ends a run
-for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['instructor', 7], ['ceo', 1], ['chairman', 4]]) {
+for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['instructor', 7], ['ceo', 1], ['chairman', 4], ['pilot', 4]]) {
   let state = newGame(seed);
   const rand = botRandom(seed);
   while (state.phase !== 'ended') {
@@ -63,7 +63,7 @@ for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['i
   }
 }
 const rollStep = stageUp;
-assert.ok(event && anyRoll && rollStep && lastStep && windDown, 'the bot runs reach an event, a luck roll and an ending');
+assert.ok(event && anyRoll && rollStep && lastStep && windDown, 'the bot runs reach an event, a roll, a promotion, a crash with automatic rest, and an ending');
 
 await build({ root, configFile: join(root, 'vite.config.ts'), logLevel: 'warn' });
 const server = await preview({ root, configFile: join(root, 'vite.config.ts'), preview: { port: 5298, strictPort: false } });
@@ -149,22 +149,24 @@ for (const [width, height] of SIZES) {
       viewCount++;
       if (minHomeRows && index === 0 && tab === 'all'
         && await page.locator('[data-phase="action"] [data-nav="home"][aria-pressed="true"]').count()) {
-        const offered = await page.evaluate(() => window.__game.options().filter(option => !option.free).length);
-        const visible = await page.locator('[data-pick]:visible').count();
+        const offered = await page.evaluate(() => window.__game.options().filter(option => !option.free && option.id !== 'rest').length);
+        const visible = await page.locator('.option-grid :is([data-pick], [data-option]):not([data-rest]):visible').count();
         if (offered >= minHomeRows && visible < minHomeRows) {
-          failures.push(`${where}: 홈 shows ${visible} rows on its first page (min ${minHomeRows}, ${offered} offered)`);
+          failures.push(`${where}: 홈 shows ${visible} cards on its first page (min ${minHomeRows}, ${offered} offered)`);
         }
       }
       for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) failures.push(`${where}: ${problem}`);
       if (first && shotDir) await page.screenshot({ path: join(shotDir, `${size}-${view}.png`) });
       first = false;
-      // Picking a row changes the detail strip: every row of the page has to fit, not only the default one.
+      // Open every confirmation and return to the same grid page after auditing its detail.
       for (const pick of await names(page, 'data-pick')) {
         await page.locator(`[data-pick="${pick}"]:visible`).first().click();
         await page.waitForTimeout(40);
         const picked = await page.locator(`[data-option="${pick}"]:visible`).count();
-        if (!picked) failures.push(`${where} pick ${pick}: no commit button for the picked row`);
+        if (!picked) failures.push(`${where} pick ${pick}: no commit button for the picked card`);
+        assert.ok(await page.locator('.detail .desc').isVisible(), 'confirmation keeps the description visible');
         for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) failures.push(`${where} pick ${pick}: ${problem}`);
+        await page.locator('[data-action="back-to-options"]').click();
       }
     });
   };
@@ -205,14 +207,25 @@ for (const [width, height] of SIZES) {
     await playViews('play-start', start);
     await playViews('play-busy', busiest);
     await resume(busiest);
+    for (const [forward, reverse] of [['page-next', 'page-prev'], ['page-prev', 'page-next']]) {
+      const arrow = page.locator(`.panel [data-action="${forward}"]`);
+      assert.ok(await arrow.isEnabled(), 'the busy grid has multiple pages');
+      await arrow.focus();
+      for (let i = 0; i < 30 && await arrow.isEnabled(); i++) await page.keyboard.press('Enter');
+      assert.ok(await arrow.isDisabled(), 'keyboard paging reaches the boundary');
+      assert.equal(await page.evaluate(() => document.activeElement.dataset.action), reverse, 'pager focus at its boundary');
+    }
     await page.locator('[data-action="grades"]').click();
     await page.locator('[data-grades="numbers"]').waitFor();
     await check('play-grades-numbers');
     await page.locator('[data-action="ladder"]').click();
     await check('play-ladder');
     await page.locator('[data-action="ladder-go"]').click();
-    await page.locator('[data-pick][aria-pressed="true"]').waitFor();
-    await page.locator('.stage-toggle button', { hasText: '지도' }).click();
+    await page.locator('.detail [data-option]').waitFor();
+    const mapToggle = page.getByRole('button', { name: '지도', exact: true });
+    await mapToggle.focus();
+    await page.keyboard.press('Enter');
+    assert.ok(await mapToggle.evaluate(button => document.activeElement === button));
     await check('play-map');
     await page.locator('.stage-toggle button', { hasText: '현장' }).click();
     await resume(event);
@@ -223,15 +236,23 @@ for (const [width, height] of SIZES) {
     await check('play-event-cram');
 
     await resume(windDown.state);
-    await revealOption(page, windDown.option);
-    await page.locator('.detail .risk', { hasText: '추락 시' }).waitFor();
+    const flight = await revealOption(page, windDown.option);
+    assert.ok(await flight.evaluate(button => [...button.closest('.option-card, .detail').querySelectorAll('.risk')]
+      .some(line => line.checkVisibility() && line.textContent.includes('추락 시'))), 'flight shows its crash forecast');
     for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) {
       failures.push(`${size} flight detail: ${problem}`);
     }
     viewCount++;
 
     await resume(rollStep.state);
-    await tap(rollStep);
+    await revealOption(page, rollStep.option);
+    await page.locator('[data-action="back-to-options"]').click();
+    const slot = await page.locator('.option-card').evaluateAll((cards, id) =>
+      cards.findIndex(card => card.dataset.pick === id) + 1, rollStep.option.id);
+    assert.ok(slot >= 1 && slot <= 9, 'promotion has a numbered confirm card');
+    await page.keyboard.press(String(slot));
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.option), rollStep.option.id);
+    await page.keyboard.press('Enter');
     await stoppedResult(page).waitFor();
     await stoppedResult(page).locator('[data-wheel][data-outcome]').waitFor();
     await check('play-result');
@@ -243,11 +264,14 @@ for (const [width, height] of SIZES) {
     await check('play-auto-season-change');
 
     await resume(start);
-    await tap({ option: { id: 'st_theory' } });
+    assert.equal(await page.locator('.option-card').first().getAttribute('data-option'), 'st_theory');
+    await page.keyboard.press('1');
     await finishChoice(page);
     await revealOption(page, { id: 'rest' });
     await page.locator('[data-option="rest"][data-rest="light"]').waitFor();
     await check('play-light-rest');
+    await page.keyboard.press('r');
+    await stoppedResult(page).locator('[data-season-change]').waitFor();
     await resume(lastStep.state);
     await tap(lastStep);
     await stoppedResult(page).waitFor();

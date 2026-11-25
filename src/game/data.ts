@@ -428,6 +428,12 @@ export const EVENTS: EventDef[] = [
         success: { text: '의외로 제대로 된 강사였다. 실력이 확 늘었다.', add: { theory: 14, skill: 10, xp: 6 } }, fail: { text: '첫 수업 이후 학원 문이 닫혀 있다. 환불받으러 다니느라 진이 빠졌다.', add: { stamina: -10 } } } },
       { title: '버린다', desc: '지름길은 없다. 혼자 복습한다.', effect: { text: '전단을 접어 종이비행기를 만들고, 기출 문제를 한 번 더 풀었다.', add: { theory: 3 } } },
     ] },
+  { id: 'practice_bursary', place: 'school', weight: 8, when: { stage: ['student'], min: { theory: 90, xp: 270 } }, title: '실기반 근로 장학생',
+    text: '이론 과정을 마친 학생에게 실습실 열쇠를 맡긴다. 조교가 묻는다. “근로비로 받을래, 빈 시간에 연습할래?”',
+    choices: [
+      { title: '근로비를 받는다', desc: '배터리를 정리하고 응시료를 모은다.', effect: { text: '충전 일지를 채웠다. 입금된 근로비를 시험 볼 통장에 옮겼다.', add: { money: 60, stamina: -10 } } },
+      { title: '연습 시간을 받는다', desc: '학교 기체로 착륙을 더 연습한다.', effect: { text: '마지막 배터리를 꽂고 한 번 더 띄웠다. 이번엔 선 안에 내렸다.', add: { skill: 10, xp: 3 } } },
+    ] },
   // ------------------------------------------------------------ 파일럿 · 사업자
   { id: 'illegal', place: 'town', weight: 9, when: { stage: ['pilot', 'solo'], min: { drone: 1 } }, title: '수상한 의뢰',
     text: '비행 금지 구역 안쪽을 찍어 달라는 의뢰가 왔다. 허가는 "알아서" 하라고 하고, 후한 보수를 제안한다.',
@@ -442,6 +448,20 @@ export const EVENTS: EventDef[] = [
     choices: [
       { title: '바로 일을 받는다', desc: '간단한 촬영 한 건.', effect: { text: '소개로 온 일은 깎자는 말이 없다.', add: { money: 60, rep: 2, stamina: -10 } } },
       { title: '식사 자리를 만든다', desc: '사람을 남긴다.', effect: { text: '명함 여러 장을 받았다.', add: { net: 5, rep: 1 } } },
+    ] },
+  { id: 'market_map', place: 'town', weight: 9, when: { stage: ['pilot', 'solo'] }, title: '장날의 지붕 지도',
+    text: '상인회장이 시장 항공사진을 펼쳤다. 천막 색이 다 같아서 자기 가게도 못 찾겠단다.',
+    choices: [
+      { title: '가게 이름을 넣는다', desc: '골목을 돌며 간판과 사진을 대조한다.', effect: { text: '마지막 칸에 떡집 이름을 넣었다. 회장이 편집비를 건넸다.', add: { money: 45, stamina: -10 } } },
+      { title: '상인들과 지도를 읽는다', desc: '단골만 아는 골목 표식을 배운다.', effect: { text: '빨간 대야가 보이면 생선 골목이다. 상인들이 사진 위에 길을 짚어 줬다.', add: { net: 3, xp: 3 } } },
+    ] },
+  { id: 'coast_archive', place: 'coast', weight: 8, when: { stage: ['pilot', 'solo'], min: { rep: 60, drone: 1 } }, title: '사라지는 모래톱',
+    text: '어촌계에서 옛 항공사진을 보내왔다. 모래톱이 얼마나 줄었는지 같은 구도로 찍어 줄 수 있냐고 한다.',
+    choices: [
+      { title: '물때를 맞춰 찍는다', desc: '옛 사진과 겹쳐 볼 한 컷을 노린다.', roll: { base: 65, mods: [mod('skill', 90, 5, 15)],
+        success: { text: '두 사진을 겹치니 사라진 모래밭이 꼭 반달만 하다. 촬영비가 들어왔다.', add: { money: 80, rep: 2, stamina: -15 } },
+        fail: { text: '안개가 걷힐 때쯤 물이 찼다. 빈 메모리 카드만 챙겼다.', add: { stamina: -15 } } } },
+      { title: '옛 사진부터 정리한다', desc: '어르신들과 촬영 날짜와 위치를 짚는다.', effect: { text: '사진 뒤에 연도와 포구 이름을 적었다. 다음에 물때를 물어볼 분도 생겼다.', add: { net: 3, theory: 2 } } },
     ] },
   { id: 'grant', place: 'bank', weight: 8, when: { stage: ['pilot', 'solo', 'company'] }, title: '청년 드론 창업 지원사업',
     text: '지자체에서 장비 구입비 지원사업 공고가 났다. 사업계획서를 써야 한다.',
@@ -487,6 +507,26 @@ export const EVENTS: EventDef[] = [
         success: { text: '시범 사업이 성공했다. 사업을 보는 눈이 생겼다.', add: { xp: 10, biz: 7, rep: 3, stamina: -20 } }, fail: { text: 'TF는 석 달 만에 해체됐다. 야근만 남았고 책임론이 돌았다.', add: { biz: 2, rep: -2, stamina: -35 } } } },
       { title: '사양한다', desc: '본업에 집중하고 칼퇴한다.', effect: { text: '평소처럼 비행 일지를 쓰고, 퇴근 후에는 법규집을 폈다.', add: { theory: 4, stamina: 10 } } },
     ] },
+  { id: 'battery_log', place: 'hq', weight: 9, when: { stage: ['employee'] }, title: '번호 없는 배터리',
+    text: '사내 안전 감사 날, 배터리 두 개의 번호표가 떨어졌다. 안전팀이 비행 기록과 충전 장부를 내밀었다.',
+    choices: [
+      { title: '비행 기록을 대조한다', desc: '교체 시각부터 거꾸로 짚는다.', roll: { base: 65, mods: [mod('theory', 90, 5, 15)],
+        success: { text: '교체 직후의 전압이 딱 맞았다. 안전팀이 내 대조표를 받아 갔다.', add: { xp: 6, rep: 3 } },
+        fail: { text: '두 줄의 교체 시각까지 같았다. 장부를 덮으니 퇴근 버스가 떠났다.', add: { xp: 2, stamina: -10 } } } },
+      { title: '정비팀과 표식을 바꾼다', desc: '두 팩은 따로 두고 남은 팩부터 손본다.', effect: { text: '손잡이 안쪽에도 번호를 썼다. 정비팀 막내가 유성펜을 하나 더 건넸다.', add: { net: 2, theory: 3 } } },
+    ] },
+  { id: 'field_handover', place: 'hq', weight: 8, when: { stage: ['employee'] }, title: '해외 현장의 빈자리',
+    text: '해외 측량팀 교대 날짜가 어긋났다. 팀장이 일주일짜리 파견 신청서를 돌린다.',
+    choices: [
+      { title: '교대 근무를 간다', desc: '낯선 현장에서 파견 수당을 받는다.', effect: { text: '귀국편에서야 작업화 끈을 풀었다. 다음 급여에 파견 수당이 붙었다.', add: { money: 70, xp: 4, stamina: -20 } } },
+      { title: '본사에서 인계를 돕는다', desc: '양쪽 팀이 쓰는 도면을 맞춘다.', effect: { text: '도면마다 달랐던 지명을 맞췄다. 현지 담당자가 이제야 말이 통한다며 웃었다.', add: { biz: 3, net: 2 } } },
+    ] },
+  { id: 'new_hire', place: 'airfield', weight: 9, when: { stage: ['employee'] }, title: '신입의 첫 출동',
+    text: '처음 현장에 나온 신입이 조종기를 꼭 쥐고 있다. “선배님, 제가 어디부터 보면 돼요?”',
+    choices: [
+      { title: '신입에게 조종을 맡긴다', desc: '옆에서 한 동작씩 짚어 준다.', effect: { text: '내가 입을 다물자 신입이 스스로 기체를 멈췄다. 기다리는 게 더 힘들었다.', add: { teach: 5, stamina: -10 } } },
+      { title: '먼저 시범을 보인다', desc: '손이 움직이는 순서를 보여 준다.', effect: { text: '동작을 잘게 끊어 날렸다. 내 손버릇도 하나 눈에 들어왔다.', add: { skill: 4, xp: 2 } } },
+    ] },
   // ------------------------------------------------------------ 교관 · 교육원
   { id: 'trainee_crash', place: 'academy', weight: 9, when: { stage: ['instructor', 'academy'] }, title: '교육생 기체 추락',
     text: '교육생이 조종 미숙으로 실습 기체를 펜스에 박았다. 교육생은 얼어붙어 있다.',
@@ -502,6 +542,20 @@ export const EVENTS: EventDef[] = [
         success: { text: '표창과 상금을 받았다.', add: { money: 80, rep: 8, stamina: -10 } }, fail: { text: '다음 기회로 밀렸다. 공적서에 쏟은 몇 주가 아깝다.', add: { stamina: -20 } } } },
       { title: '후배에게 양보한다', desc: '사람을 얻는다.', effect: { text: '후배가 평생 잊지 않겠다고 했다.', add: { net: 5 } } },
     ] },
+  { id: 'silent_lesson', place: 'academy', weight: 9, when: { stage: ['instructor'] }, title: '교관님 목소리가 잠겼다',
+    text: '아침에 출석을 부르는데 첫 이름부터 소리가 갈라진다. 맨 앞줄 교육생이 작은 칠판을 밀어 준다.',
+    choices: [
+      { title: '손짓으로 수업한다', desc: '비행 순서를 몸으로 보여 준다.', roll: { base: 65, mods: [mod('teach', 20, 4, 15)],
+        success: { text: '착륙 수신호에 여섯 손이 동시에 내려갔다. 다음 반에도 써먹어야겠다.', add: { teach: 5, rep: 2 } },
+        fail: { text: '왼쪽을 가리켰는데 여섯 손이 제각각이다. 결국 칠판을 빼곡히 채웠다.', add: { teach: 1, stamina: -10 } } } },
+      { title: '짝을 지어 복습시킨다', desc: '둘씩 돌아가며 비행 순서를 설명하게 한다.', effect: { text: '뒤에서 듣다가 자주 틀리는 용어를 받아 적었다. 수업이 끝나니 목도 좀 풀렸다.', add: { theory: 3, stamina: 5 } } },
+    ] },
+  { id: 'landing_marks', place: 'airfield', weight: 8, when: { stage: ['instructor'] }, title: '바람에 밀린 착륙판',
+    text: '실습을 앞두고 천으로 된 착륙판이 자꾸 접힌다. 동료 교관이 빈 모래주머니를 들고 왔다.',
+    choices: [
+      { title: '착륙판을 고정한다', desc: '둘이 모래를 퍼서 네 귀퉁이를 누른다.', effect: { text: '마지막 주머니를 놓으니 판이 팽팽해졌다. 동료가 내 장갑에 묻은 모래를 털어 줬다.', add: { net: 4, stamina: -5 } } },
+      { title: '실내 모의 비행으로 바꾼다', desc: '화면 속에 옆바람을 넣고 착륙을 시연한다.', effect: { text: '착륙 직전 화면을 멈췄다. 교육생들이 밀려날 방향을 먼저 짚었다.', add: { skill: 3, teach: 2 } } },
+    ] },
   { id: 'rival_academy', place: 'academy', weight: 9, when: { stage: ['academy'] }, title: '옆 동네 저가 교육원',
     text: '차로 10분 거리에 수강료 반값을 내건 교육원이 문을 열었다.',
     choices: [
@@ -515,6 +569,12 @@ export const EVENTS: EventDef[] = [
       { title: '시설을 보강한다', desc: '안전망과 소화기를 새로 단다.', cost: 120, effect: { text: '점검관이 모범 사례로 사진을 찍어 갔다.', add: { rep: 4 } } },
       { title: '서류만 맞춘다', desc: '넘어가면 다행.', roll: { base: 55,
         success: { text: '서류 확인만 하고 돌아갔다.' }, fail: { text: '안전망 미비로 과태료와 시정 명령을 받았다.', add: { money: -150, rep: -6 } } } },
+    ] },
+  { id: 'workshop_bus', place: 'academy', weight: 8, when: { stage: ['academy'] }, title: '막차 앞의 시간표',
+    text: '저녁반 문의가 왔다. 근처 공장 교대조가 단체로 배우고 싶은데, 수업을 마치면 막차가 끊긴단다.',
+    choices: [
+      { title: '통학차를 빌린다', desc: '정류장까지 차편을 마련해 저녁반을 연다.', cost: 70, effect: { text: '첫 수업 날 작업복 차림 세 명이 나란히 등록부에 이름을 썼다.', add: { students: 3 } } },
+      { title: '공장에 설명회를 간다', desc: '교대 시간에 맞는 수업을 함께 궁리한다.', effect: { text: '식당 벽에 교대표를 붙여 놓고 반장들과 비는 시간을 동그라미 쳤다.', add: { net: 3, biz: 2 } } },
     ] },
   // ------------------------------------------------------------ 사업
   { id: 'tax', place: 'office', weight: 9, when: { stage: ['solo', 'company'] }, title: '세무조사 통지',

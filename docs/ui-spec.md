@@ -174,28 +174,35 @@ the player plate spans the top and the tabs sit in the plate's row or under the 
    opens the **career ladder card**, a centred card with one page per next rank (pager): target title, level
    and stars, each requirement as grade and number (“이론 D · 90 이상 · 지금 95”), the price, the stamina
    cost, the odds (“성공 55%” or “확정”), the engine's `locks` while locked, and a primary button
-   “이 도전 보기” (`data-action="ladder-go"`) that closes the card and picks that option in the 홈 list.
+   “이 도전 보기” (`data-action="ladder-go"`) that closes the card and opens that challenge in 홈.
    “닫기” is `data-action="close"`.
 4. **Action card.** Its header names the active tab, “이번 칸에서 할 일” for 홈. The cream body holds the
    selected tab's controls and a measured page of content.
    - **홈** — the season’s actions (options with `free === false`). A tab row: "전체", "일감" (kind `job`),
      "활동" (kind `action`), and "장소: <name>" when a place is selected on the map; the pager sits at the right
-     end of the tab row ("1 / 4" between "이전" and "다음" icon buttons). Below it a list of compact rows
-     (up to six per page, each at least 44 px tall): place icon, title, cost, and for a roll a tiny wheel
-     glyph with the chance ("66%") or a "확정" stamp for a sure outcome. The selected row is inked, and
-     locked rows carry a lock icon. Below the list a **detail strip**
-     for the picked row: title, description, for a roll the **preview wheel** (`data-wheel-preview`,
-     `data-chance`; the same wedges as the result wheel, compact on phones) beside “성공 66%”. A paid roll shows the unconditional
-     선불 line, then 성공 and 실패 with the remaining changes. 추락 시 gives the conditional crash chance
-     and replaces only the listed failed-flight changes. 확정 shows the entire sure outcome. Each branch
-     that winds down marks 계절 종료. A disabled option also shows its
-     `locks`; and one large gold button: “룰렛 돌리기 · 66%” with the cost for a roll, "실행" with the cost
-     otherwise. The first enabled row of a page is
-     picked by default. Rows and the detail button show the up-front stamina cost beside the price
-     (무료 · 체력 -14). For a nonzero stamina modifier the row and detail show 체력 여유 +4%p,
-     피로 -8%p or 탈진 -20%p. The detail keeps the crash risk and lock reasons visible together.
-     Rest stays available in every action phase. Its button shows “푹 쉰다 · 체력 +N · 계절 전체” before the
-     first action and “쉬고 계절 넘기기 · 체력 +N” afterwards. N is the actual gain after the stamina cap. Either rest ends the season.
+     end of the tab row ("1 / 4" between "이전" and "다음" icon buttons). The chosen view switch and an
+     enabled pager arrow keep keyboard focus after a view or page change.
+     - Compare option cards in two columns on phones and as many columns as fit on desktop. Pages are
+       measured at the current width and height. Enabled options come first, with activities grouped before jobs within each group. Each card shows its place
+       icon, title, odds for a roll ("66%" with a small wheel), the price line from `price` and the stamina
+       modifier for a roll or a locked card (a sure card's 확정 line already lists them), the `forecastLines`
+       branch lines, and a locked card's reasons instead of its lines.
+       선불 applies on every branch, 추락 시 replaces the listed failure changes, and 계절 종료 marks wind-down.
+     - Tap an ordinary card to commit immediately. A choice costing at least `CONFIRM_COST` (100만원)
+       upfront, or with a forecast branch that changes stage or ends the run, opens an inline confirmation.
+       It shows the title, description, preview wheel for a roll, full outcomes, and the gold commit button
+       labelled by `detailLabel`. “선택지로” returns to the same grid page. The strip uses the grid's space
+       when both cannot fit together. A locked card always opens this strip read-only: full outcomes, its
+       reasons, and a disabled commit button, so the player can see what the choice would do.
+     - The separate rest bar ends the season in one tap (R). Before the first action it reads “푹 쉬기”,
+       afterwards “쉬고 계절 넘기기”, each beside its forecast line. In the last season, where rest ends the
+       run, it opens the confirmation strip instead (`data-pick="rest"`).
+     - Keys 1-9 press the cards on the current page, R the rest bar. Shortcuts are ignored while typing in a
+       field, and a held Enter or Space does not repeat through a confirmation.
+       The gain is the actual capped recovery from `restGain`. At zero gain the label is “계절 넘기기”.
+       No choice is selected by default.
+     - With 홈 open and no sheet, 1–9 activate the corresponding visible card in reading order and R rests.
+       Opening a confirmation focuses its commit button when enabled, so Enter confirms.
    - **상점** — `shop` and `repair` options as upgrade cards (a grid, paged if needed): item icon, title,
      description, full sure forecast, and the price as the button label. Marked "계절 소모 없음". Locked cards are
      dimmed and show the first lock reason.
@@ -227,10 +234,11 @@ outline, coloured header band) over the dimmed table. Each fits inside the viewp
     `data-outcome="success | fail"`): a disc of 100 equal ticks whose success wedge spans exactly
     `chance` ticks from the top clockwise (mint, “성공”) and whose fail wedge is the rest (coral, “실패”).
     “성공 확률 66%” stays printed above it the whole time. A fixed pointer sits at the top; the disc turns
-    (at least three turns, about 1.6 s, ease-out) and stops with the pointer over the middle of tick
+    (three or more turns over 700 ms, ease-out) and stops with the pointer over the middle of tick
     `result.roll.value`, the number the engine rolled. The stop point is never moved to look closer than it
     was. The card carries `data-spin="spinning"` while it turns and `data-spin="done"` after; the "계속" button
-    is disabled until then. With `prefers-reduced-motion` the disc appears already stopped on the same tick and
+    is disabled until then. Clicking anywhere on the result sheet or pressing any key finishes the spin
+    immediately. Revealing the result focuses “계속”, so Enter continues. With `prefers-reduced-motion` the disc appears already stopped on the same tick and
     fades in for 150 ms. The crash roll is a second, separate roll of the engine and is reported as a note,
     not drawn on the wheel.
   - Then, for every result: a banner 성공! / 실패 (or “확정” for a sure outcome), `result.text`, the non-bookkeeping option deltas as chips (+mint / -coral; a graded stat that changed grade shows “D → C”), `notes` (추락!), the season change when present
@@ -292,7 +300,7 @@ fills any discovered portrait frame whose art is unavailable. A "타이틀" butt
   - title / ending buttons: `data-action="new | continue-run | gallery | title | retry"`;
   - the 체력 meter carries both `data-stamina` and `data-stamina-band` with value `fresh | normal | tired | exhausted`.
     Tired, exhausted and insufficient stamina for every offered activity trigger warning colours;
-  - the date panel carries a `data-acts="<count>"` indicator. Rest rows and the `data-option="rest"` button carry `data-rest="full | light"`;
+  - the date panel carries a `data-acts="<count>"` indicator. The rest bar carries `data-rest="full | light"` and `data-option="rest"`, or `data-pick="rest"` when its forecast ends the run (the confirmation's commit button then carries `data-option="rest"`);
   - `data-season-change` identifies the result’s date and recovery block;
   - the board: `data-board`, `data-space`, and `data-token` with `data-season` and `data-step`;
   - grades: `data-grades="letters | numbers"` on the strip, `data-action="grades"` to flip it, and
@@ -304,10 +312,11 @@ fills any discovered portrait frame whose art is unavailable. A "타이틀" butt
   - bottom tab buttons: `data-nav="home | shop | bank | info | log"`;
   - tab rows inside a view: `data-tab="<name>"`; choosing a tab or a nav entry shows its first page;
   - pagers: `data-action="page-prev"` and `data-action="page-next"`, with the `disabled` attribute at the ends;
-  - a list row that only selects an option: `data-pick="<option id>"`;
+  - a home card opening an inline confirmation: `data-pick="<option id>"`;
+  - the inline confirmation’s return button: `data-action="back-to-options"`;
   - the button that commits an option (calls `choose`): `data-option="<option id>"`, with the `disabled`
-    attribute when the engine reports it as not enabled. In the 홈 panel that is the detail strip's
-    button for the picked row; in 상점 / 은행 and in the event card it is the card's own button;
+    attribute when the engine reports it as not enabled. In 홈 this is the ordinary card, the rest bar, or the commit
+    button in a confirmation strip; in 상점 / 은행 and in the event card it is the card's own button;
   - the result card's and the rank card's button: `data-action="continue"`;
   - with `?debug=1` in the URL only: `window.__game = { state: () => GameState, options: () => OptionView[] }`.
 - Every option the engine offers is reachable through those hooks without the map, so the game is playable
