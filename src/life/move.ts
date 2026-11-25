@@ -28,7 +28,8 @@ function nextRandom(state: GameState): number {
   t ^= t + Math.imul(t ^ (t >>> RNG.secondShift), t | RNG.multiplier);
   return (t ^ (t >>> RNG.lastShift)) >>> 0;
 }
-const randInt = (state: GameState, n: number) => Math.floor((nextRandom(state) / RNG.range) * n);
+/** Integer in 0..n-1; advances only rng on the caller's working copy. */
+export const randInt = (state: GameState, n: number) => Math.floor((nextRandom(state) / RNG.range) * n);
 
 /** Mutates only rng and board.dice on the caller's working copy. */
 export function rollDice(state: GameState): [number, number] {
