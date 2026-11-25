@@ -151,7 +151,12 @@ async function play(page, { policy = 'pilot', seed = 3, seasons = Infinity, thin
   while (state.phase !== 'ended' && state.turn < seasons) {
     const where = await settle(page, think, kind => seen(kind, state));
     state = await readState(page);
-    if (state.turn !== lastTurn) { seasonTimes.push((Date.now() - lastAt) / 1000); lastTurn = state.turn; lastAt = Date.now(); }
+    if (state.turn !== lastTurn) {
+      seasonTimes.push((Date.now() - lastAt) / 1000);
+      if (process.env.PROGRESS) console.log(`  season ${lastTurn} took ${seasonTimes.at(-1).toFixed(1)} s`);
+      lastTurn = state.turn; lastAt = Date.now();
+    }
+    if (process.env.PROGRESS) console.log(`  t=${((Date.now() - start) / 1000).toFixed(1)} turn ${state.turn} ${state.phase}/${state.board.step}`);
     if (where === 'ending' || state.phase === 'ended' || state.turn >= seasons) break;
     await seen(state.phase === 'event' ? 'event' : state.board.step, state);
     if (stop && await stop(state)) return { state, random, seasonTimes };
