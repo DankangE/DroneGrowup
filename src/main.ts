@@ -1,4 +1,5 @@
 import './styles.css';
+import { mountLife } from './ui2/app.ts';
 import { rankChange } from './game/career.ts';
 import type { RankChange } from './game/career.ts';
 import { flightBoard } from './ui/board.ts';
@@ -28,6 +29,7 @@ function seed(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0];
 }
 
+function mountClassic() {
 let state = loadRun() ?? newGame(seed());
 let lastFace = state.board.roll;
 let rankStop = false;
@@ -284,3 +286,7 @@ if (PLATFORM) {
   runStatus.onChange = refreshEndingStatus;
   bootPlatform(root, showTitle);
 } else showTitle();
+}
+
+if (params.get('life') === '1') mountLife(root, seed(), params.get('debug') === '1');
+else mountClassic();
