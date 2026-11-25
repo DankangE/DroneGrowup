@@ -11,6 +11,8 @@ import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, E
   flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
   jobChoices, performance, review, startingAction } from './jobs.ts';
+import { applyHomeChoice, estateOffers, homeRecovery, yearEndHome } from './home.ts';
+import type { EstateOffer } from './home.ts';
 import { JOB_RULES, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
 import { BOARD_CHOICES, CAREER_ACTIONS, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT } from './life-data.ts';
@@ -20,6 +22,7 @@ import { PLACES, WORLD } from './world.ts';
 import type { Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
 export { restore } from './restore.ts';
 export { jobOffers } from './jobs.ts';
+export { estateOffers } from './home.ts';
 
 // Retain the v1 view contracts while widening their vocabulary to v2 places and stats.
 type OutcomeView = Omit<V1OutcomeView, 'add' | 'stage' | 'end'> & {
@@ -130,7 +133,8 @@ function outcome(state: GameState, effect: Effect, flight = false): OutcomeView 
     ...(effect.track !== undefined && effect.track !== state.track && { track: effect.track }) };
 }
 
-type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean; free?: boolean; jobLocks?: string[] };
+type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean; free?: boolean;
+  jobLocks?: string[]; home?: EstateOffer };
 function view(state: GameState, id: string, r: Resolved): OptionView {
   const { choice, kind, place, flight } = r;
   const { locks, missing } = unmet(state, choice.need);
@@ -168,6 +172,10 @@ function resolve(state: GameState): Map<string, Resolved> {
     choices.set(id, { kind: 'board', place: node.place, choice, flight: false, jobLocks: locks });
   }
   if (jobs.exclusive) return choices;
+  for (const home of estateOffers(state)) {
+    choices.set(home.id, { kind: 'action', place: node.place, choice: home.choice,
+      flight: false, jobLocks: home.locked, home });
+  }
   for (const { id, locks, ...service } of economyChoices(state)) {
     choices.set(id, { ...service, flight: false, jobLocks: locks });
   }
@@ -248,6 +256,7 @@ function endSeason(state: GameState, result: Result, runHooks: boolean): GameSta
   state.turn++;
   // Career close includes yearEndReview at spring and age-based retirement, before stamina refill.
   state = advanceCareer(advanceStudies(state));
+  state = yearEndHome(state);
   const beforeCredit = state.s.overdue;
   state = checkCredit(state);
   if (state.s.overdue) result.notes.push(ECONOMY_TEXT.overdue(state.s.overdue));
@@ -259,7 +268,7 @@ function endSeason(state: GameState, result: Result, runHooks: boolean): GameSta
   }
   state.s.capStamina = Math.min(state.s.capStamina, ageCap(state.turn));
   const beforeRefill = state.s.stamina;
-  setStat(state, 'stamina', beforeRefill + RULES.seasonRefill);
+  setStat(state, 'stamina', beforeRefill + homeRecovery(state).recovery);
   state.s.acts = 0;
   state.phase = 'action'; state.eventId = null;
   state.board.step = 'spin'; state.board.dice = [];
@@ -296,10 +305,11 @@ function land(state: GameState, result: Result) {
     result.notes.push(CAREER_TEXT.review[result.review.outcome], ...result.review.locks);
   } else if (SETTLEMENT_KINDS.includes(node.kind)) {
     payLedger(state, result);
-    result.notes.push(TEXT.settled); state.board.step = 'bonus';
+    result.notes.push(TEXT.settled);
+    if (!estateOffers(state).length) state.board.step = 'bonus';
   } else if (node.kind === 'rest') {
     const before = state.s.stamina;
-    setStat(state, 'stamina', before + LIFE_RULES.restGain);
+    setStat(state, 'stamina', before + homeRecovery(state).rest);
     result.restGain = state.s.stamina - before;
     result.notes.push(TEXT.rested); state.board.step = 'bonus';
   } else if (node.kind === 'event' || node.kind === 'contest') {
@@ -375,6 +385,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     }
   }
   if (v.id.startsWith('lifestyle:')) state = applyEconomyChoice(state, v.id);
+  if (r.home) state = applyHomeChoice(state, r.home);
   if (flag) result.flag = flag;
   if (!v.free && (r.kind !== 'board' || v.id === 'skip')) state.s.acts++;
   result.deltas = diff(before, state.s);
