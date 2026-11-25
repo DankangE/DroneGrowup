@@ -1,8 +1,10 @@
 import { STAT_LABEL } from '../../life/life-data.ts';
+import { derived } from '../../life/engine.ts';
+import { grade } from '../../game/career.ts';
 import { TRACKS } from '../../life/tracks.ts';
 import type { GameState } from '../../life/types.ts';
 import { MAPS } from '../../life/world.ts';
-import { COPY, LIFE_COPY as L, LIFE_TABS } from './data.ts';
+import { ABILITY_STATS, COPY, LIFE_COPY as L, LIFE_TABS } from './data.ts';
 import type { LifeTab } from './data.ts';
 
 /** Optional read-only lifeSummary output. No valuation, pay or ending rules live in the UI. */
@@ -27,23 +29,25 @@ export function lifeTabs(state: GameState, summary: LifeSummaryView = {}): LifeT
   ];
   const feats = summary.feats ?? state.feats;
   const content: Record<LifeTab, string[]> = {
-    ability: Object.entries(state.s).map(([stat, value]) => L.field(STAT_LABEL[stat as keyof typeof STAT_LABEL], value)),
+    ability: [L.field('체력', `${state.s.stamina}/${derived(state).capStamina}`), L.field(STAT_LABEL.happy, state.s.happy),
+      ...ABILITY_STATS.map(stat => L.grade(STAT_LABEL[stat], grade(stat, state.s[stat])!.letter, state.s[stat])),
+      L.field(STAT_LABEL.fans, state.s.fans)],
     career: [career, COPY.review(state.job.perf, state.job.tenure, state.job.warn),
       ...state.job.tracks.map(id => TRACKS.find(row => row.id === id)?.name ?? id)],
     family: [...family, ...home],
-    assets: [summary.netWorth === undefined ? L.worthPending : L.money('순자산', summary.netWorth),
+    assets: [L.money('순자산', summary.netWorth ?? derived(state).netWorth),
       L.money('현금', state.s.money), L.money('빚', state.s.debt), L.money(L.funds[state.fund.kind], state.fund.amount),
       L.field('생활 수준', L.levels[state.life]), ...(owned.length ? owned : [L.noAssets]),
       ...Object.entries(state.board.ledger).map(([label, amount]) => L.money(label, amount))],
     records: [feats.length ? L.feats(feats) : L.noFeats,
-      ...(state.log.length ? state.log.map(row => L.record(row.turn, row.text)) : [L.noRecords])],
+      ...(state.log.length ? [...state.log].reverse().map(row => L.record(row.turn, row.text)) : [L.noRecords])],
   };
   return (Object.keys(LIFE_TABS) as LifeTab[]).map(id => ({ id, title: LIFE_TABS[id], lines: content[id] }));
 }
 
 export function chapterLines(state: GameState, summary: LifeSummaryView = {}): string[] {
   const tabs = lifeTabs(state, summary), feats = summary.feats ?? state.feats;
-  return [summary.netWorth === undefined ? L.worthPending : L.money('순자산', summary.netWorth),
+  return [L.money('순자산', summary.netWorth ?? derived(state).netWorth),
     tabs[1].lines[0], ...tabs[2].lines, L.field(STAT_LABEL.happy, state.s.happy),
     feats.length ? L.feats(feats) : L.noFeats, ...(summary.nextPeriod ? [L.next(summary.nextPeriod)] : [])];
 }

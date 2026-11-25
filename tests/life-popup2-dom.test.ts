@@ -6,6 +6,8 @@ import { mountEnding, mountEndingCollection } from '../src/ui2/popups/ending.ts'
 import { fixtureOption, popup2Fixture } from '../src/ui2/popups/fixtures.ts';
 import type { Popup2Kind } from '../src/ui2/popups/fixtures.ts';
 import { mountPopup, popupModel } from '../src/ui2/popups/index.ts';
+import { textPages } from '../src/ui2/popups/model.ts';
+import { POPUP_RULES } from '../src/ui2/popups/data.ts';
 import { action, controls, dom, panelAt, TestNode, textOf, visible, withDOM } from './life-popup2-dom-helper.ts';
 
 for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) test(`${kind}: data-popup, 3-card pages, exact dispatch, locks, text details and keyboard exit`, () => withDOM(() => {
@@ -45,7 +47,7 @@ for (const group of POPUP_GROUPS) test(`§11.3 ${group.join('/')}: every impleme
     mountPopup(host.element(), model, { choose() { assert.fail('dismiss must not dispatch an engine choice'); }, dismiss() { dismissed++; } });
     assert.equal(panelAt(host).dataset.popup, kind);
     assert.equal(panelAt(host).dataset.phase, POPUP_DEFINITIONS[kind].phase);
-    assert.equal(action(host, 'popup-close').textContent, '그냥 지나간다');
+    assert.equal(action(host, 'popup-close').textContent, '닫기');
     action(host, 'popup-close').fire('click'); assert.equal(dismissed, 1);
   }
 }));
@@ -59,13 +61,13 @@ test('my-life tabs expose all five bodies, paginate complete untrusted records a
     const selected = controls(host).filter(node => node.attributes['aria-selected'] === 'true');
     assert.equal(selected.length, 1); assert.equal(selected[0].dataset.tab, tab.id);
     assert.ok(host.querySelectorAll('div').some(node => node.dataset.tabPanel === tab.id));
-    const pages = Math.max(1, Math.ceil(Array.from([tab.title, ...tab.lines].join(' · ')).length / 36));
+    const pages = textPages(tab.lines, POPUP_RULES.readingPage).length;
     let text = '';
     for (let page = 0; page < pages; page++) {
       text += host.querySelector('p')!.textContent;
       action(host, 'popup-text-next')?.fire('click');
     }
-    assert.equal(text, [tab.title, ...tab.lines].join(' · '));
+    assert.equal(text, tab.lines.join(' · '));
   }
   assert.equal(host.querySelectorAll('img').some(node => textOf(node).includes('onerror')), false);
   const enabled = controls(host).filter(node => !node.disabled);

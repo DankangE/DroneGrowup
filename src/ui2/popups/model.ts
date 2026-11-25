@@ -1,9 +1,10 @@
 import { currentEvent, forecast, options } from '../../life/engine.ts';
 import type { Forecast, OptionView, Result } from '../../life/engine.ts';
 import { STAT_LABEL } from '../../life/life-data.ts';
-import type { GameState, PlaceId, Stat, StatMap, TrackId } from '../../life/types.ts';
+import { reviewNotice } from '../../life/career2.ts';
+import type { GameState, PlaceId, Stat, StatMap, Status, TrackId } from '../../life/types.ts';
 import { PLACES, WORLD } from '../../life/world.ts';
-import { COPY, FULLSCREEN_POPUPS, POPUP_DEFINITIONS, POPUP_RULES } from './data.ts';
+import { COPY, FULLSCREEN_POPUPS, LIFE_COPY, POPUP_DEFINITIONS, POPUP_RULES } from './data.ts';
 import type { PhoneTab, PopupKind } from './data.ts';
 import { chapterLines, lifeTabs } from './life-model.ts';
 import type { LifeSummaryView, LifeTabModel } from './life-model.ts';
@@ -14,6 +15,7 @@ export type PopupModel = {
   place: PlaceId; track: TrackId | null; fullscreen: boolean; notification: boolean;
   roll?: Result['roll'];
   tabs?: LifeTabModel[];
+  presentation?: boolean;
 };
 export type PopupContext = {
   kind?: PopupKind; offered?: readonly OptionView[]; previews?: Readonly<Record<string, Forecast>>;
@@ -26,8 +28,9 @@ export type PopupContext = {
 export function popupKind(state: GameState, offered: readonly OptionView[]): PopupKind | undefined {
   if (state.phase === 'ended') return undefined;
   if (offered.some(option => option.id.startsWith('start:'))) return 'start';
-  if (offered.some(option => option.id.startsWith('job:'))) return 'job';
   if (offered.some(option => /^retire:(pension|rehire|switch)$/.test(option.id))) return 'retirement';
+  if (offered.some(option => option.id === 'job:none') && reviewNotice(state)) return 'review';
+  if (offered.some(option => option.id.startsWith('job:'))) return 'job';
   if (offered.some(option => /^wed:/.test(option.id))) return 'wedding';
   if (offered.some(option => /^(edu|gift):/.test(option.id))) return 'education';
   if (offered.some(option => /^home:/.test(option.id))) return 'estate';
@@ -54,23 +57,42 @@ export function choicePage<T>(items: readonly T[], requested = 0) {
   return { page, count, items: items.slice(page * POPUP_RULES.pageSize, (page + 1) * POPUP_RULES.pageSize) };
 }
 
-/** Fixed text pages keep even long stored text readable without scrolling or HTML. */
-export function textPages(lines: readonly string[]): string[] {
-  const text = Array.from(lines.filter(Boolean).join(' · ').replace(/\s+/gu, ' '));
-  return Array.from({ length: Math.max(1, Math.ceil(text.length / POPUP_RULES.textPage)) }, (_, index) =>
-    text.slice(index * POPUP_RULES.textPage, (index + 1) * POPUP_RULES.textPage).join(''));
+/** Prefer sentence/line boundaries, then whitespace. Only an overlong unbroken token is split. */
+export function textPages(lines: readonly string[], limit: number = POPUP_RULES.textPage): string[] {
+  const pages: string[] = [];
+  let rest = Array.from(lines.filter(Boolean).join(' · ').replace(/\s+/gu, ' '));
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit).join('');
+    const sentence = [...window.matchAll(/(?:[.!?。！？]\s+| · )/gu)].at(-1);
+    const word = [...window.matchAll(/\s+/gu)].at(-1);
+    const boundary = sentence ?? word;
+    const end = boundary ? Array.from(window.slice(0, boundary.index! + boundary[0].length)).length : limit;
+    pages.push(rest.slice(0, end).join('')); rest = rest.slice(end);
+  }
+  pages.push(rest.join(''));
+  return pages;
 }
 export const shortTitle = (title: string) => Array.from(title).length <= POPUP_RULES.titleLength ? title
   : `${Array.from(title).slice(0, POPUP_RULES.titleLength - 1).join('')}…`;
-const deltas = (values: StatMap) => Object.entries(values)
+const deltas = (values: StatMap, status?: Status) => Object.entries(values)
+  .filter(([stat]) => stat !== 'rank' || !status || status === 'working')
   .map(([stat, value]) => COPY.delta(STAT_LABEL[stat as Stat], value!)).join(' · ');
 
+export function choiceSummary(option: OptionView, preview?: Forecast): string {
+  const cost = preview?.cost ?? option.cost, tire = preview?.tire ?? option.tire;
+  const chance = preview?.chance ?? option.roll?.chance;
+  const money = preview?.branches.length === 1 ? preview.branches[0].deltas.money : undefined;
+  if (/^(start:|retire:)/.test(option.id)) return option.desc.split(/(?<=[.!?])\s*/u)[0];
+  if (money !== undefined && money !== -cost) return [COPY.moneyEffect(money),
+    ...(tire ? [COPY.staminaCost(tire)] : []), ...(chance === undefined ? [] : [COPY.chance(chance)])].join(' · ');
+  return COPY.cost(cost, tire, chance);
+}
 function choiceModel(option: OptionView, preview?: Forecast): PopupChoice {
-  const summary = COPY.cost(preview?.cost ?? option.cost, preview?.tire ?? option.tire,
-    preview?.chance ?? option.roll?.chance);
+  const summary = choiceSummary(option, preview);
   const details = [option.title, option.desc, summary, ...option.locks];
   if (preview) for (const branch of preview.branches) {
-    details.push(`${COPY.expected} · ${COPY[branch.id]}: ${deltas(branch.deltas) || COPY.noChange}`);
+    details.push(`${COPY.expected} · ${COPY[branch.id]}: ${deltas(branch.deltas, branch.status) || COPY.noChange}`);
+    if (branch.status) details.push(LIFE_COPY.status[branch.status]);
     if (branch.endsSeason) details.push(COPY.endsSeason);
     for (const line of branch.accrual ?? []) details.push(COPY.delta(line.label, line.amount));
   }
@@ -85,15 +107,17 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
   if (!kind) return undefined;
   const event = kind === 'event' ? currentEvent(state) : null, result = context.result;
   const place = event?.place ?? result?.place ?? WORLD.find(node => node.id === state.board.pos)!.place;
-  const title = context.title ?? (kind === 'event' ? event?.title : kind === 'result' ? result?.title : undefined)
+  const title = context.title ?? result?.luck?.title ?? (kind === 'event' ? event?.title : kind === 'result' ? result?.title : undefined)
     ?? POPUP_DEFINITIONS[kind].title;
-  const lines = [...(context.lines ?? (event ? [event.text] : [PLACES[place].name]))];
+  const notice = kind === 'review' ? reviewNotice(state) : null;
+  const lines = [...(context.lines ?? (notice ? [notice.text] : event ? [event.text] : result ? [] : [PLACES[place].name]))];
   if (kind === 'chapter' || kind === 'retirement') lines.push(...chapterLines(state, context.summary));
   if (kind === 'review' || kind === 'rankup' || kind === 'demotion') {
     lines.push(COPY.review(state.job.perf, state.job.tenure, state.job.warn));
   }
   if (result) {
-    lines.push(result.text, deltas(result.deltas), ...result.notes);
+    lines.push(result.luck?.text ?? result.text, deltas(result.deltas, result.statusTo),
+      deltas(result.settle?.deltas ?? {}, result.statusTo), ...result.notes);
     if (result.roll) lines.push(result.roll.success ? COPY.success : COPY.fail, COPY.roll(result.roll.value, result.roll.chance));
     if (result.season) lines.push(`${result.season.from} → ${result.season.to}`, COPY.refill(result.season.refill));
     for (const line of result.upkeep?.lines ?? result.season?.accrual ?? []) lines.push(COPY.delta(line.label, line.amount));

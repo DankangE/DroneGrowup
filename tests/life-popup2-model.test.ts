@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ENDINGS } from '../src/game/data.ts';
-import { newGame } from '../src/life/engine.ts';
+import { derived, newGame } from '../src/life/engine.ts';
 import { COPY, FULLSCREEN_POPUPS, LIFE_TABS, POPUP_DEFINITIONS, POPUP_GROUPS, POPUPS2 } from '../src/ui2/popups/data.ts';
 import { ENDINGS2 } from '../src/ui2/popups/ending-data.ts';
 import { collectionModel, endingModel } from '../src/ui2/popups/ending.ts';
 import { fixtureOption, POPUP2_IDS, popup2Fixture } from '../src/ui2/popups/fixtures.ts';
 import type { Popup2Kind } from '../src/ui2/popups/fixtures.ts';
-import { choicePage, phoneChoices, popupKind, popupModel } from '../src/ui2/popups/model.ts';
+import { choicePage, choiceSummary, phoneChoices, popupKind, popupModel } from '../src/ui2/popups/model.ts';
 
 function freeze<T>(value: T): T {
   if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
@@ -33,7 +33,7 @@ for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) {
     for (const option of fixture.context.offered!) {
       const row = model.choices.find(row => row.id === option.id)!, preview = fixture.context.previews![option.id];
       assert.equal(row.enabled, option.enabled);
-      assert.equal(row.summary, COPY.cost(preview.cost, preview.tire, preview.chance));
+      assert.equal(row.summary, choiceSummary(option, preview));
       assert.ok(option.locks.every(lock => row.details.includes(lock)));
       assert.ok(row.details.some(line => line.includes('행복 +17')));
       assert.ok(row.details.some(line => line.includes('-123')));
@@ -82,7 +82,7 @@ test('my life has exactly five tabs, includes raw family/assets/logs and accepts
   for (const kid of fixture.state.family.kids) assert.ok(raw.tabs![2].lines.some(line => line.includes(`출생 ${kid.born}계절`)));
   assert.ok(raw.tabs![3].lines.some(line => line.includes('<새 가게>')));
   assert.ok(raw.tabs![3].lines.some(line => line.includes('1234만')));
-  assert.ok(raw.tabs![3].lines.includes('순자산 조회 대기'));
+  assert.ok(raw.tabs![3].lines.includes(`순자산 ${derived(fixture.state).netWorth}만`));
   assert.ok(raw.tabs![4].lines.some(line => line.includes(fixture.state.log[0].text)));
   const supplied = popupModel(fixture.state, fixture.context)!;
   assert.ok(supplied.tabs![3].lines.includes('순자산 48231만'));
