@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { GRADE_STEPS } from '../src/game/data.ts';
 import { ALL_EVENTS, choose, currentEvent, derived, eventCandidates, forecast, LIFE_EVENTS, lifeEvent,
   newGame, options, reachable, restore, yearEnd } from '../src/life/engine.ts';
@@ -7,13 +8,19 @@ import { answer, effect, EVENTS_A, EVENT_KEYS as K, gamble, materialize } from '
 import { EVENTS_B, eventCarState, eventEstateOffers } from '../src/life/events-b.ts';
 import { EVENTS_C } from '../src/life/events-c.ts';
 import { EVENTS_D, eventShopIncome } from '../src/life/events-d.ts';
+import { EVENTS_E, EVENT2_KEYS as K2, eventAnswer, eventEffect } from '../src/life/events-e.ts';
+import { EVENTS_F, eventRecovery } from '../src/life/events-f.ts';
+import { EVENTS_G } from '../src/life/events-g.ts';
+import { EVENTS_H, organizationValue, successionValue } from '../src/life/events-h.ts';
+import { EVENTS } from '../src/life/compat.ts';
 import { familyChoices } from '../src/life/family.ts';
 import { careerSalary } from '../src/life/career2.ts';
 import { ASSET_KEYS, STATS } from '../src/life/life-data.ts';
+import { JOB_RULES } from '../src/life/tracks.ts';
 import { randInt } from '../src/life/move.ts';
 import { WORLD } from '../src/life/world.ts';
 import { checkChoices, dominanceReport } from '../scripts/dominance-life.ts';
-import type { GameState } from '../src/life/types.ts';
+import type { Cond, GameState } from '../src/life/types.ts';
 
 function fixture(id: string): GameState {
   const s = choose(newGame(17), 'start:self').state;
@@ -40,6 +47,27 @@ function fixture(id: string): GameState {
   if (id === 'early_retire') { s.turn = 132; s.s.capStamina = 90; }
   if (['gear_sponsor', 'drone_show'].includes(id)) s.track = 'pilot';
   if (['big_order', 'partner_exit', 'gov_project', 'export_deal'].includes(id)) s.track = 'company';
+  if (['crash', 'bull'].includes(id)) s.fund = { kind: 1, amount: 1001 };
+  if (id === 'burnout') s.timers[K2.lowStamina] = 2;
+  if (['wrist', 'field_call'].includes(id)) s.track = 'pilot';
+  if (['illness', 'parents_care'].includes(id)) s.turn = 104;
+  if (id === 'holiday') s.turn = 85;
+  if (['fast_track', 'd_scout'].includes(id)) { s.board.pos = 'D-o5'; s.s.theory = 240; }
+  if (id === 'fast_track') s.track = 'engineer';
+  if (['second_act', 'memoir', 'cruise', 'successor'].includes(id)) {
+    s.turn = id === 'successor' ? 184 : id === 'second_act' ? 144 : 164;
+    s.s.capStamina = s.turn >= 164 ? 80 : 90; s.status = 'retired'; s.track = null;
+    s.family.kids[0].stage = 4;
+  }
+  const legacy = EVENTS.find(row => row.id === id);
+  if (legacy) {
+    const meet = (cond: Cond) => {
+      if (cond.status) s.status = cond.status[0]; if (cond.track) s.track = cond.track[0];
+      Object.assign(s.s, cond.min, cond.max); s.flags = [...new Set([...s.flags, ...cond.flags ?? []])].filter(f => !cond.notFlags?.includes(f));
+      if (cond.any) meet(cond.any[0]);
+    };
+    meet(legacy.when); s.job.rank = s.s.rank = 0;
+  }
   return s;
 }
 function integers(value: unknown): void {
@@ -77,19 +105,23 @@ function act(s: GameState, id: string, branch: 'sure' | 'success' | 'fail' = 'su
   return actual;
 }
 
-test('A/B/C/D have exactly 12/12/14/12 original rows, unique ids, grade gates and free responses', () => {
-  assert.deepEqual([EVENTS_A, EVENTS_B, EVENTS_C, EVENTS_D].map(rows => rows.length), [12, 12, 14, 12]);
-  assert.equal(new Set(ALL_EVENTS.map(row => row.id)).size, 88);
+test('A–H have exactly 82 rows plus 38 unchanged legacy events, unique ids, grade gates and free responses', () => {
+  assert.deepEqual([EVENTS_A, EVENTS_B, EVENTS_C, EVENTS_D, EVENTS_E, EVENTS_F, EVENTS_G, EVENTS_H].map(rows => rows.length), [12, 12, 14, 12, 10, 8, 8, 6]);
+  assert.equal(new Set(ALL_EVENTS.map(row => row.id)).size, 120); assert.equal(EVENTS.length, 38);
   for (const row of LIFE_EVENTS) {
     assert.ok(row.title && row.text && row.weight > 0);
     for (const [stat, min] of Object.entries(row.when.min ?? {})) {
       const grades = GRADE_STEPS[stat as keyof typeof GRADE_STEPS]; if (grades) assert.ok(grades.includes(min!));
     }
-    assert.ok(materialize(row, fixture(row.id)).choices.some(c => !c.cost && !c.tire && !c.need), row.id);
+    const choices = materialize(row, fixture(row.id)).choices;
+    for (const choice of choices) for (const [stat, min] of Object.entries(choice.need?.min ?? {})) {
+      const grades = GRADE_STEPS[stat as keyof typeof GRADE_STEPS]; if (grades) assert.ok(grades.includes(min!));
+    }
+    assert.ok(choices.some(c => !c.cost && !c.tire && !c.need), row.id);
   }
 });
 
-for (const row of LIFE_EVENTS) {
+for (const row of ALL_EVENTS) {
   test(`${row.id}: eligible, every response and both roll branches match forecast and replay`, () => {
     const s = fixture(row.id);
     assert.ok(eventCandidates(s).some(event => event.id === row.id), row.id);
@@ -124,7 +156,7 @@ test('life draws occur in even-age springs, preserve the spin, consume one RNG d
     assert.equal(next.phase === 'event', fires); assert.equal(next.board.step, 'spin'); assert.deepEqual(next.board.dice, []);
     assert.deepEqual(s, before); assert.deepEqual(lifeEvent(next), next);
     if (fires) {
-      assert.ok([...EVENTS_A, ...EVENTS_B.filter(e => e.life)].some(e => e.id === next.eventId));
+      assert.ok([...EVENTS_A, ...EVENTS_B.filter(e => e.life), ...EVENTS_F, ...EVENTS_H].some(e => e.id === next.eventId));
       const expected = structuredClone(before), pool = eventCandidates(before, false, true);
       randInt(expected, pool.reduce((n, e) => n + e.weight, 0)); assert.equal(next.rng, expected.rng);
       const resumed = choose(next, 'skip').state;
@@ -317,8 +349,9 @@ test('sponsor max equipment pays 300 and business/drones apply exact unscaled re
 });
 
 test('dominance catches planted numeric/ongoing dominance and preserves only the disclosed spec exception', () => {
-  const report = dominanceReport(); assert.equal(report.events, 88); assert.equal(report.responses, 195);
-  assert.deepEqual(report.missing, []); assert.deepEqual(report.dominated, []); assert.deepEqual(report.exceptions, ['headhunter:1>2']);
+  const report = dominanceReport(); assert.equal(report.events, 120); assert.equal(report.responses, 272);
+  assert.deepEqual(report.missing, []); assert.deepEqual(report.dominated, []);
+  assert.deepEqual(report.exceptions, ['headhunter:1>2', 'invest_scam:0>1', 'tax_audit2:0>1']);
   assert.deepEqual(checkChoices('bad', [answer('A', { happy: 5 }), answer('B', { happy: 2 })]), ['bad:0>1']);
   assert.deepEqual(checkChoices('rent', [answer('A', {}, 0, { rent: 5 }), answer('B', {}, 0, { rent: 8 })]), ['rent:0>1']);
   assert.deepEqual(checkChoices('risk', [answer('A', { money: 5 }), gamble('B', 60, effect({ money: 20 }), effect({ money: -10 }))]), []);
@@ -415,4 +448,257 @@ test('ordinary events drawn on contest tiles get neither racer prize multipliers
   s.board.pos = WORLD.find(n => n.kind === 'contest')!.id;
   const result = act(s, 'ev:0', 'success');
   assert.equal(result.state.s.money - s.s.money, 700); assert.equal(result.state.board.contests, s.board.contests);
+});
+
+function drawOnly(s: GameState, id: string): GameState {
+  const tile = WORLD.find(n => n.map === s.board.pos[0] && n.kind === 'event')!;
+  s.phase = 'action'; s.eventId = null; s.board.step = 'pick'; s.board.dice = [1, 1]; s.s.car = 2;
+  s.board.pos = WORLD.find(n => n.next.includes(tile.id))!.id;
+  s.seen = Object.fromEntries(ALL_EVENTS.filter(e => e.id !== id).map(e => [e.id, s.turn]));
+  const drawn = choose(s, `go:${tile.id}`).state;
+  assert.equal(drawn.eventId, id); assert.deepEqual(restore(drawn), drawn);
+  return drawn;
+}
+
+test('every one of the 120 events is actually drawn from a reachable tile with seeded replay', () => {
+  const drawn = new Set<string>();
+  for (const row of ALL_EVENTS) drawn.add(drawOnly(fixture(row.id), row.id).eventId!);
+  assert.equal(drawn.size, 120);
+});
+
+test('all 82 new titles, bodies and response wordings are documented; v1 still has its 38 rows', () => {
+  const doc = readFileSync(new URL('../docs/story-events.md', import.meta.url), 'utf8');
+  const [legacy, modern] = doc.split('## v2 인생 보드');
+  assert.equal((legacy.match(/^\| \*\*/gm) ?? []).length, 38);
+  assert.equal((modern.match(/^\| `/gm) ?? []).length, 82);
+  for (const row of LIFE_EVENTS) {
+    const line = modern.split('\n').find(line => line.startsWith(`| \`${row.id}\` |`))!;
+    assert.ok(line?.includes(row.title), row.id); assert.ok(line.includes(row.text), row.id);
+    for (const choice of materialize(row, fixture(row.id)).choices) assert.ok(line.includes(choice.title), `${row.id}/${choice.title}`);
+  }
+});
+
+test('every F/H event can be the biennial life draw and resumes its untouched spin after every response', () => {
+  for (const row of [...EVENTS_F, ...EVENTS_H]) {
+    const s = fixture(row.id); s.family.kids = [];
+    while (s.turn % 8 !== 4) s.turn++;
+    s.phase = 'action'; s.eventId = null; s.board.step = 'spin'; s.board.dice = [];
+    s.seen = Object.fromEntries(ALL_EVENTS.filter(e => e.id !== row.id).map(e => [e.id, s.turn]));
+    const drawn = lifeEvent(s); assert.equal(drawn.eventId, row.id); assert.deepEqual(restore(drawn), drawn);
+    for (const [index, choice] of materialize(row, drawn).choices.entries()) {
+      for (const branch of choice.roll ? ['success', 'fail'] as const : ['sure'] as const) {
+        const next = act(structuredClone(drawn), `ev:${index}`, branch).state;
+        assert.equal(next.turn, drawn.turn); assert.equal(next.board.step, 'spin');
+        assert.deepEqual(next.board.dice, []); assert.equal(next.s.acts, drawn.s.acts);
+      }
+    }
+  }
+});
+
+const excluded2: [string, (s: GameState) => void][] = [
+  ['stock_tip', s => { s.s.money = 499; }], ['coin_fever', s => { s.s.money = 999; }],
+  ['coin_fever', s => { s.timers[K2.coins] = 2; }], ['invest_scam', s => { s.s.money = 1999; }],
+  ['inheritance', s => { s.turn = 83; }], ['crash', s => { s.fund.amount = 0; }], ['bull', s => { s.fund.amount = 0; }],
+  ['donation', s => { s.s.money = 999; }], ['tax_audit2', s => { s.s.debt = 200000; }],
+  ['burnout', s => { s.timers[K2.lowStamina] = 1; }], ['wrist', s => { s.track = 'clerk'; }],
+  ['illness', s => { s.turn = 103; }], ['illness', s => { s.timers[K.healthyUntil] = s.turn + 1; }],
+  ['parents_care', s => { s.turn = 103; }], ['parents_care', s => { s.turn = 168; }],
+  ['car_accident', s => { s.s.car = 0; }], ['midlife', s => { s.turn = 83; }], ['midlife', s => { s.turn = 128; }],
+  ['invite_d', s => { s.board.pos = 'D-o0'; }], ['invite_d', s => { for (const key of ['theory', 'skill', 'xp', 'rep', 'teach', 'biz', 'net', 'support'] as const) s.s[key] = 0; }],
+  ['field_call', s => { s.board.pos = 'C-o0'; }], ['field_call', s => { s.track = 'clerk'; }],
+  ['abroad', s => { s.job.perf = 69; }], ['abroad', s => { s.track = 'pilot'; }],
+  ['expo_e', s => { s.s.biz = 59; }], ['expo_e', s => { s.board.pos = 'E-o0'; }],
+  ['holiday', s => { s.turn = 84; }], ['hometown', s => { s.turn = 43; }], ['hometown', s => { s.board.pos = 'A-o0'; }],
+  ['fast_track', s => { s.track = 'clerk'; }], ['fast_track', s => { s.board.pos = 'B-o0'; }],
+  ['d_scout', s => { s.track = 'engineer'; }], ['d_scout', s => { s.board.pos = 'B-o0'; }],
+  ['d_scout', s => { s.flags = []; s.s.theory = 0; s.s.skill = 0; }],
+  ['second_act', s => { s.turn = 143; }], ['memoir', s => { s.turn = 163; }], ['memoir', s => { s.s.rep = 104; }],
+  ['foundation', s => { s.s.debt = 200000; }], ['villa', s => { s.s.debt = 200000; }],
+  ['cruise', s => { s.turn = 163; }], ['successor', s => { s.turn = 183; }], ['successor', s => { s.holdings = []; }],
+];
+test('E–H enforce each money, age, map, career, season, health and asset gate', () => {
+  for (const [id, change] of excluded2) {
+    const s = fixture(id); assert.ok(eventCandidates(s).some(e => e.id === id), id);
+    change(s); assert.ok(!eventCandidates(s).some(e => e.id === id), id);
+  }
+  const s = fixture('second_act'); s.s.net = 99; assert.equal(options(s).find(o => o.id === 'ev:1')!.enabled, false);
+  s.s.net = 100; assert.equal(options(s).find(o => o.id === 'ev:1')!.enabled, true);
+});
+
+test('coin sightings stop at two, once-only events stop at one, and other E–H events wait 24 seasons', () => {
+  let coin = drawOnly(fixture('coin_fever'), 'coin_fever'); assert.equal(coin.timers[K2.coins], 1);
+  coin = choose(coin, 'skip').state; coin.turn += 24;
+  coin = drawOnly(coin, 'coin_fever'); assert.equal(coin.timers[K2.coins], 2);
+  coin = choose(coin, 'ev:1').state; coin.turn += 24;
+  assert.ok(!eventCandidates(coin).some(e => e.id === 'coin_fever'));
+  for (const row of [...EVENTS_E, ...EVENTS_F, ...EVENTS_G, ...EVENTS_H]) {
+    const s = fixture(row.id); s.seen[row.id] = s.turn;
+    s.turn += 23; assert.ok(!eventCandidates(s).some(e => e.id === row.id), row.id);
+    s.turn++;
+    // Eligibility may independently expire (season, age or career); the universal rows establish the boundary.
+    if (row.once) assert.ok(!eventCandidates(s).some(e => e.id === row.id), row.id);
+    else if (['lotto', 'wallet', 'fitness', 'marathon'].includes(row.id)) assert.ok(eventCandidates(s).some(e => e.id === row.id));
+  }
+});
+
+test('E money outcomes keep the exact costs, gains, fractional tax and chance formulas', () => {
+  for (const [id, index, success, failure] of [['lotto', 0, 2990, -10], ['stock_tip', 0, 800, -350],
+    ['stock_tip', 1, 160, -70], ['coin_fever', 0, 3000, -800], ['invest_scam', 1, 0, -1500]] as const) {
+    const s = fixture(id);
+    assert.equal(act(s, `ev:${index}`, 'success').state.s.money - s.s.money, success);
+    assert.equal(act(s, `ev:${index}`, 'fail').state.s.money - s.s.money, failure);
+  }
+  const s = fixture('tax_audit2'); s.s.money += 17;
+  assert.equal(act(s, 'ev:1', 'fail').state.s.money - s.s.money, -Math.floor(derived(s).netWorth * 3 / 100));
+  for (const [theory, chance] of [[0, 55], [149, 69], [300, 85], [999, 85]]) {
+    const scam = fixture('invest_scam'); scam.s.theory = theory;
+    assert.equal(options(scam).find(o => o.id === 'ev:1')!.roll!.chance, chance);
+  }
+  const lucky = fixture('invest_scam'); lucky.s.theory = 300; lucky.flags.push(ASSET_KEYS.dream);
+  assert.equal(act(lucky, 'ev:1', 'success').result.roll!.chance, 95);
+});
+
+test('fund shocks apply once before responses, withdrawals are exact and preview includes fund balances', () => {
+  for (const [id, shocked] of [['crash', 800], ['bull', 1121]] as const) {
+    const s = drawOnly(fixture(id), id); assert.equal(s.fund.amount, shocked);
+    assert.equal(choose(s, 'skip').state.fund.amount, shocked);
+    assert.equal(restore(s)!.fund.amount, shocked);
+    const out = act(s, id === 'crash' ? 'ev:1' : 'ev:0');
+    const amount = id === 'crash' ? shocked : 560;
+    assert.equal(out.state.fund.amount, shocked - amount); assert.equal(out.state.s.money - s.s.money, amount);
+  }
+});
+
+test('fund popup reuses deposit/withdraw/type choices, exits freely and grants a one-year bonus only on deposit', () => {
+  const open = act(drawOnly(fixture('crash'), 'crash'), 'ev:0').state;
+  assert.equal(options(open).find(o => o.id === 'skip')!.title, '그냥 지나간다');
+  for (const option of options(open).filter(o => o.enabled)) act(structuredClone(open), option.id);
+  const skipped = act(structuredClone(open), 'skip').state;
+  assert.equal(skipped.turn, open.turn); assert.equal(skipped.timers[K2.fundBonus], undefined);
+  assert.equal(act(structuredClone(open), 'fund:out:100').state.timers[K2.fundBonus], undefined);
+  const deposit = act(structuredClone(open), 'fund:in:100').state;
+  assert.equal(deposit.s.money, open.s.money - 100); assert.equal(deposit.fund.amount, open.fund.amount + 100);
+  assert.equal(deposit.timers[K2.fundBonus], 15); assert.equal(deposit.timers[K2.fundPopup], undefined);
+  for (const kind of [0, 1, 2] as const) for (const rng of [1, 10000]) {
+    const s = structuredClone(deposit); s.turn = 88; s.fund = { kind, amount: 1007 }; s.rng = rng;
+    const preview = structuredClone(s), chance = [100, 60, 45][kind];
+    const win = chance === 100 || randInt(preview, 100) < chance;
+    const rate = win ? [4, 14, 35][kind] : [4, -8, -20][kind];
+    const next = yearEnd(s); assert.equal(next.fund.amount, 1007 + Math.floor(1007 * (rate + 15) / 100));
+    assert.equal(next.rng, preview.rng); assert.equal(next.timers[K2.fundBonus], undefined); assert.deepEqual(yearEnd(next), next);
+  }
+  const empty = structuredClone(deposit); empty.turn = 88; empty.fund.amount = 0;
+  const expired = yearEnd(empty); assert.equal(expired.timers[K2.fundBonus], undefined); assert.equal(expired.rng, empty.rng);
+});
+
+test('health clocks use pre-refill closing stamina, reset consecutive burnout, and expire recovery effects exactly', () => {
+  const close = (s: GameState) => { s.phase = 'action'; s.eventId = null; s.board.step = 'bonus'; return choose(s, 'end').state; };
+  let s = fixture('burnout'); delete s.timers[K2.lowStamina]; s.s.stamina = 39;
+  s = close(s); assert.equal(s.timers[K2.lowStamina], 1); s.s.stamina = 39;
+  s = close(s); assert.equal(s.timers[K2.lowStamina], 2); assert.ok(eventCandidates(s).some(e => e.id === 'burnout'));
+  s.s.stamina = 40; s = close(s); assert.equal(s.timers[K2.lowStamina], 0);
+  for (const [id, option, duration, gain] of [['parents_care', 'ev:1', 4, -10], ['fitness', 'ev:0', 8, 5]] as const) {
+    const health = act(fixture(id), option).state;
+    for (let n = 0; n <= duration; n++) assert.equal(eventRecovery({ ...health, turn: health.turn + n }), n < duration ? gain : 0);
+    const ordinary = structuredClone(health); delete ordinary.timers[K2.careUntil]; delete ordinary.timers[K2.fitnessUntil];
+    health.s.stamina = ordinary.s.stamina = 0;
+    assert.equal(close(health).s.stamina - close(ordinary).s.stamina, gain);
+  }
+});
+
+test('wrist changes real flight odds for four seasons; illness clamps current stamina and the permanent cap', () => {
+  const s = act(fixture('wrist'), 'ev:1').state; s.board.pos = 'B-o2'; s.board.step = 'bonus';
+  const action = WORLD.find(n => n.place === 'farm')!; s.board.pos = action.id; s.s.stamina = 70; s.s.skill = 90; s.s.drone = 2;
+  const plain = structuredClone(s); delete plain.timers[K2.wristUntil];
+  const flight = options(plain).find(o => o.roll?.crashPct !== undefined)!; assert.ok(flight);
+  assert.equal(options(s).find(o => o.id === flight.id)!.roll!.chance, flight.roll!.chance - 10);
+  s.turn += 4; assert.equal(options(s).find(o => o.id === flight.id)!.roll!.chance, flight.roll!.chance);
+  for (const [cap, option, expected] of [[100, 'ev:1', 95], [65, 'ev:1', 60], [65, 'ev:2', 60]] as const) {
+    const ill = fixture('illness'); ill.s.capStamina = ill.s.stamina = cap;
+    const next = act(ill, option).state;
+    assert.equal(next.s.capStamina, expected); assert.equal(next.s.stamina, expected); assert.deepEqual(restore(next), next);
+  }
+  for (const [stamina, chance] of [[59, 40], [60, 70]]) {
+    const race = fixture('marathon'); race.s.stamina = stamina;
+    assert.equal(options(race).find(o => o.id === 'ev:0')!.roll!.chance, chance);
+  }
+});
+
+test('travel moves to the specified start without tolls/laps and both job popups can exit or hire', () => {
+  for (const [id, pos, money] of [['invite_d', 'D-o0', 0], ['field_call', 'C-o0', 250], ['expo_e', 'E-o0', 0],
+    ['holiday', 'F-o0', -100], ['hometown', 'A-o0', 0]] as const) {
+    const s = fixture(id), next = act(s, 'ev:0').state;
+    assert.equal(next.board.pos, pos); assert.equal(next.s.money - s.s.money, money);
+    assert.deepEqual(next.board.lapAt, s.board.lapAt); assert.equal(next.board.laps, s.board.laps);
+    assert.ok(next.board.visited & (1 << 'ABCDEF'.indexOf(pos[0])));
+  }
+  const invitation = act(fixture('invite_d'), 'ev:1').state; assert.ok(invitation.flags.includes('invite'));
+  for (const id of ['midlife', 'd_scout']) {
+    const s = fixture(id); s.job.changedAt = s.turn;
+    const open = act(s, 'ev:0').state, list = options(open);
+    assert.equal(list.find(o => o.id === 'job:none')!.title, '그냥 지나간다');
+    assert.equal(act(structuredClone(open), 'job:none').state.turn, open.turn);
+    const hire = list.find(o => o.enabled && o.id !== 'job:none')!; assert.ok(hire);
+    const hired = act(structuredClone(open), hire.id, hire.roll ? 'success' : 'sure').state;
+    assert.equal(hired.timers[JOB_RULES.popup], undefined); assert.equal(hired.timers[K2.jobs], undefined);
+    if (id === 'd_scout') assert.ok(list.every(o => ['job:engineer', 'job:inspector', 'job:film', 'job:atc', 'job:racer', 'job:none'].includes(o.id)));
+  }
+});
+
+test('abroad closes exactly two paid seasons, including seeded year-end changes and the terminal turn', () => {
+  for (const turn of [84, 86, 87, 202, 203]) {
+    const s = fixture('abroad'); s.turn = turn;
+    if (turn >= 164) { s.track = 'company'; s.s.capStamina = 80; }
+    s.fund = { kind: 2, amount: 1007 };
+    const next = act(s, 'ev:0').state;
+    assert.equal(next.turn, Math.min(204, turn + 2)); assert.deepEqual(restore(next), next);
+    if (turn === 84) { assert.equal(next.board.ledger['급여'], Math.floor(careerSalary(s) * 110 / 100) * 2); assert.equal(next.s.theory, s.s.theory + 40); }
+    if (turn >= 202) assert.equal(next.phase, 'ended');
+  }
+});
+
+test('fast track awards the specified primary skill and tenure, sports car sets tier three', () => {
+  for (const [track, stat] of [['engineer', 'theory'], ['inspector', 'skill'], ['film', 'skill'], ['atc', 'theory'], ['racer', 'skill']] as const) {
+    const s = fixture('fast_track'); s.track = track;
+    const next = act(s, 'ev:0').state;
+    assert.equal(next.s[stat] - s.s[stat], 30); assert.equal(next.job.tenure - s.job.tenure, 4);
+    assert.equal(next.s.money - s.s.money, -600); assert.equal(next.s.stamina - s.s.stamina, -30);
+  }
+  const car = act(fixture('midlife'), 'ev:1').state; assert.equal(car.s.car, 3);
+});
+
+test('foundation awards persist; villa respects residence, deposit refunds and the existing property limit', () => {
+  for (const [choice, money, points, happy, rep] of [[0, -30000, 3000, 60, 50], [1, -3000, 300, 15, 0]]) {
+    const s = fixture('foundation'), next = act(s, `ev:${choice}`).state;
+    assert.equal(next.s.money - s.s.money, money); assert.equal(next.timers[K.points], points);
+    assert.equal(next.s.happy - s.s.happy, happy); assert.equal(next.s.rep - s.s.rep, rep);
+  }
+  const s = fixture('villa'), owned = act(structuredClone(s), 'ev:0').state;
+  assert.deepEqual(owned.estates, [{ map: 'F', tier: 5, paid: 12000 }]); assert.deepEqual(owned.home, s.home);
+  s.home = { map: 'A', tier: 2, deposit: 1500 };
+  const residence = act(structuredClone(s), 'ev:0').state;
+  assert.deepEqual(residence.home, { map: 'F', tier: 5, deposit: 0 }); assert.equal(residence.s.money - s.s.money, -10500);
+  s.home.tier = 3; s.estates = Array.from({ length: 3 }, () => ({ map: 'B' as const, tier: 3, paid: 6000 }));
+  assert.equal(options(s).find(o => o.id === 'ev:0')!.enabled, false); assert.ok(options(s).find(o => o.id === 'ev:2')!.enabled);
+});
+
+test('successor preparation counts at settlement only and sale converts/removes every valued organization', () => {
+  for (const track of ['company', 'academy', null] as const) {
+    const s = fixture('successor'); s.track = track; s.status = track ? 'working' : 'retired'; s.s.level = 3;
+    const value = organizationValue(s), prepared = act(s, 'ev:0').state;
+    assert.equal(successionValue(prepared), Math.floor(value * 10 / 100));
+    assert.equal(derived(prepared).netWorth, derived(s).netWorth - 1000);
+    const sold = act(s, 'ev:1', 'success').state;
+    assert.equal(sold.s.money - s.s.money, Math.floor(value * 110 / 100)); assert.equal(organizationValue(sold), 0);
+    assert.deepEqual(sold.holdings, []); if (track) assert.equal(sold.status, 'jobless');
+    const failed = act(s, 'ev:1', 'fail').state; assert.equal(organizationValue(failed), value);
+  }
+  const s = act(fixture('successor'), 'ev:0').state; s.turn = 203; s.phase = 'action'; s.eventId = null; s.board.step = 'bonus';
+  const next = choose(s, 'end').state; assert.equal(next.score, derived(next).netWorth + successionValue(next));
+});
+
+test('dominance understands new ongoing costs, withdrawals and indivisible popup/sale effects', () => {
+  assert.deepEqual(checkChoices('wrist', [eventAnswer('A', {}, 0, { wristWait: 2 }), eventAnswer('B', {}, 0, { wristWait: 4 })]), ['wrist:0>1']);
+  assert.deepEqual(checkChoices('fund', [eventAnswer('A', { money: 100 }, 0, { fundOut: 100 }), answer('B')]), []);
+  assert.deepEqual(checkChoices('sale', [gamble('A', 55, eventEffect({ money: 500 }, { sellOrganization: 1 }), effect()), answer('B')]), []);
 });

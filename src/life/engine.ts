@@ -8,11 +8,11 @@ import { CONTEST_EVENTS } from '../game/data.ts';
 import { ACTIONS, EVENTS } from './compat.ts';
 import { CAREER_TEXT, promotionView, retirementView } from './career2.ts';
 import { applyAssetChoice, applyAssetMove, assetPopup, assetReachable, consumeLuck,
-  discountedChoice, drawLuck, fundYearEnd, luckChanceBonus, rollAssetDice, shortcutMoves } from './assets.ts';
+  discountedChoice, drawLuck, luckChanceBonus, rollAssetDice, shortcutMoves } from './assets.ts';
 import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, ECONOMY_TEXT,
   flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
-  contestPrize, creatorIncome, jobChoices, performance, review, specialistChoices, startingAction } from './jobs.ts';
+  contestPrize, creatorIncome, performance, review, specialistChoices, startingAction } from './jobs.ts';
 import { applyHomeChoice, homeRecovery, yearEndHome } from './home.ts';
 import type { EstateOffer } from './home.ts';
 import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery } from './family.ts';
@@ -26,6 +26,12 @@ import { afterEventHome, eventCarState, eventEstateOffers, eventYearEnd, EVENTS_
   homeEventEffect, householdEventLines, improvementWorth } from './events-b.ts';
 import { careerEventEffect, EVENTS_C } from './events-c.ts';
 import { afterEventAsset, businessEventEffect, eventAssetChoices, eventIncomeState, EVENTS_D } from './events-d.ts';
+import { afterFundEvent, beginFinanceEvent, EVENT2_KEYS as E2K, eventFundYearEnd, EVENTS_E,
+  financeEventEffect, fundEventChoices } from './events-e.ts';
+import type { EventExtra2 } from './events-e.ts';
+import { closeEventHealth, eventFlightPenalty, eventRecovery, EVENTS_F, healthEventEffect } from './events-f.ts';
+import { eventJobChoices, EVENTS_G, travelEventEffect } from './events-g.ts';
+import { EVENTS_H, lateEventEffect, successionValue, villaLocks } from './events-h.ts';
 import { randInt } from './move.ts';
 import type { Move } from './move.ts';
 import { PLACES, WORLD } from './world.ts';
@@ -33,11 +39,13 @@ import type { Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap,
 import { restore as restoreBase } from './restore.ts';
 export { jobOffers } from './jobs.ts';
 export const estateOffers = eventEstateOffers;
-export const LIFE_EVENTS = [...EVENTS_A, ...EVENTS_B, ...EVENTS_C, ...EVENTS_D];
+export const LIFE_EVENTS = [...EVENTS_A, ...EVENTS_B, ...EVENTS_C, ...EVENTS_D, ...EVENTS_E, ...EVENTS_F, ...EVENTS_G, ...EVENTS_H];
 export const ALL_EVENTS = [...EVENTS, ...LIFE_EVENTS];
-type EventState = Pick<GameState, 'job' | 'home' | 'estates' | 'holdings' | 'family' | 'timers' | 'flags' | 'feats'> & { position: string };
+type EventState = Pick<GameState, 'job' | 'home' | 'estates' | 'holdings' | 'family' | 'timers' | 'flags' | 'feats'
+  | 'fund' | 'turn' | 'board' | 'phase' | 'eventId' | 'seen'> & { position: string };
 const eventState = (s: GameState): EventState => structuredClone({ job: s.job, home: s.home, estates: s.estates,
-  holdings: s.holdings, family: s.family, timers: s.timers, flags: s.flags, feats: s.feats, position: s.board.pos });
+  holdings: s.holdings, family: s.family, timers: s.timers, flags: s.flags, feats: s.feats, position: s.board.pos,
+  fund: s.fund, turn: s.turn, board: s.board, phase: s.phase, eventId: s.eventId, seen: s.seen });
 /** Validate new event saves through the existing strict boundary, including every nested integer. */
 export function restore(raw: unknown): GameState | null {
   if (raw && typeof raw === 'object' && 'phase' in raw && raw.phase === 'event' && 'eventId' in raw
@@ -110,7 +118,7 @@ export function derived(state: GameState): Derived {
 }
 
 /** Called with the new turn, including the terminal 70-year-old spring. */
-export const yearEnd = (state: GameState) => eventYearEnd(fundYearEnd(state));
+export const yearEnd = (state: GameState) => eventYearEnd(eventFundYearEnd(state));
 export function lifeEvent(prev: GameState): GameState {
   const state = structuredClone(prev);
   if (!state.turn || state.turn >= LIFE_RULES.maxTurns || state.phase !== 'action'
@@ -127,7 +135,8 @@ function setStat(state: GameState, stat: Stat, value: number) {
   const max = stat === 'stamina' ? Math.min(ageCap(state.turn), state.s.capStamina)
     : STAT_MAX[stat] ?? LIFE_RULES.statMax;
   state.s[stat] = clamp(Math.trunc(value), stat === 'money' ? -LIFE_RULES.statMax
-    : stat === 'homeIndex' ? LIFE_RULES.minHomeIndex : 0, max);
+    : stat === 'homeIndex' ? LIFE_RULES.minHomeIndex : stat === 'capStamina' ? LIFE_RULES.minCapStamina : 0, max);
+  if (stat === 'capStamina') state.s.stamina = Math.min(state.s.stamina, state.s.capStamina);
 }
 
 function settle(state: GameState) {
@@ -205,7 +214,7 @@ function view(state: GameState, id: string, r: Resolved): OptionView {
     for (const mod of choice.roll.mods ?? []) {
       chance += clamp(Math.floor((state.s[mod.stat] - mod.over) / mod.per) * mod.pct, 0, mod.cap);
     }
-    if (flight) chance += flightOdds(state, choice).bonus;
+    if (flight) chance += flightOdds(state, choice).bonus - eventFlightPenalty(state);
     option.roll = { chance: clamp(chance, RULES.chanceMin, RULES.chanceMax), staminaPct,
       success: outcome(state, choice.roll.success, flight,
         kind === 'event' && nodeAt(state).kind === 'contest' && CONTEST_EVENTS.includes(state.eventId!)),
@@ -221,6 +230,13 @@ function resolve(state: GameState): Map<string, Resolved> {
   if (state.phase === 'ended') return choices;
   const node = nodeAt(state);
   const board = (id: string, choice: Choice) => choices.set(id, { kind: 'board', place: node.place, choice, flight: false });
+  if (state.timers[E2K.fundPopup] !== undefined) {
+    for (const { id, locks, ...service } of fundEventChoices(state)) choices.set(id, {
+      ...service, free: true, flight: false, jobLocks: locks, eventPopup: true });
+    choices.set('skip', { kind: 'board', place: node.place, choice: BOARD_CHOICES.skip,
+      free: true, flight: false, eventPopup: true });
+    return choices;
+  }
   const eventPopup = EK.popupIds[(state.timers[EK.popup] ?? 0) - 1];
   if (eventPopup) {
     const add = (id: string, choice: LifeChoice, extra: Partial<Resolved> = {}) => choices.set(id, {
@@ -239,11 +255,11 @@ function resolve(state: GameState): Map<string, Resolved> {
     for (const { id, locks, ...service } of popup) choices.set(id, { ...service, flight: false, jobLocks: locks });
     return choices;
   }
-  const jobs = jobChoices(state);
+  const jobs = eventJobChoices(state);
   for (const { id, choice, locks } of jobs.choices) {
     choices.set(id, { kind: 'board', place: node.place,
       choice: id === 'job:none' && state.timers[EK.headhunter] !== undefined ? { ...choice, title: BOARD_CHOICES.skip.title } : choice,
-      flight: false, jobLocks: locks });
+      flight: false, jobLocks: locks, eventPopup: state.timers[E2K.jobs] !== undefined });
   }
   if (jobs.exclusive) return choices;
   const family = familyChoices(state.phase === 'event' && state.board.step === 'spin' ? { ...state, phase: 'action' } : state);
@@ -257,7 +273,8 @@ function resolve(state: GameState): Map<string, Resolved> {
     choices.clear();
     const event = currentEvent(state), life = LIFE_EVENTS.some(row => row.id === state.eventId);
     event?.choices.forEach((choice, i) => choices.set(`ev:${i}`, { kind: 'event', place: event.place,
-      choice, flight: false, life, free: state.board.step === 'spin', ...(life && { jobLocks: [] }) }));
+      choice, flight: false, life, free: state.board.step === 'spin', ...(life && {
+        jobLocks: ((choice.effect as LifeEffect | undefined)?.extra as EventExtra2 | undefined)?.villa ? villaLocks(state) : [] }) }));
     choices.set('skip', { kind: 'board', place: node.place, choice: BOARD_CHOICES.skip, flight: false,
       life, free: state.board.step === 'spin' }); return choices;
   }
@@ -332,8 +349,10 @@ function payLedger(state: GameState, result: Result) {
   paid.lines.push(...lines); paid.total += applied;
 }
 
-function endSeason(state: GameState, result: Result, runHooks: boolean): GameState {
+function endSeason(state: GameState, result: Result, runHooks: boolean, drawLife = true): GameState {
   const from = dateLabel(state.turn), { upkeep } = derived(state);
+  const recovery = eventRecovery(state);
+  state = closeEventHealth(state);
   const eventLines = householdEventLines(state);
   state = accrue(eventIncomeState(state), false);
   for (const { label, amount } of eventLines) state.board.ledger[label] = (state.board.ledger[label] ?? 0) + amount;
@@ -361,18 +380,18 @@ function endSeason(state: GameState, result: Result, runHooks: boolean): GameSta
   state.board.step = 'spin'; state.board.dice = [];
   if (runHooks && seasonAt(state.turn) === LIFE_RULES.spring) {
     state = HOOKS.yearEnd(state);
-    if (ageAt(state.turn) % LIFE_RULES.lifeEventYears === 0) state = HOOKS.lifeEvent(state);
+    if (drawLife && ageAt(state.turn) % LIFE_RULES.lifeEventYears === 0) state = HOOKS.lifeEvent(state);
   }
   state.s.capStamina = Math.min(state.s.capStamina, ageCap(state.turn));
   const beforeRefill = state.s.stamina;
-  setStat(state, 'stamina', beforeRefill + homeRecovery(state).recovery + familyRecovery(state));
+  setStat(state, 'stamina', beforeRefill + homeRecovery(state).recovery + familyRecovery(state) + recovery);
   state.s.acts = 0;
   if (state.eventId) result.eventId = state.eventId;
   result.season = { from, to: dateLabel(state.turn), refill: state.s.stamina - beforeRefill, accrual: upkeep.lines };
   // T03 always runs 204 seasons: overdue strikes are counted, never an early ending.
   if (state.turn >= LIFE_RULES.maxTurns) {
     payLedger(state, result);
-    const worth = derived(state).netWorth;
+    const worth = derived(state).netWorth + successionValue(state);
     state.phase = 'ended'; state.eventId = null;
     state.ending = worth < RULES.debtorNetWorth ? 'debtor' : LIFE_RULES.timeoutEnding;
     state.score = state.ending === 'debtor' ? 0 : clamp(worth, 0, RULES.score.max);
@@ -403,6 +422,7 @@ function pickEvent(state: GameState, contest: boolean, life = false) {
 
 function beginEvent(state: GameState, id: string) {
   state.phase = 'event'; state.eventId = id; state.seen[id] = state.turn;
+  Object.assign(state, beginFinanceEvent(state, id));
   const event = LIFE_EVENTS.find(row => row.id === id);
   if (event?.initial) applyEffect(state, { text: event.text }, event.initial);
   if (id === 'kid_wedding') {
@@ -522,6 +542,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   if (job) {
     const oldTrack = state.track;
     state = applyJobChoice(state, v.id, branch === 'sure' || success);
+    if (v.id.startsWith('job:')) delete state.timers[E2K.jobs];
     if (hunterBonus !== undefined && v.id.startsWith('job:')) {
       if (oldTrack !== state.track) setStat(state, 'money', state.s.money + hunterBonus);
       delete state.timers[EK.headhunter];
@@ -539,23 +560,31 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   if (r.home) state = afterEventHome(applyHomeChoice(state, r.home), r.home);
   if (/^(biz:|fund:|luck:)/.test(v.id) || v.id === 'skip') {
     state = afterEventAsset(applyAssetChoice(state, v.id, v.cost), v.id, v.cost);
+    state = afterFundEvent(state, v.id);
   }
   if (r.family) {
     const phase = state.phase;
     state = applyFamilyChoice({ ...state, phase: 'action' }, v.id, branch === 'sure' || success); state.phase = phase;
   }
   if (r.eventPopup) delete state.timers[EK.popup];
-  const extra = (effect as LifeEffect).extra;
+  const extra = (effect as LifeEffect).extra as EventExtra2 | undefined;
   if (extra) {
     state = businessEventEffect(careerEventEffect(homeEventEffect(familyEventEffect(state, extra), extra), extra), extra);
+    state = lateEventEffect(travelEventEffect(healthEventEffect(financeEventEffect(state, extra), extra), extra), extra);
     if (extra.popup && extra.popup !== 'headhunter') state.timers[EK.popup] = EK.popupIds.indexOf(extra.popup) + 1;
   }
   if (flag) result.flag = flag;
   if (!v.free && (r.kind !== 'board' || v.id === 'skip')) state.s.acts++;
+  if (extra?.skipSeasons) {
+    // Forecast runs these exact closes on its detached copy, including seeded annual accounting.
+    for (let i = 0; i < extra.skipSeasons && state.turn < LIFE_RULES.maxTurns; i++) {
+      state = endSeason(state, result, true, i === extra.skipSeasons - 1);
+    }
+  }
   result.deltas = diff(before, state.s);
   const afterOption = { ...state.s };
   state.log.push({ turn: state.turn, text: TEXT.log(v.title, result.text), tone: branch === 'sure' ? 'info' : success ? 'good' : 'bad' });
-  if (job || (v.free && !r.life)) {
+  if (extra?.skipSeasons || job || (v.free && !r.life)) {
     // jobs.ts owns popup continuation; entry never consumes the extra action or a season.
   } else if (shortcut) {
     state.board.pos = shortcut.node;
