@@ -57,7 +57,11 @@ test('F3: a successful engine promotion mounts the fullscreen rank card with the
     pick(root, 'promo'); assert.equal(panelAt(root).dataset.popup, 'rankup');
     assert.equal(panelAt(root).dataset.fullscreen, '');
     assert.equal(root.querySelector('[data-result-wheel]')!.textContent, String(expected.result.roll!.value));
-    assert.match(textOf(root), /알바 → 정직원/); assert.deepEqual(api.state(), expected.state);
+    assert.match(textOf(root), /정직원/);
+    let rankText = textOf(panelAt(root));
+    const rankPages = Number(action(root, 'popup-text-next')?.textContent.split(' / ')[1] ?? 1);
+    for (let i = 1; i < rankPages; i++) { action(root, 'popup-text-next').fire('click'); rankText += textOf(panelAt(root)); }
+    assert.match(rankText, /알바 → 정직원/); assert.deepEqual(api.state(), expected.state);
     action(root, 'popup-close').fire('click'); assert.equal(panelAt(root).dataset.popup, 'bonus');
     assert.deepEqual(api.state(), expected.state);
   });
@@ -71,9 +75,9 @@ test('F3: winter warning is on both the annual and review face; acknowledging us
   assert.equal(expected.state.eventId, null);
   inApp(state, (root, api) => {
     pick(root, 'end'); assert.equal(panelAt(root).dataset.popup, 'year-end');
-    assert.match(root.querySelector('p')!.textContent, /성과 26: 경고 기준 30 미만/);
+    assert.match(textOf(panelAt(root)), /성과 26: 경고 기준 30 미만/);
     action(root, 'popup-close').fire('click'); assert.equal(panelAt(root).dataset.popup, 'review');
-    assert.match(root.querySelector('p')!.textContent, /성과 26: 경고 기준 30 미만/);
+    assert.match(textOf(panelAt(root)), /성과 26: 경고 기준 30 미만/);
     assert.deepEqual(api.state(), expected.state);
     pick(root, 'job:none'); dismissPresentations(root);
     assert.deepEqual(api.state(), choose(expected.state, 'job:none').state);
@@ -101,7 +105,10 @@ for (const turn of [63, 143]) test(`F3: crossing ${turn + 1} seasons shows one c
     while (panelAt(root).dataset.popup !== 'chapter') action(root, 'popup-close').fire('click');
     assert.equal(panelAt(root).dataset.fullscreen, '');
     assert.match(textOf(root), new RegExp(`순자산 ${derived(expected.state).netWorth}만`));
-    assert.match(textOf(root), /다음 시기/);
+    let chapterText = textOf(panelAt(root));
+    const pages = Number(action(root, 'popup-text-next')?.textContent.split(' / ')[1] ?? 1);
+    for (let i = 1; i < pages; i++) { action(root, 'popup-text-next').fire('click'); chapterText += textOf(panelAt(root)); }
+    assert.match(chapterText, /다음 시기/);
     action(root, 'popup-close').fire('click'); assert.equal(panelAt(root), undefined);
     assert.deepEqual(api.state(), expected.state);
   });
@@ -135,7 +142,9 @@ for (const id of ['go:A-o12', 'spin']) test(`F3: no-choice luck after ${id} show
     assert.equal(root.querySelector('h2')!.textContent, expected.result.luck!.title);
     assert.match(textOf(root), new RegExp(expected.result.luck!.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.deepEqual(api.state(), expected.state);
-    action(root, 'popup-close').fire('click'); assert.equal(panelAt(root).dataset.popup, 'bonus');
+    action(root, 'popup-close').fire('click');
+    if (expected.result.upkeep) { assert.equal(panelAt(root).dataset.popup, 'result'); action(root, 'popup-close').fire('click'); }
+    assert.equal(panelAt(root).dataset.popup, 'bonus');
     assert.deepEqual(api.state(), expected.state);
   });
 });

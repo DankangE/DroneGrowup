@@ -418,7 +418,13 @@ for (const early of [false, true]) test(`${early ? 'phone retirement' : 'last se
         action(root, 'popup-page-next').fire('click');
       }
       controls(root).find(node => node.dataset.option === id)!.fire('click');
+      if (early) {
+        assert.equal(root.querySelector('[data-confirm=retire]')?.dataset.confirm, 'retire');
+        assert.deepEqual(browser.__life!.state(), state); action(root, 'popup-confirm').fire('click');
+        assert.equal(root.querySelector('[data-popup=retirement]')?.dataset.popup, 'retirement');
+      }
       const final = browser.__life!.state();
+      for (let n = 0; root.querySelector('[data-presentation]') && n < 8; n++) action(root, 'popup-close').fire('click');
       assert.deepEqual(final, choose(state, id, early ? 'phone' : 'board').state);
       assert.equal(root.dataset.screen, 'ending'); assert.ok(root.querySelector('.life2-ending-screen'));
       assert.match(textOf(root), /유유자적 자유인/);

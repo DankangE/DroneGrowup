@@ -3,6 +3,7 @@ import { STAT_LABEL } from '../life/life-data.ts';
 import type { Derived, OptionView } from '../life/engine.ts';
 import type { GameState } from '../life/types.ts';
 import { MAPS, WORLD } from '../life/world.ts';
+import { statChanges } from './popups/polish-model.ts';
 import { button, el } from '../ui/dom.ts';
 
 export const HUD_STYLE = `
@@ -18,19 +19,27 @@ export const HUD_STYLE = `
 const GRADE_NAMES = { skill: '조종', xp: '경험', teach: '교육', biz: '사업', support: '지지' };
 
 export function hud(state: GameState, view: Derived, offered: OptionView[], choose: (id: string) => void,
-  open?: (menu: 'my-life' | 'phone') => void) {
+  open?: (menu: 'my-life' | 'phone') => void, before?: GameState) {
+  const changes = before ? statChanges(before, state) : [];
+  const mark = (cell: HTMLElement, stat: string) => {
+    const change = changes.find(row => row.stat === stat);
+    if (change) { cell.dataset.changedStat = stat; cell.dataset.direction = change.direction;
+      cell.setAttribute('aria-label', `${change.label} ${change.value}`);
+      const tick = el('span', 'life2-stat-tick', change.value); tick.setAttribute('aria-hidden', 'true'); cell.append(tick); }
+    return cell;
+  };
   const current = WORLD.find(node => node.id === state.board.pos)!;
   const top = el('header', 'life2-hud');
   const date = el('div', 'life2-date');
   date.append(el('h1', '', view.dateLabel), el('span', '', MAPS[current.map].name));
   const stats = el('div', 'life2-stats');
-  stats.append(el('span', '', `자금 ${state.s.money.toLocaleString('ko-KR')}만`),
-    el('span', '', `체력 ${state.s.stamina}/${view.capStamina}`), el('span', '', offered.some(option => option.id.startsWith('start:')) ? '진로 선택 전' : view.rankName || view.stageName));
+  stats.append(mark(el('span', '', `자금 ${state.s.money.toLocaleString('ko-KR')}만`), 'money'),
+    mark(el('span', '', `체력 ${state.s.stamina}/${view.capStamina}`), 'stamina'), el('span', '', offered.some(option => option.id.startsWith('start:')) ? '진로 선택 전' : view.rankName || view.stageName));
   const grades = el('div', 'life2-grades'); grades.setAttribute('aria-label', '능력치 등급');
   for (const stat of GRADED_STATS) {
     const letter = grade(stat, state.s[stat])!.letter;
     const cell = el('span', '', `${GRADE_NAMES[stat as keyof typeof GRADE_NAMES] ?? STAT_LABEL[stat]} ${letter}`);
-    cell.dataset.grade = stat; cell.setAttribute('aria-label', `${STAT_LABEL[stat]} ${letter}등급`); grades.append(cell);
+    cell.dataset.grade = stat; cell.setAttribute('aria-label', `${STAT_LABEL[stat]} ${letter}등급`); grades.append(mark(cell, stat));
   }
   top.append(el('style', '', HUD_STYLE), date, stats, grades);
   const bottom = el('footer', 'life2-bottom');

@@ -6,8 +6,6 @@ import { mountEnding, mountEndingCollection } from '../src/ui2/popups/ending.ts'
 import { fixtureOption, popup2Fixture } from '../src/ui2/popups/fixtures.ts';
 import type { Popup2Kind } from '../src/ui2/popups/fixtures.ts';
 import { mountPopup, popupModel } from '../src/ui2/popups/index.ts';
-import { textPages } from '../src/ui2/popups/model.ts';
-import { POPUP_RULES } from '../src/ui2/popups/data.ts';
 import { action, controls, dom, panelAt, TestNode, textOf, visible, withDOM } from './life-popup2-dom-helper.ts';
 
 for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) test(`${kind}: data-popup, 3-card pages, exact dispatch, locks, text details and keyboard exit`, () => withDOM(() => {
@@ -61,13 +59,16 @@ test('my-life tabs expose all five bodies, paginate complete untrusted records a
     const selected = controls(host).filter(node => node.attributes['aria-selected'] === 'true');
     assert.equal(selected.length, 1); assert.equal(selected[0].dataset.tab, tab.id);
     assert.ok(host.querySelectorAll('div').some(node => node.dataset.tabPanel === tab.id));
-    const pages = textPages(tab.lines, POPUP_RULES.readingPage).length;
-    let text = '';
+    const pages = Number(action(host, 'popup-text-next')?.textContent.split(' / ')[1] ?? 1);
+    const rows: string[] = [];
     for (let page = 0; page < pages; page++) {
-      text += host.querySelector('p')!.textContent;
+      for (const row of host.querySelectorAll('dl').flatMap(list => list.children)) {
+        const label = row.querySelector('dt')!.textContent, value = row.querySelector('dd')!.textContent;
+        rows.push(label === '안내' ? value : `${label} · ${value}`);
+      }
       action(host, 'popup-text-next')?.fire('click');
     }
-    assert.equal(text, tab.lines.join(' · '));
+    for (const line of tab.lines) assert.ok(rows.some(row => row === line || row.replace(' · ', ' ') === line), line);
   }
   assert.equal(host.querySelectorAll('img').some(node => textOf(node).includes('onerror')), false);
   const enabled = controls(host).filter(node => !node.disabled);

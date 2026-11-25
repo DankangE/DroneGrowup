@@ -7,6 +7,7 @@ import { ENDINGS2 } from '../src/ui2/popups/ending-data.ts';
 import { collectionModel, endingModel } from '../src/ui2/popups/ending.ts';
 import { fixtureOption, POPUP2_IDS, popup2Fixture } from '../src/ui2/popups/fixtures.ts';
 import type { Popup2Kind } from '../src/ui2/popups/fixtures.ts';
+import { childLabel } from '../src/ui2/popups/polish-model.ts';
 import { choicePage, choiceSummary, phoneChoices, popupKind, popupModel } from '../src/ui2/popups/model.ts';
 
 function freeze<T>(value: T): T {
@@ -33,7 +34,7 @@ for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) {
     for (const option of fixture.context.offered!) {
       const row = model.choices.find(row => row.id === option.id)!, preview = fixture.context.previews![option.id];
       assert.equal(row.enabled, option.enabled);
-      assert.equal(row.summary, choiceSummary(option, preview));
+      assert.equal(row.summary, !option.enabled && option.locks.length ? option.locks[0] : choiceSummary(option, preview));
       assert.ok(option.locks.every(lock => row.details.includes(lock)));
       assert.ok(row.details.some(line => line.includes('행복 +17')));
       assert.ok(row.details.some(line => line.includes('-123')));
@@ -79,7 +80,7 @@ test('my life has exactly five tabs, includes raw family/assets/logs and accepts
   assert.deepEqual(raw.tabs!.map(tab => [tab.id, tab.title]), Object.entries(LIFE_TABS));
   assert.ok(raw.tabs![0].lines.includes('행복 512'));
   assert.ok(raw.tabs![1].lines.some(line => line.includes('엔지니어')));
-  for (const kid of fixture.state.family.kids) assert.ok(raw.tabs![2].lines.some(line => line.includes(`출생 ${kid.born}계절`)));
+  for (const [index] of fixture.state.family.kids.entries()) assert.ok(raw.tabs![2].lines.includes(childLabel(fixture.state, index)));
   assert.ok(raw.tabs![3].lines.some(line => line.includes('<새 가게>')));
   assert.ok(raw.tabs![3].lines.some(line => line.includes('1234만')));
   assert.ok(raw.tabs![3].lines.includes(`순자산 ${derived(fixture.state).netWorth}만`));
@@ -95,7 +96,7 @@ test('mid-term summaries at 35/55 display all required fields and supplied next-
     const fixture = popup2Fixture('chapter'); fixture.state.turn = turn;
     const model = popupModel(freeze(fixture.state), fixture.context)!;
     for (const text of ['순자산 48231만', '엔지니어 · 책임 연구원', '자녀 두 명', '도심 · 중형 아파트',
-      '행복 512', '업적 · 내 집 마련, 첫 승급']) assert.ok(model.lines.includes(text), text);
+      '행복 512', '업적 · 내 집 마련', '업적 · 첫 승급']) assert.ok(model.lines.includes(text), text);
     assert.ok(model.lines.some(line => line.startsWith('다음 시기 · ')));
     assert.equal(model.fullscreen, true); assert.equal(model.choices.length, 0);
   }

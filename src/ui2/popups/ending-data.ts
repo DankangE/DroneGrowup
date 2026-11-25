@@ -12,23 +12,26 @@ export const ENDING_COPY = {
 } as const;
 
 export const ENDING_STYLE = `
-.life2 .life2-ending-screen { box-sizing:border-box; width:100%; height:100%; max-width:800px; margin:auto;
+.life2 .life2-ending-screen { box-sizing:border-box; width:100%; height:100%; max-width:960px; margin:auto;
   display:grid; grid-template-rows:44px minmax(0,1fr) 44px; gap:12px; padding:12px;
   background:#fff6e0; color:#2b2440; font:600 13px/20px system-ui,sans-serif; }
 .life2 .life2-ending-screen * { box-sizing:border-box; min-width:0; }
 .life2 .life2-ending-screen h1 { font-size:20px; margin:0; }
-.life2 .life2-ending-screen h2 { font-size:18px; margin:0; overflow-wrap:anywhere; }
+.life2 .life2-ending-screen h2 { font-size:26px; line-height:32px; margin:0; overflow-wrap:anywhere; }
 .life2 .life2-ending-screen p { margin:0; overflow-wrap:anywhere; white-space:pre-wrap; }
 .life2 .life2-ending-screen button { min-width:44px; min-height:44px; padding:6px;
   font:700 12px/18px system-ui,sans-serif; border:1px solid #80758b; border-radius:8px; color:inherit; background:#fff9eb; }
 .life2 .life2-ending-screen button:focus-visible { outline:3px solid #6036b6; outline-offset:-3px; }
 .life2 .life2-ending-content { display:grid; align-content:center; gap:12px; }
 .life2 .life2-ending-art { display:flex; justify-content:center; }
-.life2 .life2-ending-art img,.life2 .life2-ending-art svg { width:96px; height:96px; object-fit:contain; }
+.life2 .life2-ending-art img,.life2 .life2-ending-art svg { width:min(240px,28dvh); height:min(240px,28dvh); object-fit:contain; }
 .life2 .life2-ending-copy { display:grid; gap:8px; }
-.life2 .life2-ending-copy p { min-height:60px; }
+.life2 .life2-ending-copy p { min-height:100px; font-size:15px; line-height:22px; }
 .life2 .life2-ending-controls,.life2 .life2-ending-pager { display:flex; align-items:center; gap:8px; }
 .life2 .life2-ending-controls button,.life2 .life2-ending-pager button { flex:1; }
 .life2 .life2-ending-cards { display:grid; gap:8px; }
-.life2 .life2-ending-card { text-align:left; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.life2 .life2-ending-card { text-align:left; display:flex; align-items:center; min-height:110px; gap:16px; padding:12px; }
+.life2 .life2-ending-card strong { display:block; font-size:18px; line-height:24px; }
+.life2 .life2-ending-card span { display:block; }
+.life2 .life2-ending-card .life2-ending-art img,.life2 .life2-ending-card .life2-ending-art svg { width:84px; height:84px; }
 `;

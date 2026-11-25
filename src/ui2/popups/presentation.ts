@@ -1,9 +1,12 @@
 import { derived } from '../../life/engine.ts';
 import type { Result } from '../../life/engine.ts';
 import { rankChange, reviewNotice } from '../../life/career2.ts';
-import { LIFE_RULES, STAT_LABEL } from '../../life/life-data.ts';
+import { LIFE_RULES } from '../../life/life-data.ts';
 import type { GameState } from '../../life/types.ts';
 import { CHAPTER_COPY, COPY, POPUP_RULES } from './data.ts';
+import { SPECIAL_RULES, SPECIAL_TEXT } from '../../life/tracks.ts';
+import { POLISH as P } from './polish-data.ts';
+import { careerRows, stageView, statChanges } from './polish-model.ts';
 import { popupModel } from './model.ts';
 import type { PopupContext, PopupModel } from './model.ts';
 
@@ -32,38 +35,48 @@ export function placePopupSheet(host: HTMLElement, panel: HTMLElement): void {
  * Only compare snapshots/use engine views: do not reroll, apply reviews or calculate pay here.
  */
 export function resultPopups(before: GameState, state: GameState, result: Result): PopupModel[] {
-  const queue: PopupModel[] = [];
-  const add = (context: PopupContext) => queue.push({ ...popupModel(state, { offered: [], ...context })!, presentation: true });
-  const change = rankChange(before, state);
-  const rankCard = before.status === 'working' && change &&
-    (change.kind === 'promotion' || change.kind === 'demotion' || (change.kind === 'dismissal' && result.optionId !== 'quit'
-      && !result.optionId.startsWith('retire:')));
-  const notice = reviewNotice(state);
+  if (state.phase === 'ended' && result.optionId !== 'phone:retire') return [];
+  const queue: PopupModel[] = [], changes = statChanges(before, state);
+  const add = (context: PopupContext, motion?: PopupModel['motion']) => queue.push({
+    ...popupModel(state, { offered: [], before, ...context })!, presentation: true, ...(motion && { motion }) });
+  const change = rankChange(before, state), notice = reviewNotice(state);
+  const rankCard = before.status === 'working' && change && ['promotion', 'demotion'].includes(change.kind);
   if (rankCard) add({ kind: change.kind === 'promotion' ? 'rankup' : 'demotion',
-    title: change.kind === 'dismissal' ? notice?.title : undefined,
-    result: result.season ? undefined : result,
-    lines: [COPY.rankChange(change.from.title, change.to.title), COPY.salaryChange(change.from.salary, change.to.salary),
-      ...change.maintenance, ...(notice ? [notice.text] : [])] });
-  else if (change?.kind === 'retirement') add({ kind: 'retirement', title: COPY.retirement, result });
-  else if (result.luck) add({ kind: 'luck', result });
-  else if (result.optionId !== 'spin' && !result.optionId.startsWith('go:')) add({ kind: 'result', result });
+    rows: careerRows(state, before), ...(!result.season && { result }), lines: [COPY.rankChange(change.from.title, change.to.title)],
+  }, change.kind === 'promotion' ? 'rankup' : 'demotion');
+  else if (change?.kind === 'retirement' || result.optionId === 'phone:retire') add({
+    kind: 'retirement', title: P.retirement, rows: [...careerRows(state, before), ...changes], lines: [result.text] });
+  else if (before.status === 'working' && change?.kind === 'dismissal') { add({ kind: 'review',
+    title: result.optionId.startsWith('event:retire:') ? P.buyout : result.optionId === 'quit' ? P.departure : P.dismissal,
+    rows: [...careerRows(state, before), ...changes], lines: [result.text] });
+    queue.at(-1)!.fullscreen = true;
+  } else if (result.luck) {
+    add({ kind: 'luck', title: result.luck.title, lines: [result.luck.text],
+      rows: changes.filter(row => !result.upkeep || !['money', 'debt'].includes(row.stat!)) });
+    // The applied lucky card and any payday on the route are separate records.
+    if (result.upkeep) add({ kind: 'result', title: P.record, lines: [P.settle(result.upkeep.total)],
+      rows: result.upkeep.lines.map(line => ({ label: line.label, value: P.pay(line.amount) })) });
+  } else if (result.optionId !== 'spin' && !result.optionId.startsWith('go:')) add({ kind: 'result', result, rows: changes });
 
-  if (result.season) {
+  if (result.season && state.phase !== 'ended') {
     const previous = derived(before), current = derived(state);
-    if (current.season === LIFE_RULES.spring) {
+    if (current.season === LIFE_RULES.spring && (changes.length || notice || rankCard)) {
+      if (queue[0]?.kind === 'result') queue.shift();
       const lines = notice ? [notice.text] : [];
-      for (const stat of ['happy', 'homeIndex', 'fans'] as const) {
-        if (state.s[stat] !== before.s[stat]) lines.push(COPY.annualStat(STAT_LABEL[stat], before.s[stat], state.s[stat]));
-      }
-      if (state.fund.amount !== before.fund.amount) lines.push(COPY.fundChange(before.fund.amount, state.fund.amount));
-      if (lines.length || rankCard) {
-        // The annual card includes the close accounting; avoid a duplicate plain result.
-        if (queue[0]?.kind === 'result') queue.shift();
-        add({ kind: 'year-end', lines, result });
-      }
+      if (result.season.refill < 0) lines.push(COPY.refill(result.season.refill));
+      const annual = [...changes];
+      if (state.fund.amount !== before.fund.amount) annual.push({ label: '펀드', value: `${before.fund.amount}만 → ${state.fund.amount}만` });
+      for (const line of result.season.accrual ?? []) annual.push({ label: line.label, value: P.pay(line.amount) });
+      add({ kind: 'year-end', lines, rows: annual });
     }
-    if (current.period !== previous.period) add({ kind: 'chapter',
-      summary: { netWorth: current.netWorth, nextPeriod: CHAPTER_COPY[current.period] ?? current.period } });
+    if (current.period !== previous.period) add({ kind: 'chapter', lines: [],
+      summary: { netWorth: current.netWorth, nextPeriod: CHAPTER_COPY[current.period] ?? current.period } }, 'stage');
+  }
+  if (!before.flags.includes(SPECIAL_RULES.master) && state.flags.includes(SPECIAL_RULES.master)) {
+    add({ kind: 'result', title: P.graduateTitle, lines: [SPECIAL_TEXT.graduated], rows: [{ label: P.graduate, value: P.master }] });
+  }
+  if (!queue.some(model => model.stage) && (result.optionId.startsWith('start:') || stageView(before).name !== stageView(state).name) && state.phase !== 'ended') {
+    if (queue[0]) { queue[0].stage = stageView(state); queue[0].motion ??= 'stage'; }
   }
   return queue;
 }

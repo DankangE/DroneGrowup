@@ -5,6 +5,10 @@ import type { LifeTab, PhoneTab } from './data.ts';
 import { choicePage, shortTitle, textPages } from './model.ts';
 import type { PopupModel } from './model.ts';
 import { placePopupSheet } from './presentation.ts';
+import { cardHero, displayRows, stageBanner } from './card-view.ts';
+import { itemPages, labelledRows } from './polish-model.ts';
+import { POLISH as P } from './polish-data.ts';
+import { POLISH_STYLE } from './polish-style.ts';
 import { POPUP_STYLE } from './style.ts';
 export { popupModel, popupKind, phoneChoices } from './model.ts';
 export type { PopupContext, PopupModel } from './model.ts';
@@ -26,12 +30,13 @@ export type PopupActions = {
 export function mountPopup(host: HTMLElement, initial: PopupModel, actions: PopupActions) {
   host.classList.add('life2-popup-host');
   let model = initial, page = 0, copyPage = 0, detail: string[] | undefined, tab: PhoneTab = 'all';
-  let lifeTab: LifeTab = 'ability', confirmingQuit = false;
+  let lifeTab: LifeTab = 'ability', confirming: string | undefined, motionSkipped = false;
+  const stopMotion = () => { if (!panel?.dataset.animating) return false; delete panel.dataset.animating; motionSkipped = true; return true; };
   let panel: HTMLElement, closed = false;
   const previousFocus = actions.returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : undefined);
   function close() {
     if (closed) return;
-    closed = true; host.replaceChildren(); previousFocus?.focus({ preventScroll: true }); actions.dismiss();
+    closed = true; actions.navigation?.removeEventListener?.('keydown', handleKeys); host.replaceChildren(); previousFocus?.focus({ preventScroll: true }); actions.dismiss();
   }
   function render(focus = true) {
     panel = el('section', 'life2-popup'); panel.dataset.popup = model.kind; panel.dataset.phase = model.phase;
@@ -40,37 +45,59 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     if (model.fullscreen) panel.dataset.fullscreen = '';
     if (model.notification) panel.dataset.notification = '';
     if (model.presentation) panel.dataset.presentation = '';
-    if (detail || confirmingQuit) panel.dataset.details = '';
-    if (confirmingQuit) panel.dataset.confirm = 'quit';
-    const header = el('header', 'life2-popup-header'), title = el('h2', '', shortTitle(confirmingQuit ? COPY.quitTitle : model.title));
+    if (detail || confirming) panel.dataset.details = '';
+    if (confirming) panel.dataset.confirm = confirming === 'quit' ? 'quit' : 'retire';
+    const card = model.fullscreen && !detail && !confirming;
+    if (card) panel.dataset.card = model.kind;
+    if (model.motion && !motionSkipped) {
+      panel.dataset.motion = model.motion;
+      if (typeof window !== 'undefined' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) panel.dataset.animating = 'true';
+    }
+    panel.addEventListener('animationend', event => {
+      if (['life2-rank-burst', 'life2-rank-drop', 'life2-drone-arrival'].includes(event.animationName)) stopMotion();
+    });
+    panel.addEventListener('click', () => { stopMotion(); });
+    const header = el('header', 'life2-popup-header'), title = el('h2', '', shortTitle(confirming ? confirming === 'quit' ? COPY.quitTitle : P.retireTitle : model.title));
     title.tabIndex = -1; title.title = model.title;
     header.append(title, button(COPY.exit, '', close, 'popup-close'));
     const copy = el('div', 'life2-popup-copy');
     const selectedTab = model.tabs?.find(item => item.id === lifeTab) ?? model.tabs?.[0];
     const reading = !model.choices.length;
-    if (reading && !detail && !confirmingQuit) panel.dataset.reading = '';
-    const pages = textPages(confirmingQuit ? [COPY.quitQuestion] : detail ?? (selectedTab ? selectedTab.lines : model.lines),
-      model.notification || (reading && model.roll) ? POPUP_RULES.resultPage
-        : reading || detail ? POPUP_RULES.readingPage : POPUP_RULES.textPage);
+    if (reading && !detail && !confirming) panel.dataset.reading = '';
+    const structured = !detail && !confirming && (model.rows || selectedTab);
+    const rows = selectedTab ? labelledRows(selectedTab.lines) : (card && model.kind !== 'chapter') || model.kind === 'result'
+      ? [...(model.rows ?? []), ...labelledRows(model.lines)] : [...labelledRows(model.lines), ...(model.rows ?? [])];
+    const rowPages = itemPages(rows.flatMap(row => textPages([row.value], P.rowLimit)
+      .map(value => ({ ...row, value }))), row => row.label.length + row.value.length,
+      card ? 150 : model.roll ? 70 : P.rowLimit, model.roll ? 1 : card && !reading ? 2 : P.rowCount);
+    const pages = structured ? rowPages : textPages(confirming ? [confirming === 'quit' ? COPY.quitQuestion : P.retireQuestion]
+      : detail ?? model.lines, model.notification || (reading && model.roll) ? POPUP_RULES.resultPage
+        : reading || detail ? POPUP_RULES.readingPage : P.choiceTextPage);
     copyPage = Math.min(copyPage, pages.length - 1);
-    if (!detail && !confirmingQuit) {
+    if (!detail && !confirming) {
       if (model.roll) {
         const wheel = el('output', '', String(model.roll.value)); wheel.dataset.resultWheel = '';
         wheel.setAttribute('aria-label', `${model.roll.success ? COPY.success : COPY.fail} · ${COPY.roll(model.roll.value, model.roll.chance)}`);
         copy.append(wheel);
-      } else if (!reading) copy.append(model.track && ['job', 'rankup', 'demotion', 'review'].includes(model.kind)
+      } else if (!reading && !card) copy.append(model.track && ['job', 'review'].includes(model.kind)
         ? jobPortrait(model.track) : placeArt(model.place));
     }
-    const text = el('p', '', pages[copyPage]); text.setAttribute('aria-live', 'polite'); copy.append(text);
+    if (structured) copy.append(displayRows(rowPages[copyPage]));
+    else {
+      const text = el('p', '', (pages as string[])[copyPage]); text.setAttribute('aria-live', 'polite'); copy.append(text);
+    }
     if (pages.length > 1) copy.append(button(COPY.pages(copyPage, pages.length), '', () => {
       copyPage = (copyPage + 1) % pages.length; render();
     }, 'popup-text-next'));
-    panel.append(header, copy);
+    panel.append(header);
+    if (card) panel.append(cardHero(model));
+    else if (model.stage && !detail && !confirming) { panel.append(stageBanner(model.stage)); panel.dataset.stage = ''; }
+    panel.append(copy);
     const footer = el('footer', 'life2-popup-footer');
-    if (confirmingQuit) {
-      footer.append(button(COPY.cancel, '', () => { confirmingQuit = false; render(); }, 'popup-cancel'),
-        button(COPY.quitConfirm, '', () => {
-          if (!closed && confirmingQuit) { confirmingQuit = false; actions.choose('quit'); }
+    if (confirming) {
+      footer.append(button(COPY.cancel, '', () => { confirming = undefined; render(); }, 'popup-cancel'),
+        button(confirming === 'quit' ? COPY.quitConfirm : P.retireConfirm, '', () => {
+          if (!closed && confirming) { const id = confirming; confirming = undefined; actions.choose(id); }
         }, 'popup-confirm'));
     } else if (detail) {
       footer.append(button(COPY.back, '', () => { detail = undefined; copyPage = 0; render(); }, 'popup-back'));
@@ -81,7 +108,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
         const row = el('div', 'life2-popup-row');
         const control = button('', 'life2-popup-choice', () => {
           if (closed || !option.enabled) return;
-          if (option.id === 'quit') { confirmingQuit = true; copyPage = 0; render(); }
+          if (/^(quit|phone:retire|early-retire|retire:early)$/.test(option.id)) { confirming = option.id; copyPage = 0; render(); }
           else actions.choose(option.id);
         });
         control.dataset.option = option.id; control.disabled = !option.enabled;
@@ -129,14 +156,15 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     }
     if (!model.notification) panel.append(footer);
     panel.addEventListener('keydown', handleKeys);
-    host.replaceChildren(el('style', '', POPUP_STYLE), panel);
+    host.replaceChildren(el('style', '', POPUP_STYLE + POLISH_STYLE), panel);
     placePopupSheet(host, panel);
     if (focus && !model.notification) (panel.querySelector('h2') ?? panel.querySelector('button'))?.focus({ preventScroll: true });
   }
   function handleKeys(event: KeyboardEvent) {
     if (closed) return;
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation();
-      if (confirmingQuit) { confirmingQuit = false; render(); } else close(); }
+      if (stopMotion()) return;
+      if (confirming) { confirming = undefined; render(); } else close(); }
     if (event.key !== 'Tab' || model.notification) return;
     const controls = [...panel.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
       ...(actions.navigation?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
@@ -147,5 +175,5 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
   }
   actions.navigation?.addEventListener('keydown', handleKeys);
   render();
-  return { close, update(next: PopupModel) { if (!closed) { model = next; page = copyPage = 0; detail = undefined; confirmingQuit = false; render(); } } };
+  return { close, update(next: PopupModel) { if (!closed) { model = next; page = copyPage = 0; detail = undefined; confirming = undefined; render(); } } };
 }

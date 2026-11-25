@@ -4,7 +4,7 @@ import { el, svg } from '../ui/dom.ts';
 import { tileIcon } from './icons.ts';
 
 export const GRID = { columns: 7, rows: 9 } as const;
-const KINDS: Record<SpaceKind, string> = {
+export const KINDS: Record<SpaceKind, string> = {
   start: '출발', pay: '월급', train: '배움', job: '일감',
   contest: '대회', event: '사건', rest: '휴식', rankup: '심사',
   jobfair: '취업', shop: '상점', estate: '집', life: '생활',
