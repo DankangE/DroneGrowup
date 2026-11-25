@@ -1,18 +1,15 @@
 import './styles.css';
 import { rankChange } from './game/career.ts';
 import type { RankChange } from './game/career.ts';
-import { yearBoard } from './ui/board.ts';
+import { flightBoard } from './ui/board.ts';
 import { ENDINGS } from './game/data.ts';
-import { choose, currentEvent, newGame, num, options } from './game/engine.ts';
-import type { GameState, OptionView, PlaceId } from './game/types.ts';
+import { boardView, choose, currentEvent, newGame, num, options } from './game/engine.ts';
+import type { GameState, OptionView } from './game/types.ts';
 import { clearRun, loadMeta, loadRun, recordEnding, saveRun } from './save.ts';
 import { PLATFORM, bootPlatform, fetchLeaderboard, nickname, openNicknamePage, runStatus, sessionOk } from './platform.ts';
-import { STAGE_PLACE } from './ui/art.ts';
 import { createPanel, pager, type Nav } from './ui/cards.ts';
 import { button, el, focusHeading, paginateRows } from './ui/dom.ts';
 import { hud } from './ui/hud.ts';
-import { icon } from './ui/icons.ts';
-import { createScene, fieldScene } from './ui/scene.ts';
 import { endingScreen, galleryScreen, titleScreen } from './ui/screens.ts';
 import type { EndingRecord } from './ui/screens.ts';
 import { closeSheet, confirmNewRun, createSheet, refreshModalBackground, showEvent, showLadder, showRankCard, showResult } from './ui/sheets.ts';
@@ -32,25 +29,19 @@ function seed(): number {
 }
 
 let state = loadRun() ?? newGame(seed());
-let dronePlace: PlaceId = STAGE_PLACE[state.stage];
-type StageView = 'field' | 'map';
-const viewKey = 'pilot-growup:scene-view';
-let stageView: StageView = 'field';
-try {
-  if (sessionStorage.getItem(viewKey) === 'map') stageView = 'map';
-} catch { /* The view switch also works when browser storage is unavailable. */ }
+let lastFace = state.board.roll;
+let rankStop = false;
+let activeBoard: ReturnType<typeof flightBoard> | undefined;
 let gradeNumbers = false;
 let startedAt = performance.now();
 let endingRecord: EndingRecord | null = null;
 let choosing = false;
 let activePanel: ReturnType<typeof createPanel> | undefined;
-let fitMap: (() => void) | undefined;
 let onRankingResize: (() => void) | undefined;
 
 function fitView() {
   if (activePanel?.panel.isConnected) {
     activePanel.fit();
-    fitMap?.();
     refreshModalBackground();
   }
   if (PLATFORM) onRankingResize?.();
@@ -68,7 +59,7 @@ function setScreen(screen: 'title' | 'play' | 'ending' | 'gallery', content: HTM
   delete root.dataset.phase;
   root.replaceChildren(content);
   activePanel = undefined;
-  fitMap = undefined;
+  activeBoard = undefined;
   focusHeading(content);
 }
 
@@ -108,62 +99,30 @@ function startRun() {
   startedAt = performance.now();
   endingRecord = null;
   choosing = false;
-  dronePlace = currentEvent(state)?.place ?? STAGE_PLACE[state.stage];
+  lastFace = state.board.roll;
+  rankStop = false;
   renderPlay('home');
 }
 
 function renderPlay(nav: Nav, previous?: GameState, change?: RankChange | null) {
   const choices = options(state);
   const event = currentEvent(state);
-  if (event) dronePlace = event.place;
-  const panel = createPanel(state, choices, takeOption, nav, showTitle);
-  let map: ReturnType<typeof createScene> | undefined;
+  const view = boardView(state);
+  const spin = choices.some(o => o.id === 'spin' && o.enabled) ? () => takeOption('spin') : undefined;
+  const board = flightBoard(state, view, lastFace, spin);
+  const panel = createPanel(state, choices, takeOption, nav, showTitle, view, board.highlight, rankStop);
   const ui = hud(state, choices, gradeNumbers, numbers => {
     gradeNumbers = numbers;
     panel.fit();
-    map?.fit();
   }, () => showLadder(root, state, panel.goal), previous);
-  const { board, sceneWindow, animate } = yearBoard(state, previous);
-  const toggle = el('div', 'stage-toggle');
-  toggle.setAttribute('role', 'group');
-  toggle.setAttribute('aria-label', '보기 전환');
-  function updateStage(view: StageView) {
-    const restoreFocus = toggle.contains(document.activeElement);
-    if (stageView !== view) {
-      stageView = view;
-      try { sessionStorage.setItem(viewKey, view); } catch { /* Keep the in-memory preference. */ }
-    }
-    const field = view === 'field';
-    fieldButton.setAttribute('aria-pressed', String(field));
-    mapButton.setAttribute('aria-pressed', String(!field));
-    if (field) sceneWindow.replaceChildren(fieldScene(dronePlace, state), toggle);
-    else {
-      map ??= createScene(new Set(choices.map(o => o.place)), dronePlace, state.s.drone, id => {
-        dronePlace = id;
-        map?.move(id);
-        map?.select(id);
-        panel.place(id);
-      });
-      sceneWindow.replaceChildren(map.element, toggle);
-      map.fit();
-    }
-    if (restoreFocus) (field ? fieldButton : mapButton).focus({ preventScroll: true });
-  }
-  const fieldButton = button('현장', '', () => updateStage('field'));
-  const mapButton = button('지도', '', () => updateStage('map'));
-  fieldButton.prepend(icon('sun'));
-  mapButton.prepend(icon('map'));
-  toggle.append(fieldButton, mapButton);
-  updateStage(stageView);
   const shell = el('main', 'flight-deck');
-  shell.append(ui.status, board, ui.ladder, panel.panel, panel.nav);
+  shell.append(ui.status, board.board, ui.ladder, panel.panel, panel.nav);
   setScreen('play', shell);
   activePanel = panel;
-  fitMap = () => map?.fit();
+  activeBoard = board;
   root.dataset.phase = change ? 'rankup' : state.phase;
   panel.fit();
-  map?.fit();
-  animate();
+  if (spin && nav === 'home' && !change) board.board.focus({ preventScroll: true });
   const resume = () => {
     choosing = false;
     root.dataset.phase = state.phase;
@@ -182,14 +141,22 @@ document.addEventListener('keydown', event => {
 
 document.addEventListener('keydown', event => {
   if (typing(event) || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey
-    || root.dataset.phase !== 'action' || activePanel?.currentNav() !== 'home' || root.querySelector('dialog[open]')) return;
+    || root.dataset.phase !== 'action' || root.querySelector('dialog[open]')) return;
+  const spinKey = event.key.toLowerCase() === 's' || (event.key === ' ' &&
+    (document.activeElement === document.body || document.activeElement === activeBoard?.board));
+  if (spinKey && state.board.step === 'spin') {
+    event.preventDefault();
+    if (!event.repeat) void takeOption('spin');
+    return;
+  }
+  if (activePanel?.currentNav() !== 'home') return;
   const panel = activePanel.panel;
   let target: HTMLButtonElement | null | undefined;
-  if (/^[1-9]$/.test(event.key)) target = panel.querySelectorAll<HTMLButtonElement>('.option-card')[Number(event.key) - 1];
-  else if (event.key.toLowerCase() === 'r') {
-    // The rest bar can give its row to a tall confirmation, so R goes through the panel rather than the button.
+  if (/^[1-9]$/.test(event.key)) {
+    target = panel.querySelectorAll<HTMLButtonElement>('.option-card, .route-card')[Number(event.key) - 1];
+  } else if (state.board.step === 'bonus' && ['r', 'e'].includes(event.key.toLowerCase())) {
     event.preventDefault();
-    if (!event.repeat) activePanel.rest();
+    if (!event.repeat) void takeOption('end');
     return;
   }
   if (target) {
@@ -198,7 +165,7 @@ document.addEventListener('keydown', event => {
   }
 });
 
-function takeOption(id: string) {
+async function takeOption(id: string) {
   if (choosing || state.phase === 'ended') return;
   if (PLATFORM) { if (!sessionOk()) return; }
   const option = options(state).find(o => o.id === id);
@@ -207,7 +174,6 @@ function takeOption(id: string) {
   closeSheet();
   const previous = state;
   const nav = activePanel?.currentNav() ?? 'home';
-  dronePlace = option.place;
   const next = choose(state, id);
   state = next.state;
   saveRun(state);
@@ -215,11 +181,30 @@ function takeOption(id: string) {
     // TODO(engine): GameState has no elapsed-time field; resumed runs count the current session's duration.
     endingRecord = recordEnding(state, Math.max(1, Math.round((performance.now() - startedAt) / 1000)));
   }
-  root.dataset.phase = 'result';
-  showResult(root, next.result, previous, () => {
-    if (state.phase === 'ended') { showEnding(); return; }
-    renderPlay(option.free ? nav : 'home', previous, rankChange(previous, state));
-  });
+  const { result } = next;
+  if (result.move && activeBoard) {
+    lastFace = result.move.roll;
+    rankStop = result.move.stop === 'rankup';
+    root.dataset.phase = 'move';
+    root.querySelector<HTMLElement>('.flight-deck')!.inert = true;
+    await activeBoard.move(result.move, id === 'spin');
+  } else if (!option.free) rankStop = false;
+  const resume = () => {
+    const change = rankChange(previous, state);
+    if (state.phase === 'ended') {
+      if (change) {
+        root.dataset.phase = 'rankup';
+        showRankCard(root, change, showEnding);
+      } else showEnding();
+    } else renderPlay(option.free ? nav : 'home', previous, change);
+  };
+  if (option.kind !== 'board' || result.upkeep || result.season || result.notes.length) {
+    root.dataset.phase = 'result';
+    showResult(root, result, previous, resume, option.kind === 'board');
+  } else {
+    resume();
+    if (result.restGain !== undefined) activeBoard?.toast(result.restGain);
+  }
 }
 
 function openGallery() {

@@ -20,10 +20,10 @@ import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
-import { choose, derived, forecast, options } from '../src/game/engine.ts';
-import { forecastLines, resultChips, resultMarkers, settlementText } from '../src/game/outcome-text.ts';
+import { boardView, choose, derived, finalRank, forecast, options } from '../src/game/engine.ts';
+import { forecastLines, resultChips, resultMarkers, settlementText, signed } from '../src/game/outcome-text.ts';
 import { grade, rankChange } from '../src/game/career.ts';
-import { finishChoice, revealOption, stoppedResult } from './ui-driver.mjs';
+import { finishChoice, finishMove, revealOption, stoppedResult } from './ui-driver.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shots = join(root, 'docs/screenshots/playtest');
@@ -82,15 +82,16 @@ async function checkPieces(page, state) {
   const ui = await page.evaluate(() => {
     const token = document.querySelector('[data-token]');
     return {
-      space: token.parentElement.dataset.space, season: token.dataset.season, step: token.dataset.step,
-      spaces: [...document.querySelectorAll('[data-space]')].map(space => space.dataset.space),
+      space: token.parentElement.dataset.space, pos: token.dataset.pos, step: document.querySelector('[data-board]').dataset.step,
+      life: {...document.querySelector('[data-life-track]').dataset},
+      spaces: [...document.querySelectorAll('[data-space]')].map(space => [space.dataset.space, space.dataset.kind]),
       badges: [...document.querySelectorAll('[data-grades] [data-stat]')].map(b => [b.dataset.stat, b.dataset.grade]),
     };
   });
-  const season = String(derived(state).season);
-  const step = String(Math.min(state.s.acts, 3));
-  assert.deepEqual([ui.space, ui.season, ui.step], [season + '-' + step, season, step]);
-  assert.equal(new Set(ui.spaces).size, 16);
+  const view = boardView(state);
+  assert.deepEqual([ui.space, ui.pos, ui.step], [String(view.pos), String(view.pos), view.step]);
+  assert.deepEqual(ui.spaces, view.nodes.map(node => [String(node.id), node.kind]));
+  assert.deepEqual([ui.life.age, ui.life.turn], [String(derived(state).age), String(state.turn)]);
   assert.ok(ui.badges.length >= 5);
   for (const [stat, letter] of ui.badges) assert.equal(letter, grade(stat, state.s[stat]).letter, stat);
 }
@@ -107,13 +108,13 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
   const rand = botRandom(seed);
   let clicks = 0;
   let reloaded = false;
-  let calm = false;
+  const animated = await page.evaluate(() => !matchMedia('(prefers-reduced-motion: reduce)').matches);
   let skips = 0;
   while (state.phase !== 'ended') {
     assert.ok(clicks++ < 20000, 'run did not end');
     const shown = await page.evaluate(() => window.__game.options().map((o) => `${o.id}:${o.enabled}`));
     assert.deepEqual(shown, options(state).map((o) => `${o.id}:${o.enabled}`), 'the page offers what the engine offers');
-    if (state.turn === reloadAt && !reloaded && state.phase === 'action' && state.s.acts > 0) {
+    if (state.turn === reloadAt && !reloaded && state.phase === 'action' && state.board.step !== 'spin') {
       // Leave mid-season and come back: the title offers 이어하기 and the run continues from the same state.
       reloaded = true;
       await page.reload();
@@ -121,15 +122,9 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
       await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
       assert.deepEqual(await pageState(page), state, 'the saved run continues exactly where it stopped');
     }
-    if (!calm && reloaded && state.turn >= 16 && Object.keys(shotsAt).length === 0) {
-      // Four animated years and every picture are enough: the other 26 years of the run play without motion.
-      calm = true;
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-    }
     const id = pick(POLICIES[policy], state, rand);
     const option = options(state).find((o) => o.id === id);
     const next = choose(state, id);
-    if (state.phase === 'action') assert.equal(await page.locator('[data-acts]').getAttribute('data-acts'), String(state.s.acts));
     await checkPieces(page, state);
     let resultShot;
     for (const [name, at] of Object.entries(shotsAt)) {
@@ -148,65 +143,95 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
         .querySelector('[data-wheel-preview]')?.dataset.chance);
       assert.equal(chance, String(option.roll.chance));
     }
-    const outcomeLines = await target.evaluate(button => [...button.closest('.answer, .detail, .service-card, .option-card, .rest-bar')
-      .querySelectorAll('.outcomes > :is(.upfront, .success, .failure, .risk)')].map(line => line.textContent));
-    assert.deepEqual(outcomeLines, forecastLines(forecast(state, id)).map(line => line.text), id);
+    if (option.kind !== 'board') {
+      const outcomeLines = await target.evaluate(button => [...button.closest('.answer, .detail, .service-card, .option-card')
+        .querySelectorAll('.outcomes > :is(.upfront, .success, .failure, .risk)')].map(line => line.textContent));
+      assert.deepEqual(outcomeLines, forecastLines(forecast(state, id)).map(line => line.text), id);
+    }
     await target.click();
-    assert.equal(await phase(page), 'result');
+    if (animated && clicks === 1 && id === 'spin') {
+      const moving = page.locator('[data-phase="move"]');
+      assert.ok(await moving.locator('[data-roulette][data-spin="spinning"]').isVisible());
+      assert.deepEqual(await pageState(page), next.state, 'the engine choice precedes the animation');
+      await moving.waitFor({ state: 'detached' });
+    } else await finishMove(page);
+    if (id === 'spin') {
+      const reading = await page.locator('[data-roulette]').evaluate(node => {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(node.querySelector('.roulette-disc')).transform);
+        const angle = (360 - Math.atan2(matrix.b, matrix.a) * 180 / Math.PI) % 360;
+        return [node.dataset.face, Math.floor(angle / 60) + 1, node.dataset.spin];
+      });
+      assert.deepEqual(reading, [String(next.result.move.roll), next.result.move.roll, 'done']);
+    }
+    const sheetExpected = option.kind !== 'board' || !!next.result.upkeep || !!next.result.season || next.result.notes.length > 0;
+    assert.equal(await phase(page) === 'result', sheetExpected, id);
+    if (!sheetExpected && next.result.restGain !== undefined) {
+      assert.equal(await page.locator('[data-toast]').textContent(), '체력 +' + next.result.restGain);
+    }
     if (option.roll) {
-      const spin = await page.locator('[data-spin]').evaluate(card => ({
+      const spin = await page.locator('.result-sheet[data-spin]').evaluate(card => ({
         spinning: card.dataset.spin === 'spinning',
         disabled: card.querySelector('[data-action="continue"]').disabled,
         reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
       }));
       assert.equal(spin.disabled, spin.spinning, 'continue is locked while the wheel turns');
       if (spin.reduced) assert.equal(spin.spinning, false, 'reduced motion stops immediately');
-      if (spin.spinning && skips < 2) {
+      if (spin.spinning) {
         if (skips === 0) await page.keyboard.press('Enter');
-        else await page.locator('.result-sheet .sheet-header').click();
+        else if (skips === 1) await page.locator('.result-sheet .sheet-header').click();
+        else await page.keyboard.press('Shift');
         skips++;
         await stoppedResult(page).waitFor({ timeout: 350 });
       }
     }
-    const card = stoppedResult(page);
-    await card.waitFor();
-    const wheel = card.locator('[data-wheel]');
-    assert.ok(await card.locator('[data-action="continue"]').evaluate(button => button === document.activeElement), 'focus moves to 계속');
-    assert.equal(await wheel.count(), Number(!!next.result.roll));
-    if (next.result.roll) {
-      const { chance, value, success } = next.result.roll;
-      const reading = await wheel.evaluate(node => {
-        const disc = node.querySelector('.wheel-disc');
-        const matrix = new DOMMatrixReadOnly(getComputedStyle(disc).transform);
-        // Invert the displayed disc angle to read the tick under the top pointer.
-        const angle = (360 - Math.atan2(matrix.b, matrix.a) * 180 / Math.PI) % 360;
-        return [node.dataset.chance, node.dataset.value, node.dataset.outcome, disc.style.getPropertyValue('--chance'), Math.floor(angle / 3.6)];
-      });
-      assert.deepEqual(reading, [String(chance), String(value), success ? 'success' : 'fail', chance + '%', value]);
+    if (sheetExpected) {
+      const card = stoppedResult(page);
+      await card.waitFor();
+      const wheel = card.locator('[data-wheel]');
+      assert.ok(await card.locator('[data-action="continue"]').evaluate(button => button === document.activeElement), 'focus moves to 계속');
+      assert.equal(await wheel.count(), Number(!!next.result.roll));
+      if (next.result.roll) {
+        const { chance, value, success } = next.result.roll;
+        const reading = await wheel.evaluate(node => {
+          const disc = node.querySelector('.wheel-disc');
+          const matrix = new DOMMatrixReadOnly(getComputedStyle(disc).transform);
+          // Invert the displayed disc angle to read the tick under the top pointer.
+          const angle = (360 - Math.atan2(matrix.b, matrix.a) * 180 / Math.PI) % 360;
+          return [node.dataset.chance, node.dataset.value, node.dataset.outcome, disc.style.getPropertyValue('--chance'), Math.floor(angle / 3.6)];
+        });
+        assert.deepEqual(reading, [String(chance), String(value), success ? 'success' : 'fail', chance + '%', value]);
+      }
+      assert.equal(await page.locator('[data-season-change]').count(), Number(!!next.result.season));
+      assert.equal(await card.locator('.ledger b', { hasText: '정산 합계' }).count(), Number(!!next.result.upkeep));
+      assert.equal(await page.locator('dialog[data-pay]').count(), Number(option.kind === 'board' && !!next.result.upkeep));
+      if (next.result.upkeep) {
+        assert.equal(await card.locator('.ledger b', { hasText: '정산 합계' }).textContent(), '정산 합계 ' + signed(next.result.upkeep.total) + '만원');
+      }
+      const chips = [...resultChips(next.result, state).map(chip => chip.text), ...resultMarkers(next.result)];
+      assert.deepEqual(await card.locator('.delta-chip').allTextContents(), chips);
+      const settlement = settlementText(next.result);
+      if (settlement) {
+        const expected = [...(settlement.recovery ? [settlement.recovery] : []), ...settlement.ledger];
+        if (settlement.other.length) expected.push(settlement.other.join(' · '));
+        assert.deepEqual(await card.locator('.ledger p, .settle-other').allTextContents(), expected);
+      }
+      if (resultShot) await shot(page, resultShot);
     }
-    assert.equal(await page.locator('[data-season-change]').count(), Number(!!next.result.season));
-    assert.equal(await page.getByText('계절 결산', { exact: true }).count(), Number(!!next.result.upkeep));
-    const chips = [...resultChips(next.result, state).map(chip => chip.text), ...resultMarkers(next.result)];
-    assert.deepEqual(await card.locator('.delta-chip').allTextContents(), chips);
-    const settlement = settlementText(next.result);
-    if (settlement) {
-      const expected = [settlement.recovery, ...settlement.ledger];
-      if (settlement.other.length) expected.push(settlement.other.join(' · '));
-      assert.deepEqual(await card.locator('.ledger p').allTextContents(), expected);
-    }
-    if (resultShot) await shot(page, resultShot);
-    const change = next.state.phase === 'ended' ? null : rankChange(state, next.state);
+    const change = rankChange(state, next.state);
     const appeared = await finishChoice(page, async rank => {
       assert.ok(change, 'unexpected rank card');
       assert.equal(await rank.getAttribute('data-kind'), change.kind);
       assert.equal(await rank.locator('[data-rank-title]').textContent(), change.to.title);
       assert.equal(await rank.locator('[data-rank-level]').getAttribute('data-rank-level'), String(change.to.level));
     });
-    assert.equal(appeared, !!change, 'rank card appears exactly when the engine reports a change in a continuing run');
+    assert.equal(appeared, !!change, 'rank card appears exactly when the engine reports a change');
     state = next.state;
     assert.deepEqual(await pageState(page), state, `after ${id} on turn ${state.turn} the page state equals the engine state`);
   }
   await page.waitForFunction(() => document.querySelector('[data-screen="ending"]'));
+  const rank = finalRank(state);
+  const summary = page.locator('[data-final-rank]');
+  assert.deepEqual(await summary.evaluate(el => [el.dataset.grade, el.dataset.score]), [rank.grade, String(rank.total)]);
   assert.equal(reloadAt < 0 || reloaded, true, 'the reload check ran');
   return state;
 }

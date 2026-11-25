@@ -1,7 +1,7 @@
 import { careerRank, GRADED_STATS } from '../game/career.ts';
 import { chibi, rankLine, standingGrades } from './pieces.ts';
 import { ENDINGS, RULES } from '../game/data.ts';
-import { derived, endingInfo, num } from '../game/engine.ts';
+import { derived, endingInfo, finalRank, num } from '../game/engine.ts';
 import type { EndingId, GameState } from '../game/types.ts';
 import type { Meta } from '../save.ts';
 import { button, countNumber, el, meter } from './dom.ts';
@@ -44,9 +44,9 @@ export function titleScreen(meta: Meta, saved: GameState | null, actions: TitleA
   const guide = el('section','guide');
   guide.append(el('h2','section-heading','비행 안내'));
   for (const [symbol,title,body] of [
-    ['map','한 바퀴', '사계절을 한 바퀴 돌면 한 살 더!'],
-    ['drone','행동과 휴식',`칸 행동 뒤 추가 행동은 한 번이에요. 휴식 칸 체력 +${RULES.board.restGain}, 계절 회복 +${RULES.seasonRefill}.`],
-    ['flag','성장', '능력 등급을 올리고 다음 랭크에 도전해요.'],
+    ['map','주사위로 이동', '계절마다 주사위를 굴리고 갈림길에서 항로를 골라요.'],
+    ['drone','칸 행동', '도착하면 체력 없이 행동하고, 남은 체력으로 한 번 더 해요.'],
+    ['flag','월급날과 승급', '월급날엔 장부를 정산하고 승급 칸에선 다음 랭크에 도전해요.'],
   ] as const) {
     const row = el('div','guide-row');
     const mark = el('span','guide-icon');
@@ -119,10 +119,30 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   if (badges.childElementCount) story.append(badges);
   story.append(el('h1','',ending.title), el('p','',ending.text));
   const report = el('section','ending-report');
+  const rank = finalRank(state);
+  const summary = el('div', 'final-rank');
+  summary.dataset.finalRank = '';
+  summary.dataset.grade = rank.grade;
+  summary.dataset.score = String(rank.total);
+  const badge = el('b', 'final-badge', rank.grade);
+  badge.dataset.grade = rank.grade;
+  const heading = el('div', 'final-heading');
+  heading.append(badge, el('h2', '', rank.gradeTitle));
   const score = el('div','score');
   const number = el('b');
-  countNumber(number,0,state.score,num);
+  countNumber(number,0,rank.total,num);
   score.append(icon('star'),el('span','','최종 점수'),number,el('span','','점'));
+  const { forks, contests, rankups, points } = rank.achievements;
+  const breakdown = el('dl', 'score-breakdown');
+  function line(label: string, value: string) {
+    breakdown.append(el('dt', '', label), el('dd', '', value));
+  }
+  line('순자산', num(rank.netWorth) + '만원');
+  line('엔딩 보너스', num(rank.endingBonus) + '점');
+  line('업적', `갈림길 ${forks} · 대회 우승 ${contests} · 승급 ${rankups} = ${num(points)}점`);
+  if (rank.early > 0) line('조기 달성 보너스', num(rank.early) + '점');
+  if (rank.bonus < rank.endingBonus + points) line('보너스 상한', num(rank.bonus) + '점 적용');
+  summary.append(heading, score, breakdown);
   const facts = el('dl','fact-grid');
   const d = derived(state);
   for (const [label,value] of [['나이', d.age + '세'],['순자산', num(d.netWorth) + '만원'],['비행', num(state.s.flights) + '회'],['성공',num(state.s.wins) + '회'],['실패',num(state.s.losses) + '회'],['추락',num(state.s.crashes) + '회']]) {
@@ -132,7 +152,22 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   }
   const controls = el('div','ending-controls');
   controls.append(button('다시 하기','primary',onRetry,'retry'),button('엔딩 도감','secondary',onGallery,'gallery'),button('타이틀','secondary',onTitle,'title'));
-  report.append(rankLine(state), score, facts, standingGrades(state, GRADED_STATS), controls);
+  const details = el('div', 'run-facts');
+  details.append(rankLine(state), facts, standingGrades(state, GRADED_STATS));
+  const tabs = el('div', 'tabs ending-tabs');
+  function select(showFacts: boolean) {
+    summary.hidden = showFacts;
+    details.hidden = !showFacts;
+    rankTab.setAttribute('aria-pressed', String(!showFacts));
+    factsTab.setAttribute('aria-pressed', String(showFacts));
+  }
+  const rankTab = button('최종 성적', '', () => select(false));
+  const factsTab = button('비행 기록', '', () => select(true));
+  rankTab.dataset.tab = 'final-rank';
+  factsTab.dataset.tab = 'run-facts';
+  tabs.append(rankTab, factsTab);
+  select(false);
+  report.append(tabs, summary, details, controls);
   const title = el('header', 'window-title');
   title.append(icon('flag'), '인생 결산');
   const body = el('div', 'ending-body');

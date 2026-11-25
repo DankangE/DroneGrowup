@@ -6,7 +6,7 @@
 //   - a visible element reaches outside the viewport,
 //   - an element scrolls inside (overflow auto / scroll with more content than room),
 //   - an element cuts its content off (overflow hidden with more content than room; mark deliberate clipping,
-//     such as the map stage, with data-clip-ok),
+//     such as a cropped portrait, with data-clip-ok),
 //   - a button is smaller than a fingertip (44 px), or text is smaller than 11 px.
 // On the play screen every bottom-navigation tab ([data-nav]) is opened, and in every view every tab
 // ([data-tab]) and every pager page ([data-action="page-next"]) is visited.
@@ -37,25 +37,36 @@ if (shotDir) mkdirSync(shotDir, { recursive: true });
 
 // ---- the game states to look at, found by letting the bots play in Node
 const start = newGame(11);
-let busiest = start; // action phase with the most options on offer
+let busiest = start;
+let maxCards = 0;
+let fork, landedFork, payStep, autoSeason, bonus, contest;
+let maxBonus = 0;
 let event = null; // event phase with the most choices
 let stageUp = null; // a luck roll whose result changes the career stage (the fullest result sheet)
-let anyRoll = null;
-let windDown = null;
+let crashStep = null;
 let lastStep = null; // the choice that ends a run
 for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['instructor', 7], ['ceo', 1], ['chairman', 4], ['pilot', 4]]) {
   let state = newGame(seed);
   const rand = botRandom(seed);
   while (state.phase !== 'ended') {
     const offered = options(state);
-    if (state.phase === 'action' && offered.length > options(busiest).length) busiest = state;
+    const cards = offered.filter(o => o.kind === 'action' || o.kind === 'job').length;
+    if (cards > maxCards) { maxCards = cards; busiest = state; }
+    if (state.phase === 'action' && state.board.step === 'bonus' && cards > maxBonus) {
+      maxBonus = cards;
+      bonus = state;
+    }
+    if (state.board.step === 'fork') fork ??= state;
+    if (state.board.step === 'space' && offered.some(o => o.id === 'route:0')) landedFork ??= state;
+    if (state.phase === 'event' && state.board.contest) contest ??= state;
     if (state.phase === 'event' && (!event || offered.length > options(event).length)) event = state;
     const id = pick(POLICIES[policy], state, rand);
     const option = offered.find((o) => o.id === id);
     const next = choose(state, id);
-    if (next.result.season?.auto && next.result.crashed) windDown ??= { state, option };
+    if (next.result.season && next.result.crashed) crashStep ??= { state, option };
+    if (option.kind === 'board' && next.result.upkeep?.lines.length) payStep ??= { state, option };
+    if (next.result.move && next.result.season && !next.result.upkeep) autoSeason ??= { state, option };
     if (option.roll && state.phase === 'action') {
-      anyRoll ??= { state, option };
       if (!stageUp && next.result.stageTo !== next.result.stageFrom && next.state.phase !== 'ended') stageUp = { state, option };
     }
     if (next.state.phase === 'ended' && !lastStep) lastStep = { state, option };
@@ -63,7 +74,8 @@ for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['i
   }
 }
 const rollStep = stageUp;
-assert.ok(event && anyRoll && rollStep && lastStep && windDown, 'the bot runs reach an event, a roll, a promotion, a crash with automatic rest, and an ending');
+assert.ok(event && contest && rollStep && lastStep && crashStep && fork && landedFork && bonus && payStep && autoSeason,
+  'the bot runs supply every board step, a paid ledger, a season-ending crash, a promotion, events and an ending');
 
 await build({ root, configFile: join(root, 'vite.config.ts'), logLevel: 'warn' });
 const server = await preview({ root, configFile: join(root, 'vite.config.ts'), preview: { port: 5298, strictPort: false } });
@@ -127,6 +139,17 @@ function audit({ minTap, minFont }) {
     const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
     if (ownText && parseFloat(style.fontSize) < minFont) problems.push(`${label(el)} "${el.textContent.trim().slice(0, 12)}" has ${style.fontSize} text (min ${minFont}px)`);
   }
+  const pieces = [...document.querySelectorAll('[data-space], [data-roulette]')];
+  for (const [index, a] of pieces.entries()) {
+    const one = a.getBoundingClientRect();
+    for (const b of pieces.slice(index + 1)) {
+      const two = b.getBoundingClientRect();
+      if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
+          Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) {
+        problems.push(`board overlap: ${a.dataset.space ?? 'roulette'} and ${b.dataset.space ?? 'roulette'}`);
+      }
+    }
+  }
   return [...new Set(problems)];
 }
 
@@ -147,10 +170,9 @@ for (const [width, height] of SIZES) {
       await page.waitForTimeout(120);
       const where = `${size} ${view}${tab ? ` tab ${tab}` : ''}${index ? ` page ${index + 1}` : ''}`;
       viewCount++;
-      if (minHomeRows && index === 0 && tab === 'all'
-        && await page.locator('[data-phase="action"] [data-nav="home"][aria-pressed="true"]').count()) {
-        const offered = await page.evaluate(() => window.__game.options().filter(option => !option.free && option.id !== 'rest').length);
-        const visible = await page.locator('.option-grid :is([data-pick], [data-option]):not([data-rest]):visible').count();
+      if (minHomeRows && index === 0 && await page.locator('[data-phase="action"] .option-grid').count()) {
+        const offered = await page.evaluate(() => window.__game.options().filter(option => option.kind === 'job' || option.kind === 'action').length);
+        const visible = await page.locator('.option-grid :is([data-pick], [data-option]):visible').count();
         if (offered >= minHomeRows && visible < minHomeRows) {
           failures.push(`${where}: 홈 shows ${visible} cards on its first page (min ${minHomeRows}, ${offered} offered)`);
         }
@@ -196,6 +218,11 @@ for (const [width, height] of SIZES) {
       await check(`${name}-${nav}`);
     }
   };
+  const snapshot = async view => {
+    viewCount++;
+    for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) failures.push(`${size} ${view}: ${problem}`);
+    if (shotDir) await page.screenshot({ path: join(shotDir, `${size}-${view}.png`) });
+  };
   const tap = async ({ option }) => (await revealOption(page, option)).click();
 
   try {
@@ -204,39 +231,64 @@ for (const [width, height] of SIZES) {
     await load(busiest, { gallery: ENDING_IDS, best: 9999999, runs: 99 });
     await check('title-saved');
 
-    await playViews('play-start', start);
-    await playViews('play-busy', busiest);
+    await playViews('play-spin', start);
+    await resume(start);
+    await page.keyboard.press('s');
+    await page.locator('[data-roulette][data-spin="done"][data-face]').waitFor();
+    await snapshot('play-roulette');
+    await resume(fork);
+    await page.locator('[data-fork]').waitFor();
+    await check('play-fork');
+    await page.locator('[data-option="route:1"]').focus();
+    assert.equal(await page.locator('[data-board]').getAttribute('data-highlight'), '1');
+    await page.keyboard.press('2');
+    await finishChoice(page);
+    await resume(landedFork);
+    await check('play-landed-fork');
+    await resume(bonus);
+    await page.locator('[data-bonus]').waitFor();
+    await check('play-bonus');
+    await page.keyboard.press('e');
+    await stoppedResult(page).locator('[data-season-change]').waitFor();
+    await resume(payStep.state);
+    await tap(payStep);
+    await stoppedResult(page).locator('[data-action="continue"]').waitFor();
+    assert.ok(await page.locator('dialog[data-pay]').isVisible());
+    await check('play-pay');
+    await playViews('play-space', busiest);
     await resume(busiest);
-    for (const [forward, reverse] of [['page-next', 'page-prev'], ['page-prev', 'page-next']]) {
-      const arrow = page.locator(`.panel [data-action="${forward}"]`);
-      assert.ok(await arrow.isEnabled(), 'the busy grid has multiple pages');
-      await arrow.focus();
-      for (let i = 0; i < 30 && await arrow.isEnabled(); i++) await page.keyboard.press('Enter');
-      assert.ok(await arrow.isDisabled(), 'keyboard paging reaches the boundary');
-      assert.equal(await page.evaluate(() => document.activeElement.dataset.action), reverse, 'pager focus at its boundary');
+    const nextPage = page.locator('.panel [data-action="page-next"]');
+    if (width < 900) assert.ok(await nextPage.isEnabled(), 'the busy phone grid has multiple pages');
+    if (await nextPage.isEnabled()) {
+      for (const [forward, reverse] of [['page-next', 'page-prev'], ['page-prev', 'page-next']]) {
+        const arrow = page.locator(`.panel [data-action="${forward}"]`);
+        await arrow.focus();
+        for (let i = 0; i < 30 && await arrow.isEnabled(); i++) await page.keyboard.press('Enter');
+        assert.ok(await arrow.isDisabled(), 'keyboard paging reaches the boundary');
+        assert.equal(await page.evaluate(() => document.activeElement.dataset.action), reverse, 'pager focus at its boundary');
+      }
     }
     await page.locator('[data-action="grades"]').click();
     await page.locator('[data-grades="numbers"]').waitFor();
     await check('play-grades-numbers');
+    await resume(rollStep.state);
     await page.locator('[data-action="ladder"]').click();
     await check('play-ladder');
     await page.locator('[data-action="ladder-go"]').click();
     await page.locator('.detail [data-option]').waitFor();
-    const mapToggle = page.getByRole('button', { name: '지도', exact: true });
-    await mapToggle.focus();
-    await page.keyboard.press('Enter');
-    assert.ok(await mapToggle.evaluate(button => document.activeElement === button));
-    await check('play-map');
-    await page.locator('.stage-toggle button', { hasText: '현장' }).click();
+    await snapshot('play-space-confirmation');
     await resume(event);
     await check('play-event');
+    await resume(contest);
+    await page.locator('.contest-tag').waitFor();
+    await check('play-contest');
     await resume({ ...start, phase: 'event', eventId: 'cram' });
     const paid = page.locator('[data-option="ev:0"]');
     await paid.locator('.upfront', { hasText: '자금 -60만원' }).waitFor();
     await check('play-event-cram');
 
-    await resume(windDown.state);
-    const flight = await revealOption(page, windDown.option);
+    await resume(crashStep.state);
+    const flight = await revealOption(page, crashStep.option);
     assert.ok(await flight.evaluate(button => [...button.closest('.option-card, .detail').querySelectorAll('.risk')]
       .some(line => line.checkVisibility() && line.textContent.includes('추락 시'))), 'flight shows its crash forecast');
     for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) {
@@ -258,26 +310,22 @@ for (const [width, height] of SIZES) {
     await check('play-result');
     assert.ok(await finishChoice(page, () => check('play-rank-card')), 'rank card was reached');
 
-    await resume(windDown.state);
-    await tap(windDown);
+    await resume(crashStep.state);
+    await tap(crashStep);
     await page.locator('[data-season-change]').waitFor();
     await check('play-auto-season-change');
 
-    await resume(start);
-    assert.equal(await page.locator('.option-card').first().getAttribute('data-option'), 'st_theory');
-    await page.keyboard.press('1');
-    await finishChoice(page);
-    await revealOption(page, { id: 'rest' });
-    await page.locator('[data-option="rest"][data-rest="light"]').waitFor();
-    await check('play-light-rest');
-    await page.keyboard.press('r');
+    await resume(autoSeason.state);
+    await tap(autoSeason);
     await stoppedResult(page).locator('[data-season-change]').waitFor();
+    await check('play-board-season-change');
     await resume(lastStep.state);
     await tap(lastStep);
     await stoppedResult(page).waitFor();
     await check('play-last-result');
     await finishChoice(page);
     await screenIs('ending');
+    await page.locator('[data-final-rank][data-grade][data-score]').waitFor();
     await check('ending');
     await page.locator('[data-action="gallery"]:visible').first().click();
     await screenIs('gallery');

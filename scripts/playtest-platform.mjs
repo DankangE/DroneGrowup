@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { choose, restore } from '../src/game/engine.ts';
+import { choose, options, restore } from '../src/game/engine.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'node_modules/.cache/dist-platform');
@@ -37,6 +37,8 @@ const api = {
   get: () => records[current] ?? { data: null, progressAt: 0 },
   put: ({ data, progressAt }) => {
     if (progressAt <= (records[current]?.progressAt ?? 0)) return { conflict: true };
+    // Like the platform cleaner, keep known run fields and the packed board in seen.
+    if (data.run) delete data.run.board;
     records[current] = { data, progressAt };
     return { data, progressAt };
   },
@@ -76,16 +78,20 @@ try {
   };
   const hasContinue = async () => (await page.locator('[data-action="continue-run"]').count()) > 0;
   const pageState = () => page.evaluate(() => window.__game.state());
-  const step = async (id = 'st_theory') => {
-    await (await revealOption(page, { id })).click();
+  const nextOption = state => options(state).find(o => !o.free && o.enabled);
+  const step = async () => {
+    const before = await pageState();
+    const option = nextOption(before);
+    await (await revealOption(page, option)).click();
     await finishChoice(page);
+    assert.deepEqual(await pageState(), choose(before, option.id).state, 'one click committed exactly one choice');
   };
   const uploaded = async expected => {
     for (let i = 0; i < 80; i++) {
-      if (isDeepStrictEqual(records[current]?.data?.run, expected)) return;
+      if (isDeepStrictEqual(restore(records[current]?.data?.run), expected)) return;
       await page.waitForTimeout(100);
     }
-    assert.deepEqual(records[current]?.data?.run, expected, 'the exact mid-season save reached the server');
+    assert.deepEqual(restore(records[current]?.data?.run), expected, 'the exact mid-season save reached the server');
   };
 
   // ---- account A plays three choices; they reach A's server record
@@ -93,10 +99,13 @@ try {
   assert.equal(await hasContinue(), false);
   await page.locator('[data-action="new"]').click();
   await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
-  for (let i = 0; i < 3; i++) await step();
+  let expected = await pageState();
+  for (let i = 0; i < 3; i++) {
+    expected = choose(expected, nextOption(expected).id).state;
+    await step();
+  }
   const local = await pageState();
-  assert.equal(local.turn, 0);
-  assert.equal(local.s.acts, 3);
+  assert.deepEqual(local, expected, 'three board decisions advanced the local run');
   await uploaded(local);
   assert.deepEqual(restore(records['user-a'].data.run), local, "the server holds account A's run");
   const keys = await page.evaluate(() => Object.keys(localStorage));
@@ -114,12 +123,11 @@ try {
   assert.deepEqual(records['user-b'].data.meta, { gallery: [], best: 0, runs: 0 }, "account B's record has none of A's gallery");
   assert.notDeepEqual(records['user-b'].data.run, records['user-a'].data.run);
 
-  // ---- account A again, after another device played another action in the same season
+  // ---- account A again, after another device played one more choice
   current = 'user-a';
   let ahead = restore(records['user-a'].data.run);
-  ahead = choose(ahead, 'st_theory').state;
-  assert.equal(ahead.turn, local.turn);
-  assert.equal(ahead.s.acts, local.s.acts + 1);
+  ahead = choose(ahead, nextOption(ahead).id).state;
+  assert.notDeepEqual(ahead, local, 'another device advanced the board');
   records['user-a'] = { data: { run: ahead, meta: records['user-a'].data.meta }, progressAt: records['user-a'].progressAt + 60_000 };
   await open();
   assert.equal(await hasContinue(), true);

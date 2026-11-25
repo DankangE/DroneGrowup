@@ -26,10 +26,20 @@ export function hud(state: GameState, choices: OptionView[], numbers: boolean, o
   title.append(el('h1', '', rank.title), stars(rank), level);
   identity.append(chibi(rank, true), title);
 
-  const time = el('div', 'calendar');
-  const acts = el('span', '', `계절 행동 ${state.s.acts}회`);
-  acts.dataset.acts = String(state.s.acts);
-  time.append(el('strong', '', d.dateLabel), acts, el('small', '', `${d.age - RULES.startAge + 1} / ${RULES.maxTurns / RULES.seasons.length}바퀴`));
+  const years = RULES.maxTurns / RULES.seasons.length;
+  const time = el('div', 'life-track');
+  time.dataset.lifeTrack = '';
+  time.dataset.age = String(d.age);
+  time.dataset.turn = String(state.turn);
+  const dots = el('span', 'season-dots');
+  dots.setAttribute('aria-hidden', 'true');
+  RULES.seasons.forEach((_, i) => dots.append(el('i', i === d.season ? 'lit' : '')));
+  const date = el('div', 'life-date');
+  date.append(el('strong', '', d.dateLabel), dots);
+  const timeline = el('div', 'life-meter');
+  timeline.append(el('small', '', String(RULES.startAge)), meter(state.turn, RULES.maxTurns, '비행 인생'),
+    el('small', '', String(RULES.startAge + years)));
+  time.append(date, timeline, el('b', '', Math.min(years, d.age - RULES.startAge + 1) + ' / ' + years + '년'));
 
   const accounts = el('div', 'accounts');
   for (const stat of ['money', 'debt'] as const) {
@@ -67,7 +77,7 @@ export function hud(state: GameState, choices: OptionView[], numbers: boolean, o
       if (stat === 'stamina') {
         cell.dataset.stamina = band;
         cell.dataset.staminaBand = band;
-        if (state.phase === 'action' && !choices.some(o => !o.free && o.id !== 'rest' && o.tire <= state.s.stamina)) cell.classList.add('stamina-warning');
+        if (state.phase === 'action' && state.board.step === 'bonus' && !choices.some(o => (o.kind === 'action' || o.kind === 'job') && o.tire <= state.s.stamina)) cell.classList.add('stamina-warning');
         const value = el('b', 'stamina-value');
         if (!numbers) {
           countNumber(value, feedback && previous ? previous.s.stamina : state.s.stamina, state.s.stamina, num);
@@ -107,7 +117,7 @@ export function hud(state: GameState, choices: OptionView[], numbers: boolean, o
     strip.setAttribute('aria-label', [numbers ? '등급 글자로 보기' : '정확한 수치 보기', ...spoken, gear.textContent].join(' · '));
   }
   drawGrades(true);
-  status.append(identity, time, accounts, strip);
+  status.append(identity, accounts, strip, time);
 
   const ladder = button('', 'career-strip', onLadder, 'ladder');
   ladder.dataset.ladder = '';

@@ -2,18 +2,18 @@ import { GRADED_STATS, grade } from '../game/career.ts';
 import { gradeBadge, rankLine } from './pieces.ts';
 import { previewWheel } from './wheel.ts';
 import { GRADE_STEPS, GRADES, PLACES, RULES, STAT_LABEL } from '../game/data.ts';
-import { dateLabel, derived, forecast, num } from '../game/engine.ts';
+import { boardView, dateLabel, derived, forecast, num } from '../game/engine.ts';
 import type { Forecast, GameState, OptionView, PlaceId, Stat } from '../game/types.ts';
 import { button, el, meter, paginateRows } from './dom.ts';
 import { icon, type IconName } from './icons.ts';
 import { detailLabel, forecastLines, price, signed, statValue } from '../game/outcome-text.ts';
-import { shortNames } from './scene.ts';
+import { routeLanes } from './board.ts';
+import { fieldScene } from './scene.ts';
 
 // Home choices charging this many 만원 upfront require a second tap.
 export const CONFIRM_COST = 100;
 
 export type Nav = 'home' | 'shop' | 'bank' | 'info' | 'log';
-type Tab = 'all' | 'job' | 'action' | 'place';
 const navigation: [Nav, string, IconName][] = [['home','홈','home'], ['shop','상점','bag'], ['bank','은행','bank'], ['info','내 정보','drone'], ['log','기록','book']];
 const symbols: Record<PlaceId,IconName> = { home:'home', school:'book', airfield:'drone', exam:'flag', town:'bag', shop:'bag', garage:'tool', bank:'bank', farm:'sun', site:'tool', bridge:'map', windfarm:'bolt', studio:'drone', coast:'map', office:'home', hq:'bank', academy:'book', assoc:'flag' };
 function staminaReason(o: OptionView) {
@@ -58,19 +58,63 @@ export function pager(page: number, total: number, change: (page: number) => voi
   return bar;
 }
 
-export function createPanel(state: GameState, choices: OptionView[], choose: (id: string) => void, initial: Nav, onTitle: () => void) {
+// A short full-width row can leave two long flight forecasts side by side. Measure both
+// widths, then pack the largest prefix that fits without changing the choices' reading order.
+function choicePages(grid: HTMLElement, cards: HTMLButtonElement[], room: number) {
+  if (!cards.length) return [[]];
+  grid.style.alignItems = 'start';
+  grid.append(...cards);
+  const narrow = cards.map(card => card.offsetHeight);
+  for (const card of cards) card.classList.add('full-row');
+  const wide = cards.map(card => card.offsetHeight);
+  const gap = parseFloat(getComputedStyle(grid).rowGap);
+  grid.replaceChildren();
+  grid.style.removeProperty('align-items');
+
+  const pages: HTMLButtonElement[][] = [];
+  for (let start = 0; start < cards.length;) {
+    const heights = [0];
+    const rowSizes = [0];
+    let count = 0;
+    for (let end = start; end < cards.length; end++) {
+      const single = heights[count] + wide[end] + (count ? gap : 0);
+      const pair = count ? heights[count - 1] + Math.max(narrow[end - 1], narrow[end]) + (count > 1 ? gap : 0) : Infinity;
+      const height = Math.min(single, pair);
+      if (count && height > room) break;
+      heights.push(height);
+      rowSizes.push(pair <= single ? 2 : 1);
+      count++;
+    }
+    for (let length = count; length > 0; length -= rowSizes[length]) {
+      if (rowSizes[length] === 2) {
+        cards[start + length - 1].classList.remove('full-row');
+        cards[start + length - 2].classList.remove('full-row');
+      }
+    }
+    pages.push(cards.slice(start, start + count));
+    start += count;
+  }
+  return pages;
+}
+
+export function createPanel(state: GameState, choices: OptionView[], choose: (id: string) => void, initial: Nav, onTitle: () => void,
+  board: ReturnType<typeof boardView>, highlight: (lane?: number) => void, rankStop: boolean) {
   const panel = el('section', 'panel');
   const caption = el('h2', 'window-title', '이번 칸에서 할 일');
   const body = el('div', 'panel-body');
   panel.append(caption, body);
   const nav = el('nav', 'nav-bar');
   nav.setAttribute('aria-label','게임 메뉴');
-  let view = initial, tab: Tab = 'all', place: PlaceId | null = null;
+  let view = initial;
   let infoTab = 'stats';
   let page = 0, picked = '';
   const navButtons = new Map<Nav, HTMLButtonElement>();
   const d = derived(state);
-  const restMode = state.s.acts === 0 ? 'full' : 'light';
+  const node = board.nodes[board.pos];
+  const routes = choices.filter(o => o.id.startsWith('route:'));
+  const spin = choices.find(o => o.id === 'spin');
+  const pass = choices.find(o => o.id === 'skip' || o.id === 'end');
+  // TODO(engine): Fork prompts offer only routes. Services appear as soon as options() includes them.
   const shop = choices.filter(o => o.kind === 'shop' || o.kind === 'repair');
   const bank = choices.filter(o => o.kind === 'bank');
   const statEntries: [string,string][] = [['순자산', num(d.netWorth) + '만원']];
@@ -80,12 +124,11 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
   }
   for (const line of d.upkeep.lines) statEntries.push(['다음 계절 · ' + line.label, signed(line.amount) + '만원']);
   statEntries.push(['다음 계절 합계', signed(d.upkeep.total) + '만원']);
-  const rest = choices.find(o => o.id === 'rest');
-  const actions = choices.filter(o => !o.free && o.kind !== 'event' && o !== rest)
+  const actions = choices.filter(o => o.kind === 'action' || o.kind === 'job')
     .sort((a, b) => Number(b.enabled) - Number(a.enabled) || Number(a.kind === 'job') - Number(b.kind === 'job'));
   const logs = [...state.log].reverse();
   function reset() { page = 0; picked = ''; }
-  function switchView(value: Nav) { view = value; tab = 'all'; infoTab = 'stats'; reset(); render(); }
+  function switchView(value: Nav) { highlight(); view = value; infoTab = 'stats'; reset(); render(); }
   for (const [key, label, symbol] of navigation) {
     const b = button('', '', () => switchView(key));
     b.dataset.nav = key;
@@ -153,54 +196,72 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
       head.append(odds);
     }
     card.append(head);
-    // A sure card's 확정 line already lists the money and stamina it costs, so only rolls and locked cards need the price line.
-    if (o.roll || !o.enabled) card.append(el('small', 'option-price', o.roll?.staminaPct ? price(o) + ' · ' + staminaReason(o) : price(o)));
-    card.append(outcomes(o, f));
+    if (o.roll || o.tire || !o.enabled) card.append(el('small', 'option-price', o.roll?.staminaPct ? price(o) + ' · ' + staminaReason(o) : price(o)));
+    const forecastBody = outcomes(o, f);
+    card.title = [o.title, ...Array.from(forecastBody.children, line => line.textContent)].join('\n');
+    card.append(forecastBody);
     return card;
   }
 
-  // A rest that ends the run (the last season, or a final overdue strike) asks for a second tap like any other ending.
-  function restEnds(o: OptionView) {
-    return preview(o).branches.some(b => b.end);
-  }
-  function takeRest(o: OptionView) {
-    if (!o.enabled) return;
-    if (!restEnds(o)) return choose(o.id);
-    view = 'home';
-    picked = o.id;
-    render();
-    focusDetail();
+  function boardButton(o: OptionView, className: string) {
+    const control = button(o.title, className, () => choose(o.id));
+    control.dataset.option = o.id;
+    control.disabled = !o.enabled;
+    return control;
   }
 
-  function restBar(o: OptionView) {
-    const f = preview(o);
-    // The outcome line beside the label carries the numbers (체력 +N · → 계절 종료).
-    const label = !f.branches[0].deltas.stamina ? '계절 넘기기' : restMode === 'full' ? '푹 쉬기' : '쉬고 계절 넘기기';
-    const ends = restEnds(o);
-    const bar = button('', 'rest-bar', () => takeRest(o));
-    bar.setAttribute('aria-keyshortcuts', 'R');
-    if (ends) {
-      bar.dataset.pick = o.id;
-      bar.setAttribute('aria-expanded', String(o.id === picked));
-    } else bar.dataset.option = o.id;
-    bar.dataset.rest = restMode;
-    bar.disabled = !o.enabled;
-    bar.append(el('strong', '', label), outcomes(o, f));
-    return bar;
+  function spinPrompt(o: OptionView) {
+    const preview = fieldScene(node.place, state);
+    preview.classList.add('departure');
+    preview.append(el('b', 'place-label', PLACES[node.place].name));
+    const prompt = el('div', 'spin-prompt');
+    const hint = el('p');
+    hint.append(el('span', 'departure-from', PLACES[node.place].name + '에서 출발 · '), `주사위 눈만큼 1~${RULES.board.die}칸`);
+    prompt.append(preview, hint);
+    const roll = boardButton(o, 'primary spin-button');
+    roll.prepend(icon('compass'));
+    roll.setAttribute('aria-keyshortcuts', 'S Space');
+    prompt.append(roll);
+    return prompt;
+  }
+
+  function forkPrompt() {
+    const prompt = el('div', 'fork-prompt');
+    if (state.board.left) prompt.append(el('b', 'remaining', `남은 ${state.board.left}칸`));
+    const lanes = routeLanes(board, node);
+    routes.forEach((o, index) => {
+      const card = boardButton(o, 'route-card');
+      card.setAttribute('aria-keyshortcuts', String(index + 1));
+      card.replaceChildren(el('strong', '', o.title), icon('arrow'));
+      const chips = el('span', 'route-chips');
+      for (const stop of lanes[index]) {
+        const chip = el('span', '', stop.label);
+        chip.dataset.kind = stop.kind;
+        chips.append(chip);
+      }
+      card.append(chips);
+      for (const event of ['focus', 'pointerenter']) card.addEventListener(event, () => highlight(index));
+      for (const event of ['blur', 'pointerleave']) card.addEventListener(event, () => highlight());
+      prompt.append(card);
+    });
+    return prompt;
   }
 
   function render() {
     const focusKey = panel.contains(document.activeElement) ? Object.entries((document.activeElement as HTMLElement).dataset)[0] : undefined;
     body.replaceChildren();
+    delete panel.dataset.fork;
+    delete panel.dataset.bonus;
+    delete panel.dataset.spaceCard;
     for (const [key,b] of navButtons) b.setAttribute('aria-pressed',String(key === view));
     panel.dataset.view = view;
     const [,label,symbol] = navigation.find(([key]) => key === view)!;
     caption.replaceChildren(icon(symbol), view === 'home' ? '이번 칸에서 할 일' : label);
     const header = el('div', 'panel-head');
     body.append(header);
-    function pageControl(total: number) {
+    function pageControl(total: number, container = header) {
       page = Math.min(page, total - 1);
-      header.append(pager(page, total, i => { page = i; picked = ''; render(); }));
+      if (total > 1 || container === header) container.append(pager(page, total, i => { page = i; picked = ''; render(); }));
     }
     function pagedGrid(grid: HTMLElement, items: HTMLElement[], columns: number) {
       body.append(grid);
@@ -212,63 +273,60 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
       grid.replaceChildren(...pages[page]);
     }
     if (view === 'home') {
-      const tabs = el('div','tabs');
-      for (const [key,label] of [['all','전체'],['job','일감'],['action','활동'],['place', place ? '장소: ' + shortNames[place] : '']] as const) {
-        if (!label) continue;
-        const b = button(label, '', () => { tab = key; reset(); render(); });
-        b.dataset.tab = key;
-        if (key === 'all') b.dataset.action = 'all';
-        b.setAttribute('aria-pressed',String(key === tab));
-        tabs.append(b);
-      }
-      header.append(tabs);
-      const list = actions.filter(o => tab === 'all' || (tab === 'place' ? o.place === place : o.kind === tab));
-      const grid = el('div', 'option-grid');
-      const cards = list.map(optionCard);
-      body.append(grid);
-      const bar = rest && restBar(rest);
-      if (bar) body.append(bar);
-      const style = getComputedStyle(body);
-      const gap = parseFloat(style.rowGap);
-      const room = body.getBoundingClientRect().bottom - parseFloat(style.paddingBottom)
-        - grid.getBoundingClientRect().top - (bar ? bar.offsetHeight + gap : 0);
-      // A long forecast can use the full row if a half-width card alone would overflow.
-      grid.style.alignItems = 'start';
-      grid.append(...cards);
-      const wide = cards.filter(card => card.offsetHeight > room);
-      grid.style.removeProperty('align-items');
-      for (const card of wide) card.classList.add('full-row');
-      grid.replaceChildren();
-      const pages = paginateRows(grid, cards, 1, room);
-      if (picked) {
-        const selectedPage = pages.findIndex(items => items.some(card => card.dataset.pick === picked || card.dataset.option === picked));
-        if (selectedPage >= 0) page = selectedPage;
-      }
-      pageControl(pages.length);
-      const items = pages[page];
-      items.slice(0, 9).forEach((card, index) => card.setAttribute('aria-keyshortcuts', String(index + 1)));
-      grid.replaceChildren(...items);
-      const current = rest && picked === rest.id ? rest : list.find(o => o.id === picked);
-      if (current && body.querySelector(`[data-pick="${current.id}"]`)) {
-        const detail = detailFor(current);
-        grid.after(detail);
-        if (grid.offsetHeight + detail.offsetHeight + gap > room) grid.remove();
-        if (detail.offsetHeight > room) header.remove();
-        // A long locked forecast on a short screen also borrows the rest bar's row until the player goes back.
-        if (bar && current !== rest && body.scrollHeight > body.clientHeight + 1) bar.remove();
-      }
-      if (!cards.length) {
-        grid.remove();
-        if (body.querySelector('.detail')) {
-          // The rest confirmation already fills the panel.
-        } else if (tab === 'place' && place && choices.some(o => o.free && o.place === place)) {
-          const bankHere = place === 'bank';
-          const facility = empty(bankHere ? 'bank' : 'bag', PLACES[place].desc);
-          facility.append(button(bankHere ? '은행 이용하기' : '상점 · 정비 이용하기', 'secondary', () => switchView(bankHere ? 'bank' : 'shop')));
-          header.after(facility);
-        } else if (state.phase !== 'event') {
-          const message = tab === 'job' ? '이번 계절에 받은 일감이 없어요.' : '이곳에는 이번 계절 활동이 없어요.';
-          header.after(empty('map', message));
+      if (state.phase !== 'action') {
+        header.remove();
+        caption.textContent = state.phase === 'event' ? '사건 카드' : '인생 결산';
+      } else if (spin) {
+        caption.replaceChildren(icon('compass'), '이번 계절의 출발');
+        header.replaceWith(spinPrompt(spin));
+      } else if (routes.length) {
+        caption.replaceChildren(icon('map'), '갈림길 · 어느 길로 갈까?');
+        panel.dataset.fork = '';
+        header.replaceWith(forkPrompt());
+      } else if (pass) {
+        const bonus = pass.id === 'end';
+        if (bonus) panel.dataset.bonus = '';
+        else panel.dataset.spaceCard = node.kind;
+        caption.replaceChildren(icon(symbols[node.place]), bonus
+          ? `추가 행동 하나 · ${PLACES[node.place].name} · 체력 ${state.s.stamina}` : `${node.label} 칸 · ${PLACES[node.place].name}`);
+        if (bonus) header.remove();
+        else {
+          header.className = 'step-intro';
+          if (window.matchMedia('(min-width: 900px)').matches) header.append(fieldScene(node.place, state));
+          const copy = el('div', '', '도착한 칸의 행동은 체력 없이 바로 한다');
+          if (rankStop) copy.append(el('b', 'rank-stop', '승급 칸에서 멈췄다'));
+          header.append(copy);
+        }
+        const grid = el('div', 'option-grid');
+        const cards = actions.map(optionCard);
+        const bar = boardButton(pass, 'step-bar');
+        if (bonus) {
+          bar.append(el('small', '', `체력 +${RULES.seasonRefill} 회복 후 다음 계절`));
+          bar.setAttribute('aria-keyshortcuts', 'E R');
+        }
+        const controls = el('div', 'step-controls');
+        controls.append(bar);
+        body.append(grid, controls);
+        const style = getComputedStyle(body);
+        const gap = parseFloat(style.rowGap);
+        const room = body.getBoundingClientRect().bottom - parseFloat(style.paddingBottom)
+          - grid.getBoundingClientRect().top - controls.offsetHeight - gap;
+        const pages = choicePages(grid, cards, room);
+        if (picked) {
+          const selectedPage = pages.findIndex(items => items.some(card => card.dataset.pick === picked || card.dataset.option === picked));
+          if (selectedPage >= 0) page = selectedPage;
+        }
+        pageControl(pages.length, controls);
+        const items = pages[page];
+        items.slice(0, 9).forEach((card, index) => card.setAttribute('aria-keyshortcuts', String(index + 1)));
+        grid.replaceChildren(...items);
+        const current = actions.find(o => o.id === picked);
+        if (current && body.querySelector(`[data-pick="${current.id}"]`)) {
+          const detail = detailFor(current);
+          grid.after(detail);
+          if (grid.offsetHeight + detail.offsetHeight + gap > room) grid.remove();
+          if (detail.offsetHeight > room) header.remove();
+          if (body.scrollHeight > body.clientHeight + 1) controls.remove();
         }
       }
     } else {
@@ -294,7 +352,10 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
         if (cards.length) pagedGrid(grid, cards, 2);
         else {
           pageControl(1);
-          body.append(empty('bag', state.stage === 'student' ? '자격증을 취득하면 장비 상점이 열려요.' : '현재 이용할 업그레이드나 정비가 없어요.'));
+          const message = routes.length ? '항로를 고른 뒤 이용할 수 있어요.'
+            : view === 'bank' ? '현재 이용할 은행 업무가 없어요.'
+            : state.stage === 'student' ? '자격증을 취득하면 장비 상점이 열려요.' : '현재 이용할 업그레이드나 정비가 없어요.';
+          body.append(empty(view === 'bank' ? 'bank' : 'bag', message));
         }
       } else if (view === 'info') {
         const tabs = el('div', 'tabs');
@@ -357,13 +418,8 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
       same?.focus({ preventScroll: true });
     }
   }
-  return { panel, nav, fit: render, currentNav: () => view, rest() {
-    if (rest) takeRest(rest);
-  }, place(id: PlaceId) {
-    place = id;
-    view = 'home'; tab = 'place'; reset(); render();
-  }, goal(id: string) {
-    view = 'home'; tab = 'all'; picked = id;
+  return { panel, nav, fit: render, currentNav: () => view, goal(id: string) {
+    view = 'home'; picked = id;
     render();
     if (panel.querySelector('.detail')) focusDetail();
     else panel.querySelector<HTMLButtonElement>(`[data-option="${id}"]`)?.focus({ preventScroll: true });

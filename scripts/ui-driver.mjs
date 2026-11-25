@@ -67,10 +67,28 @@ export async function revealOption(page, option) {
 }
 
 
-/** The result owns the first continue. A career change can insert a second card before play resumes. */
-export const stoppedResult = page => page.locator('[data-phase="result"] [data-spin="done"]');
+export const stoppedResult = page => page.locator('[data-phase="result"] dialog[data-spin="done"]');
+
+/** Skip only the current movement stage. Shift has no action on the following screen. */
+export async function finishMove(page) {
+  const moving = page.locator('[data-phase="move"]');
+  if (!await moving.count()) return;
+  if (await moving.locator('[data-roulette][data-spin="spinning"]').count()) {
+    await page.keyboard.press('Shift');
+    await moving.locator('[data-roulette][data-spin="spinning"]').waitFor({ state: 'detached' });
+  }
+  if (await moving.count()) await page.keyboard.press('Shift');
+  await moving.waitFor({ state: 'detached' });
+}
+
+/** Direct board transitions need no dismissal. Some choices show a result, then a rank card. */
 export async function finishChoice(page, onRank) {
-  await stoppedResult(page).locator('[data-action="continue"]:enabled').click();
+  await finishMove(page);
+  const result = page.locator('[data-phase="result"] dialog');
+  if (await result.count()) {
+    if (await result.getAttribute('data-spin') === 'spinning') await page.keyboard.press('Shift');
+    await stoppedResult(page).locator('[data-action="continue"]:enabled').click();
+  }
   const rank = page.locator('[data-phase="rankup"] [data-rank-card]');
   const appeared = await rank.count() === 1;
   if (appeared) {
