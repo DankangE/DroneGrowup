@@ -7,6 +7,7 @@ import { mountLife } from '../src/ui2/app.ts';
 import { popupModel, textPages } from '../src/ui2/popups/model.ts';
 import { POPUP_RULES } from '../src/ui2/popups/data.ts';
 import { resultPopups } from '../src/ui2/popups/presentation.ts';
+import { POPUP_STYLE } from '../src/ui2/popups/style.ts';
 import { action, controls, dom, panelAt, TestNode, textOf, withDOM } from './life-popup2-dom-helper.ts';
 
 function worker(rank = 0): GameState {
@@ -18,10 +19,10 @@ function worker(rank = 0): GameState {
   state.board.step = 'bonus'; state.board.dice = [1, 1];
   return state;
 }
-function inApp(state: GameState, run: (root: TestNode, api: NonNullable<Window['__life']>) => void) {
+function inApp(state: GameState, run: (root: TestNode, api: NonNullable<Window['__life']>) => void,
+  browser = { matchMedia: () => ({ matches: true, addEventListener() {} }) } as unknown as Window) {
   withDOM(() => {
     const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
-    const browser = { matchMedia: () => ({ matches: true, addEventListener() {} }) } as unknown as Window;
     Object.defineProperty(globalThis, 'window', { configurable: true, value: browser });
     try {
       const root = new TestNode('main'); mountLife(root.element(), 1, true);
@@ -202,4 +203,86 @@ test('F3: start/loan summaries expose their engine money effect and cap drops ar
   const outcome = choose(age, 'end'); assert.equal(outcome.result.season!.refill, -10);
   const copy = resultPopups(age, outcome.state, outcome.result).flatMap(row => row.lines).join(' ');
   assert.match(copy, /체력 상한 조정 -10/); assert.doesNotMatch(copy, /체력 회복 -10/);
+});
+
+// Supply measured rectangles to the mounted UI, without pretending this DOM double lays out CSS.
+// 360x740: HUD 6..84, board 90..506 (nine 44.44px rows + eight 2px gaps), bottom bar 686..730.
+function withSheetBoxes(run: (boxes: { hudBottom: number; bottomTop: number; pawnTop: number; pawnBottom: number;
+  height: number }, styles: WeakMap<TestNode, Map<string, string>>) => void) {
+  const boxes = { hudBottom: 84, bottomTop: 686, pawnTop: 506 - 400 / 9, pawnBottom: 506, height: 360 };
+  const styles = new WeakMap<TestNode, Map<string, string>>(), createElement = dom.createElement;
+  dom.createElement = tag => {
+    const node = createElement(tag), css = new Map<string, string>(); styles.set(node, css);
+    node.style.setProperty = (key, value) => { css.set(key, value); };
+    Object.defineProperty(node, 'getBoundingClientRect', { value: () => {
+      if (node.matches('[aria-current=location]')) return { top: boxes.pawnTop, bottom: boxes.pawnBottom };
+      if (node.matches('.life2-hud')) return { top: 6, bottom: boxes.hudBottom };
+      if (node.matches('.life2-bottom')) return { top: boxes.bottomTop, bottom: boxes.bottomTop + 44 };
+      const top = Number.parseFloat(css.get('top') ?? '320');
+      return { top, bottom: top + boxes.height, height: boxes.height };
+    } });
+    return node;
+  };
+  try { run(boxes, styles); } finally { dom.createElement = createElement; }
+}
+
+test('F3: a three-choice start sheet clears the actual ninth row at 360x740, including after resize', () => {
+  withSheetBoxes((boxes, styles) => {
+    let resize: (() => void) | undefined;
+    const browser = { innerWidth: 360, matchMedia: () => ({ matches: false, addEventListener() {} }),
+      addEventListener: (type: string, listener: () => void) => { if (type === 'resize') resize = listener; } } as unknown as Window;
+    inApp(newGame(1), (root, api) => {
+      const check = (dock: string, top: number) => {
+        const panel = panelAt(root);
+        assert.equal(panel.dataset.dock, dock);
+        assert.equal(styles.get(panel)!.get('top'), `${top}px`);
+        assert.equal(styles.get(panel)!.get('bottom'), 'auto');
+        assert.ok(top >= boxes.hudBottom + 6);
+        assert.ok(top + boxes.height <= boxes.bottomTop - 6);
+        assert.ok(top + boxes.height + 6 <= boxes.pawnTop || boxes.pawnBottom + 6 <= top);
+        assert.equal(panel.querySelectorAll('[data-option]').length, 3);
+      };
+      check('top', 90);
+      assert.ok(resize, 'the app recomputes mounted geometry on resize');
+      // New live boxes put the pawn in the first row, where only the lower dock fits.
+      Object.assign(boxes, { hudBottom: 96, bottomTop: 790, pawnTop: 130, pawnBottom: 178 });
+      resize(); check('bottom', 424);
+      // Move back to a low row with a different HUD boundary: no cached top coordinate.
+      Object.assign(boxes, { hudBottom: 88, pawnTop: 500, pawnBottom: 548 });
+      resize(); check('top', 94);
+      assert.deepEqual(api.state(), newGame(1), 'placement never advances the engine');
+    }, browser);
+  });
+});
+
+test('F3: sheet paging remeasures the available edges and keeps navigation clear when neither edge fits', () => {
+  withSheetBoxes((boxes, styles) => {
+    const browser = { innerWidth: 360, matchMedia: () => ({ matches: true, addEventListener() {} }) } as unknown as Window;
+    inApp(newGame(1), root => {
+      assert.equal(panelAt(root).dataset.dock, 'top');
+      // Exactly six pixels on each side of the sheet is enough.
+      Object.assign(boxes, { pawnTop: 456, pawnBottom: 500 });
+      action(root, 'popup-details').fire('click');
+      assert.equal(panelAt(root).dataset.dock, 'top');
+      assert.equal(styles.get(panelAt(root))!.get('top'), '90px');
+      Object.assign(boxes, { pawnTop: 270, pawnBottom: 314 });
+      action(root, 'popup-back').fire('click');
+      assert.equal(panelAt(root).dataset.dock, 'bottom');
+      assert.equal(styles.get(panelAt(root))!.get('top'), '320px');
+      // Neither side can hold a full sheet; it still ends 6px above the actual navigation.
+      Object.assign(boxes, { pawnTop: 350, pawnBottom: 394, bottomTop: 700 });
+      action(root, 'popup-details').fire('click');
+      assert.equal(panelAt(root).dataset.dock, 'bottom');
+      assert.equal(styles.get(panelAt(root))!.get('top'), '334px');
+    }, browser);
+  });
+});
+
+test('F3: measured mobile docks fade without moving into a tight pawn gap and retain the 55% cap', () => {
+  const animation = /\.life2 \.life2-popup\[data-dock\]\s*\{\s*animation-name:([^;]+);/.exec(POPUP_STYLE)?.[1];
+  assert.ok(animation);
+  const keyframes = POPUP_STYLE.slice(POPUP_STYLE.indexOf(`@keyframes ${animation} `)).split('@')[1];
+  assert.match(keyframes, /opacity:0/);
+  assert.doesNotMatch(keyframes, /transform|translate|top:|bottom:/);
+  assert.match(POPUP_STYLE, /height:min\(360px,55dvh\); max-height:55vh/);
 });

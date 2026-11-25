@@ -3,9 +3,30 @@ import type { Result } from '../../life/engine.ts';
 import { rankChange, reviewNotice } from '../../life/career2.ts';
 import { LIFE_RULES, STAT_LABEL } from '../../life/life-data.ts';
 import type { GameState } from '../../life/types.ts';
-import { CHAPTER_COPY, COPY } from './data.ts';
+import { CHAPTER_COPY, COPY, POPUP_RULES } from './data.ts';
 import { popupModel } from './model.ts';
 import type { PopupContext, PopupModel } from './model.ts';
+
+/** Measure after mounting: both docks use the live board and navigation boxes.
+ * The app remounts on resize; popup paging also calls this after each render.
+ */
+export function placePopupSheet(host: HTMLElement, panel: HTMLElement): void {
+  if (panel.dataset.fullscreen !== undefined || typeof panel.getBoundingClientRect !== 'function'
+    || !(window.innerWidth < 900)) return;
+  const shell = host.closest('.life2-shell');
+  const pawn = shell?.querySelector('[aria-current=location]')?.getBoundingClientRect();
+  const hud = shell?.querySelector('.life2-hud')?.getBoundingClientRect();
+  const navigation = shell?.querySelector('.life2-bottom')?.getBoundingClientRect();
+  if (!pawn || !hud || !navigation) return;
+  const height = panel.getBoundingClientRect().height, gap = POPUP_RULES.dockGap;
+  const top = hud.bottom + gap, bottom = navigation.top - gap - height;
+  const fitsAbove = top + height + gap <= pawn.top;
+  const fitsBelow = pawn.bottom + gap <= bottom;
+  const dock = !fitsBelow && fitsAbove ? 'top' : 'bottom';
+  panel.dataset.dock = dock;
+  panel.style.setProperty('top', `${dock === 'top' ? top : bottom}px`);
+  panel.style.setProperty('bottom', 'auto');
+}
 
 /** Acknowledgements of completed transitions, separate from the engine's pending choices.
  * Only compare snapshots/use engine views: do not reroll, apply reviews or calculate pay here.

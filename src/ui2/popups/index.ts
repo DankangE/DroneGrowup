@@ -4,6 +4,7 @@ import { COPY, PHONE_TABS, POPUP_RULES } from './data.ts';
 import type { LifeTab, PhoneTab } from './data.ts';
 import { choicePage, shortTitle, textPages } from './model.ts';
 import type { PopupModel } from './model.ts';
+import { placePopupSheet } from './presentation.ts';
 import { POPUP_STYLE } from './style.ts';
 export { popupModel, popupKind, phoneChoices } from './model.ts';
 export type { PopupContext, PopupModel } from './model.ts';
@@ -129,18 +130,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     if (!model.notification) panel.append(footer);
     panel.addEventListener('keydown', handleKeys);
     host.replaceChildren(el('style', '', POPUP_STYLE), panel);
-    // Pick the other edge when the whole pawn row fits below a top-docked sheet.
-    // Mid-board rows sometimes cannot fit alongside a 3-choice sheet; the close control remains available.
-    if (!model.fullscreen && typeof panel.getBoundingClientRect === 'function' && window.innerWidth < 900) {
-      const shell = host.closest('.life2-shell');
-      const pawn = shell?.querySelector('[aria-current=location]')?.getBoundingClientRect();
-      const hud = shell?.querySelector('.life2-hud')?.getBoundingClientRect();
-      const sheet = panel.getBoundingClientRect(), gap = POPUP_RULES.dockGap;
-      if (pawn && hud && pawn.bottom + gap > sheet.top && hud.bottom + sheet.height + gap * 2 <= pawn.top) {
-        panel.dataset.dock = 'top'; panel.style.setProperty('top', `${hud.bottom + gap}px`);
-        panel.style.setProperty('bottom', 'auto');
-      }
-    }
+    placePopupSheet(host, panel);
     if (focus && !model.notification) (panel.querySelector('h2') ?? panel.querySelector('button'))?.focus({ preventScroll: true });
   }
   function handleKeys(event: KeyboardEvent) {

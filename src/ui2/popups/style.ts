@@ -35,6 +35,8 @@ export const POPUP_STYLE = `
 .life2 .life2-popup[data-reading] { grid-template-rows:44px minmax(0,1fr) 44px; }
 .life2 .life2-popup[data-notification] { height:${POPUP_RULES.notificationHeight}px; grid-template-rows:44px minmax(0,1fr); }
 .life2 .life2-popup[data-details] { grid-template-rows:44px minmax(0,1fr) 44px; }
+/* A measured dock can have only 6px of clearance: translating 12px on entry would hide the pawn. */
+.life2 .life2-popup[data-dock] { animation-name:life2-sheet-fade-in; }
 .life2 .life2-popup-tabs { display:flex; gap:4px; }
 .life2 .life2-popup-tabs button { flex:1; padding:2px; font-size:11px; }
 .life2 .life2-popup-tabs [aria-selected=true] { background:#e8dcff; }
@@ -45,5 +47,6 @@ export const POPUP_STYLE = `
   .life2 .life2-popup[data-notification] { inset:0 0 auto; height:${POPUP_RULES.notificationHeight}px; }
 }
 @keyframes life2-sheet-in { from { transform:translateY(12px); opacity:0; } }
+@keyframes life2-sheet-fade-in { from { opacity:0; } }
 @media(prefers-reduced-motion:reduce) { .life2 .life2-popup { animation:none; } }
 `;
