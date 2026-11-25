@@ -10,7 +10,7 @@ import { PLATFORM, pushProgress, submitRun } from './platform.ts';
 // On the platform build every key carries the account id, so two accounts on one browser never share a run or
 // a gallery, and nothing is read from the standalone keys. Until the login is known the scope is 'none'.
 let scope = PLATFORM ? ':u:none' : '';
-const key = (name: 'run' | 'meta' | 'synced' | 'migrated', version = 1) => `pilot-growup:${name}:v${version}${scope}`;
+const key = (name: 'run' | 'meta' | 'synced' | 'migrated' | 'settings', version = 1) => `pilot-growup:${name}:v${version}${scope}`;
 const SCORE_MAX = 9_999_999;
 
 /** What survives a finished run: which endings were seen, the best score, how many runs ended. */
@@ -50,6 +50,9 @@ export type LifeProgress = { run: LifeState | null; meta: LifeMeta };
 export const V1_NOTICE = '이전 버전의 판은 이어 할 수 없습니다';
 const object = (raw: unknown): Record<string, unknown> => raw && typeof raw === 'object' && !Array.isArray(raw)
   ? raw as Record<string, unknown> : {};
+export type LifeSettings = { tilt: boolean };
+export const loadLifeSettings = (): LifeSettings => ({ tilt: object(read(key('settings', 2))).tilt === true });
+export const saveLifeSettings = (settings: LifeSettings) => write(key('settings', 2), { tilt: settings.tilt === true });
 const strings = (raw: unknown): string[] => Array.isArray(raw)
   ? [...new Set(raw.filter((id): id is string => typeof id === 'string' && /^[\w:-]{1,80}$/.test(id)))].slice(0, 200) : [];
 

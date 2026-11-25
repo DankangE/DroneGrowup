@@ -9,7 +9,8 @@ import { choose, derived, forecast, newGame, options, reachable } from '../src/l
 import { rankChange } from '../src/life/career2.ts';
 import { WORLD } from '../src/life/world.ts';
 import { audit, keyboardActivate, pagingChecks } from './layout-check-life.mjs';
-import { DESTINATION_PRIORITY, LARGE_POPUPS, MAX_CHOICES_PER_SEASON, SEASONS, THINK_MS } from './life-check-data.mjs';
+import { DESTINATION_PRIORITY, MAX_CHOICES_PER_SEASON, SEASONS, THINK_MS } from './life-check-data.mjs';
+import { readingStep, choiceTiming } from './life-time-model.ts';
 
 const nodes = new Map(WORLD.map(node => [node.id, node]));
 export const mapOf = state => nodes.get(state.board.pos).map;
@@ -139,17 +140,21 @@ export function browserDriver(page, { keyboard = false, timed = false, auditPage
     async take(state, id) {
       const next = choose(state, id);
       await checkLifeView(page, state);
+      await paging.prepare(`before ${id}`);
       if (auditPages) await paging.checkPages(`turn ${state.turn} ${id}`);
       if (timed) {
         const panel = page.locator('.life2-popup');
         const popup = await panel.count() ? await panel.getAttribute('data-popup') : null;
-        const step = LARGE_POPUPS.includes(popup) ? 'large' : state.phase === 'event' ? 'event' : state.board.step;
+        const step = readingStep(state, popup);
         await pause(THINK_MS[step]);
       }
       expectedResult = next.result;
       // Exercise direct board tiles; the pager supplies other-map destination badges.
       const tile = id.startsWith('go:') ? page.locator(`[data-space="${id.slice(3)}"][data-dest]`) : null;
-      if (tile && await tile.count()) await activate(tile);
+      if (tile && await tile.count()) {
+        await activate(tile);
+        await paging.dismissResults(`after ${id}`);
+      }
       else await paging.clickChoice(id);
       assert.deepEqual(await readState(page), next.state, `after ${id} on turn ${state.turn}: UI equals engine`);
       await checkLifeView(page, next.state);
@@ -167,12 +172,15 @@ export async function playSeasons(driver, { seasons = SEASONS, stopAtRankup = fa
   now = () => performance.now() } = {}) {
   assert.ok(Number.isInteger(seasons) && seasons > 0, 'positive integer season count');
   let state = await driver.state(), choices = 0, promotions = 0, lastAt = now();
-  const initialTurn = state.turn, seasonTimes = [];
+  const initialTurn = state.turn, seasonTimes = [], modeledTimes = [];
+  let modeledSeconds = 0;
   while (state.turn - initialTurn < seasons && !(stopAtRankup && promotions)) {
     assert.notEqual(state.phase, 'ended', 'run ended before its acceptance target');
     assert.ok(choices++ < (seasons + 1) * MAX_CHOICES_PER_SEASON, 'run did not advance: choice limit');
     if (stayMap) assert.equal(mapOf(state), stayMap, 'timed sample stays on its map');
     const before = state, id = pickLifeOption(state, { stayMap });
+    const predicted = choose(before, id);
+    modeledSeconds += choiceTiming(before, predicted.state, predicted.result).seconds;
     state = await driver.take(before, id);
     assert.notDeepEqual(state, before, `${id} must advance state`);
     if (stayMap) assert.equal(mapOf(state), stayMap, 'timed sample never transfers');
@@ -180,8 +188,9 @@ export async function playSeasons(driver, { seasons = SEASONS, stopAtRankup = fa
     if (state.turn !== before.turn) {
       assert.equal(state.turn, before.turn + 1, 'each measured interval is exactly one season');
       const at = now(); seasonTimes.push((at - lastAt) / 1000); lastAt = at;
+      modeledTimes.push(modeledSeconds); modeledSeconds = 0;
     }
   }
   assert.ok(promotions && stopAtRankup || seasonTimes.length === seasons, 'rank-up or requested seasons completed');
-  return { state, choices, promotions, seasonTimes };
+  return { state, choices, promotions, seasonTimes, modeledTimes };
 }

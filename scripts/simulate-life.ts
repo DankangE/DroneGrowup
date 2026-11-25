@@ -1,4 +1,4 @@
-// T15: §13.2 gates fail closed. Human-speed timing remains an estimate until T24.
+// §13.2 gates fail closed, including missing/stale T24 timing measurements.
 import { writeFileSync } from 'node:fs';
 import { GRADE_STEPS } from '../src/life/data.ts';
 import { availableParallelism } from 'node:os';
@@ -10,18 +10,15 @@ import { CAREER_KEYS } from '../src/life/career2.ts';
 import { ECONOMY_TEXT } from '../src/life/economy.ts';
 import { finalNetWorth, settlementSummary } from '../src/life/ending.ts';
 import { ALL_EVENTS, choose, newGame, options } from '../src/life/engine.ts';
+import { choose as interactiveChoose } from '../src/life/flow.ts';
 import type { OptionView, Result } from '../src/life/engine.ts';
 import { ENDINGS2, ENDING_KEYS, ENDING_RULES, LIFE_RULES, MAP_IDS } from '../src/life/life-data.ts';
 import { TRACKS } from '../src/life/tracks.ts';
 import type { GameState, MapId } from '../src/life/types.ts';
 
-export const TIME_MODEL = [
-  { id: 'spin', seconds: 1.5, frequency: 1 }, { id: 'pick', seconds: 3, frequency: .9 },
-  { id: 'move', seconds: 2, frequency: 1 }, { id: 'space', seconds: 4, frequency: .85 },
-  { id: 'event', seconds: 6, frequency: .12 }, { id: 'bonus', seconds: 3.5, frequency: .7 },
-  { id: 'result', seconds: 2.4, frequency: .35 }, { id: 'life', seconds: 6, frequency: .125 },
-  { id: 'big', seconds: 8, frequency: .06 },
-] as const;
+import { TIME_MODEL, choiceTiming, timingCounts } from './life-time-model.ts';
+import { readCalibration } from './life-time-calibration.ts';
+export { TIME_MODEL } from './life-time-model.ts';
 export const AGES = [25, 30, 40, 50, 60, 70];
 const TARGETS = [1200, 3500, 12000, 28000, 45000, 55000];
 const C = { runs: 300, coverageRuns: 3000, minute: 60, percent: 100, scoreCap: 59970, workers: 10 };
@@ -36,7 +33,7 @@ export type RunReport = {
   events: Record<string, number>; promotions: { cohort: 'specialist' | 'ordinary'; rank: number; seasons: number }[];
   earlyS: boolean; zone: Record<string, { income: number; seasons: number }>; bankUses: number; violations: number; rerolls: number; skipped: number;
 };
-const counts = () => Object.fromEntries(TIME_MODEL.map(row => [row.id, 0]));
+const counts = timingCounts;
 const periodAt = (turn: number) => LIFE_RULES.periods.findIndex(p => LIFE_RULES.startAge + Math.floor(turn / LIFE_RULES.seasons.length) <= p.maxAge);
 const planned = (r: RunReport) => r.policy !== 'random' && r.policy !== 'drifter';
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
@@ -80,10 +77,14 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     if (id.startsWith('fund:in:')) invested += Number(id.split(':')[2]);
     if (id.startsWith('home:buy:') && before.home && before.home.tier >= 3) invested += option.cost;
     tried.push(id); report.steps++;
-    const activity = counts();
-    if (id === 'spin') { spin++; activity.spin++; }
-    if (moves > 1) activity.pick++;
-    if (result.move) activity.move++;
+    // Bots retain their single-step engine semantics. Price presentation as the
+    // interactive F5 transaction: collapse only the otherwise empty end menu.
+    const emptyBonus = (s: GameState) => s.phase === 'action' && s.board.step === 'bonus'
+      && options(s).filter(o => o.enabled).every(o => o.id === 'end');
+    const timed = menu === 'board' && emptyBonus(state) ? interactiveChoose(before, id, menu, experiment === 'single') : next;
+    const activity = id === 'end' && emptyBonus(before) ? counts()
+      : choiceTiming(before, timed.state, timed.result, options(before, menu), menu).counts;
+    if (id === 'spin') spin++;
     if (result.luck?.id === 'again') { rerolls++; report.rerolls++; }
     if (id === 'spin' || moves) {
       // Auto-travel has one destination. Pick menus count once when the destination is chosen.
@@ -92,16 +93,10 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     }
     const answering = before.phase === 'event' && /^(ev:|skip$)/.test(id) && before.eventId !== state.eventId;
     if (result.eventId) report.events[result.eventId] = (report.events[result.eventId] ?? 0) + 1;
-    if (answering) {
-      activity[before.board.step === 'spin' ? 'life' : 'event']++;
-    }
     if (!option.free && !result.move && id !== 'spin' && !/^(job:|retire:|start:|quit$)/.test(id)) {
-      if (before.board.step === 'space') { tile++; if (!answering && id !== 'skip') activity.space++; }
-      if (before.board.step === 'bonus' && id !== 'end') { bonus++; activity.bonus++; }
+      if (before.board.step === 'space') tile++;
+      if (before.board.step === 'bonus' && id !== 'end') bonus++;
     }
-    if (result.roll || result.flag || before.track !== state.track) activity.result++;
-    if (/^(job:|retire:|home:|wed:|express:)/.test(id) && id !== 'job:none') activity.big++;
-    if (state.timers[CAREER_KEYS.noticeAt] === state.turn && before.timers[CAREER_KEYS.noticeAt] !== state.turn) activity.big++;
     const period = Math.max(0, periodAt(before.turn));
     for (const row of TIME_MODEL) { report.activities[row.id] += activity[row.id]; report.seconds[period] += activity[row.id] * row.seconds; }
     // Ledger flow = closing balance - opening balance + cash postings. Count accrual once, not again on payday.
@@ -180,13 +175,13 @@ export function reportTables(base: RunReport[], single: RunReport[], noBank: Run
       percent(mean(spec.map(p => p.seasons)), mean(normal.map(p => p.seasons)))];
   });
   const zoneMean = (map: string) => sum(base.map(r => r.zone[map]?.income ?? 0)) / sum(base.map(r => r.zone[map]?.seasons ?? 0));
-  const sections = [table('정책별 기본 규칙', ['정책','완주','분','순자산 중앙','점수 평균','행복 평균/최종','무대출','목표 최고직급','선택지출/수입'],
+  const sections = [table('정책별 기본 규칙', ['정책','완주','모형 분(보정 전)','순자산 중앙','점수 평균','행복 평균/최종','무대출','목표 최고직급','선택지출/수입'],
     POLICY_IDS.map(id => { const rs = base.filter(r => r.policy === id); return [id,rs.length,round(avg(rs,r=>sum(r.seconds)/C.minute)),
       round(median(rs.map(r=>r.worth))),round(avg(rs,r=>r.score)),`${round(avg(rs,r=>r.meanHappy))}/${round(avg(rs,r=>r.happy))}`,
       rate(rs,r=>r.noLoan),rate(rs,r=>r.top),ratio(rs,r=>r.spending,r=>r.income)]; })),
     table('§13.2 전체 지표 (세부 실패 판정은 아래 표)', ['영역','측정','기준'], [
       ['완주',`${base.length}/${base.length}; 행동한도 위반 ${sum(base.map(r=>r.violations))}; 행운 재돌림 ${sum(base.map(r=>r.rerolls))}; 사건 생략 ${sum(base.map(r=>r.skipped))}계절`,'204계절; 돌림1/칸≤1/추가≤1 (행운·사건 예외 별도)'],
-      ['시간',`${round(avg(base,r=>sum(r.seconds)/C.minute))}분; 시기 ${LIFE_RULES.periods.map((_,i)=>round(avg(base,r=>r.seconds[i]/C.minute))).join('/')}`,'전체45–55; 정책40–60; 시기16/20/14 ±4분'],
+      ['시간',`순수 모형(보정 전) ${round(avg(base,r=>sum(r.seconds)/C.minute))}분; 시기 ${LIFE_RULES.periods.map((_,i)=>round(avg(base,r=>r.seconds[i]/C.minute))).join('/')}`,'전체45–55; 정책40–60; 시기16/20/14 ±4분'],
       ['이동',`무차량 선택지 ${round(sum(base.map(r=>r.choices))/sum(base.map(r=>r.noCar)))}; ≥2 ${ratio(base,r=>r.forks,r=>r.noCar)}; 지도 중앙 ${median(base.map(r=>r.visited))}; 비집중 정책 최장체류 ${percent(Math.max(...base.filter(r=>!('focus' in POLICIES[r.policy])).map(r=>Math.max(...r.maps)/r.turn)),1)}`,'≥2.2; ≥85%; ≥4지도; ≤60%'],
       ['은행',`계획 무대출 ${rate(planners,r=>r.noLoan)}; 부채계절 ${ratio(planners,r=>r.debtSeasons,r=>r.turn)}; 은행금지 점수하락 ${percent(avg(base,r=>r.score)-avg(noBank,r=>r.score),avg(base,r=>r.score))}; 비무작위 빚쟁이 ${rate(notRandom,r=>r.ending==='debtor')}`,'≥90%; ≤10%; ≤10%; ≤3%'],
       ['자산','아래 연령별 표 (계획형)','각 목표 ±30%'],
@@ -205,21 +200,21 @@ export function reportTables(base: RunReport[], single: RunReport[], noBank: Run
     table('같은 출발 직급의 승급 간격 (계절, 완결된 승급만)', ['직급','D 전문 표본','D 평균','일반 표본','일반 평균','비율'], promotionRows),
     table('21종 엔딩', ['엔딩','판','비율'], ENDINGS2.map(e=>[e.id,base.filter(r=>r.ending===e.id).length,rate(base,r=>r.ending===e.id)])),
     table('강제 실험', ['실험','완주','점수 평균','은행 사용'], [base,single,noBank].map((rs,i)=>[['기본','룰렛 한 개','은행 금지'][i],rs.length,round(avg(rs,r=>r.score)),sum(rs.map(r=>r.bankUses))])),
-    table('§2 시간 모형', ['단계','초','명세 빈도','실측 빈도'],TIME_MODEL.map(t=>[t.id,t.seconds,t.frequency,round(sum(base.map(r=>r.activities[t.id]))/sum(base.map(r=>r.turn)))])),
+    table('T24 공통 시간 모형 (브라우저 보정 전)', ['단계','초','시뮬레이션 빈도'],TIME_MODEL.map(t=>[t.id,t.seconds,round(sum(base.map(r=>r.activities[t.id]))/sum(base.map(r=>r.turn)))])),
     table('사건 커버리지', ['표본','미등장 ID'], [[coverage.length,missing.join(', ') || '없음']]),
   ];
   return sections.join('\n');
 }
 
 export type Criterion = { id: string; area: string; value: number; min: number; max: number;
-  unit: string; status: 'PASS' | 'FAIL' | 'ESTIMATE'; within: boolean; detail: string };
+  unit: string; status: 'PASS' | 'FAIL'; within: boolean; detail: string };
 /** Nonfinite observations and empty cohorts never silently pass. Bounds are inclusive, before rounding. */
 export function criterion(id: string, area: string, value: number, min: number, max: number,
-  unit = '', detail = '', estimate = false): Criterion {
+  unit = '', detail = ''): Criterion {
   const within = Number.isFinite(value) && value >= min && value <= max;
-  return { id, area, value, min, max, unit, within, detail, status: estimate ? 'ESTIMATE' : within ? 'PASS' : 'FAIL' };
+  return { id, area, value, min, max, unit, within, detail, status: within ? 'PASS' : 'FAIL' };
 }
-export function evaluateCriteria(out: Batch, runs = C.runs): Criterion[] {
+export function evaluateCriteria(out: Batch, runs = C.runs, timing = readCalibration()): Criterion[] {
   const { base, single, noBank } = out, all = [...base, ...single, ...noBank];
   const planners = base.filter(planned), notRandom = base.filter(r => r.policy !== 'random');
   const avg = (rows: RunReport[], get: (r: RunReport) => number) => mean(rows.map(get));
@@ -240,9 +235,13 @@ export function evaluateCriteria(out: Batch, runs = C.runs): Criterion[] {
   add('complete:stalls', '완주', out.failures.length, 0, 0, '', out.failures.join('; '));
   add('complete:actions', '완주', sum(all.map(r=>r.violations)), 0, 0);
   add('bank:forbidden', '은행', sum(noBank.map(r=>r.bankUses)), 0, 0);
-  add('time:all', '시간', avg(base,r=>sum(r.seconds)/60), 45, 55, '분', 'T24 human-speed calibration', true);
-  for (const policy of POLICY_IDS) add(`time:${policy}`, '시간', avg(base.filter(r=>r.policy===policy),r=>sum(r.seconds)/60),40,60,'분','T24',true);
-  [16,20,14].forEach((target,i)=>add(`time:period${i}`, '시간',avg(base,r=>r.seconds[i]/60),target-4,target+4,'분','T24',true));
+  const time = (id: string, raw: number, min: number, max: number) => {
+    const value = timing.factor === null ? NaN : raw * timing.factor;
+    add(id, '시간', value, min, max, '분', `${timing.detail}; 순수 모형 ${round(raw)}분`);
+  };
+  time('time:all', avg(base,r=>sum(r.seconds)/60), 45, 55);
+  for (const policy of POLICY_IDS) time(`time:${policy}`, avg(base.filter(r=>r.policy===policy),r=>sum(r.seconds)/60),40,60);
+  [16,20,14].forEach((target,i)=>time(`time:period${i}`,avg(base,r=>r.seconds[i]/60),target-4,target+4));
   add('move:choices', '이동', sum(base.map(r=>r.choices))/sum(base.map(r=>r.noCar)), 2.2, Infinity);
   add('move:forks', '이동', ratio(base,r=>r.forks,r=>r.noCar), 85, 100, '%');
   add('move:maps', '이동', median(base.map(r=>r.visited)), 4, 6);
@@ -301,7 +300,7 @@ export function evaluateCriteria(out: Batch, runs = C.runs): Criterion[] {
 export function criteriaTable(checks: Criterion[]): string {
   const bound = (n: number) => n===Infinity?'∞':n===-Infinity?'−∞':round(n);
   return table('§13.2 기준별 판정', ['영역','ID','판정','값','범위','근거'],checks.map(c=>[
-    c.area,c.id,c.status+(c.status==='ESTIMATE'?` (${c.within?'within':'outside'})`:''),round(c.value)+c.unit,
+    c.area,c.id,c.status,round(c.value)+c.unit,
     `${bound(c.min)}..${bound(c.max)}${c.unit}`,c.detail]));
 }
 
@@ -366,7 +365,7 @@ if (isMainThread && process.argv[1] && import.meta.url === pathToFileURL(process
     const policies = (process.env.SIM_POLICIES ? process.env.SIM_POLICIES.split(',') : undefined) as PolicyId[] | undefined;
     const out = await simulate(runs, undefined, policies);
     const criteria = evaluateCriteria(out, runs);
-    console.log('T15 hard gates; timing estimates only (T24). Planned = all except drifter/random. No-bank blocks loans, repayments and mortgages; automatic shortfall debt remains an engine obligation. Income excludes capital transfers; spending includes housing/family upkeep. Promotion intervals are observational, not matched cohorts.');
+    console.log('T24 hard gates; timing fails without a current six-map browser measurement. Planned = all except drifter/random. No-bank blocks loans, repayments and mortgages; automatic shortfall debt remains an engine obligation. Income excludes capital transfers; spending includes housing/family upkeep. Promotion intervals are observational, not matched cohorts.');
     console.log(reportTables(out.base,out.single,out.noBank));
     console.log(criteriaTable(criteria));
     console.log(`Before age 45, any graded ability at S (excluding stamina): ${rate(out.base,r=>r.earlyS)}; §13.3 action ability gains are globally scaled to 85%.`);
@@ -375,7 +374,7 @@ if (isMainThread && process.argv[1] && import.meta.url === pathToFileURL(process
     const complete = out.base.length === runs*POLICY_IDS.length && out.single.length === out.base.length && out.noBank.length === out.base.length;
     console.log(`life simulation: ${out.base.length}/${runs*POLICY_IDS.length} base, ${out.single.length} single, ${out.noBank.length} no-bank; stuck/crashes=${out.failures.length}; elapsed=${round((performance.now()-started)/1000)}s`);
     const failed = criteria.filter(c => c.status === 'FAIL');
-    console.log(`life balance: ${criteria.filter(c=>c.status==='PASS').length} passed, ${failed.length} failed, ${criteria.filter(c=>c.status==='ESTIMATE').length} timing estimates (T24)`);
+    console.log(`life balance: ${criteria.filter(c=>c.status==='PASS').length} passed, ${failed.length} failed, timing measured-backed (missing/stale = FAIL)`);
     if (!complete || out.failures.length || failed.length) process.exitCode = 1;
   } catch (error) { console.error(error); process.exitCode = 1; }
 }

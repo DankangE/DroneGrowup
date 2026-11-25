@@ -5,7 +5,7 @@ import { TRACKS } from '../../life/tracks.ts';
 import type { GameState } from '../../life/types.ts';
 import { childLabel, featLabels, graduateLine, humanCopy } from './polish-model.ts';
 import { MAPS } from '../../life/world.ts';
-import { ABILITY_STATS, COPY, LIFE_COPY as L, LIFE_TABS } from './data.ts';
+import { ABILITY_STATS, COPY, LIFE_COPY as L, LIFE_TABS, SETTINGS_COPY } from './data.ts';
 import type { LifeTab } from './data.ts';
 
 /** Optional read-only lifeSummary output. No valuation, pay or ending rules live in the UI. */
@@ -30,6 +30,7 @@ export function lifeTabs(state: GameState, summary: LifeSummaryView = {}): LifeT
   ];
   const feats = summary.feats ?? featLabels(state);
   const content: Record<LifeTab, string[]> = {
+    settings: [SETTINGS_COPY.body],
     ability: [L.field('체력', `${state.s.stamina}/${derived(state).capStamina}`), L.field(STAT_LABEL.happy, state.s.happy),
       ...ABILITY_STATS.map(stat => L.grade(STAT_LABEL[stat], grade(stat, state.s[stat])!.letter, state.s[stat])),
       L.field(STAT_LABEL.fans, state.s.fans)],

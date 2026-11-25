@@ -1,7 +1,7 @@
 import { tileIcon } from '../icons.ts';
 import { button, el } from '../../ui/dom.ts';
 import { jobPortrait, placeArt } from '../art.ts';
-import { COPY, PHONE_TABS, POPUP_RULES } from './data.ts';
+import { COPY, PHONE_TABS, POPUP_RULES, SETTINGS_COPY } from './data.ts';
 import type { LifeTab, PhoneTab } from './data.ts';
 import { choicePage, shortTitle, textPages } from './model.ts';
 import type { PopupModel } from './model.ts';
@@ -20,6 +20,7 @@ export { mountEnding, mountEndingCollection, endingModel, collectionModel } from
 export type PopupActions = {
   choose: (id: string) => void; dismiss: () => void;
   phoneTab?: (tab: PhoneTab) => PopupModel; returnFocus?: HTMLElement; navigation?: HTMLElement;
+  settings?: { tilt: () => boolean; toggleTilt: () => void };
 };
 
 /** Mount in the shell's options slot; the caller owns choose(state, id) and subsequent rendering.
@@ -89,7 +90,17 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
       else if (!reading && !card) copy.append(model.track && ['job', 'review'].includes(model.kind)
         ? jobPortrait(model.track) : placeArt(model.place));
     }
-    if (structured) copy.append(displayRows(rowPages[copyPage]));
+    if (selectedTab?.id === 'settings' && actions.settings) {
+      const settings = actions.settings;
+      const toggle = button('', '', () => {
+        settings.toggleTilt(); render(false);
+        panel.querySelector<HTMLElement>('[data-action="toggle-tilt"]')?.focus({ preventScroll: true });
+      }, 'toggle-tilt');
+      toggle.setAttribute('role', 'switch'); toggle.setAttribute('aria-checked', String(settings.tilt()));
+      toggle.setAttribute('aria-label', SETTINGS_COPY.tilt);
+      toggle.textContent = `${SETTINGS_COPY.tilt} · ${settings.tilt() ? SETTINGS_COPY.on : SETTINGS_COPY.off}`;
+      copy.append(toggle);
+    } else if (structured) copy.append(displayRows(rowPages[copyPage]));
     else {
       const text = el('p', '', (pages as string[])[copyPage]); text.setAttribute('aria-live', 'polite'); copy.append(text);
     }

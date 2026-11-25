@@ -170,7 +170,7 @@ test('F1 phone and my-life navigation mount T19 views and use engine service for
   close(root); assert.equal(panelAt(root).dataset.popup, 'phone'); close(root);
   controls(root).find(node => node.dataset.nav === 'life')!.fire('click');
   assert.equal(panelAt(root).dataset.popup, 'my-life');
-  assert.deepEqual(controls(root).filter(node => node.dataset.tab).map(node => node.dataset.tab), ['ability', 'career', 'family', 'assets', 'records']);
+  assert.deepEqual(controls(root).filter(node => node.dataset.tab).map(node => node.dataset.tab), ['ability', 'career', 'family', 'assets', 'records', 'settings']);
 }));
 
 test('F1 popup choices and Escape result exits finish a season on all six maps', () => app((root, api) => {

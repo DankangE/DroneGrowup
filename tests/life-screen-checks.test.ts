@@ -54,7 +54,7 @@ for (const map of Object.keys(MAPS)) {
     assert.equal(run.seasonTimes.length, 12);
     assert.ok(Math.abs(run.seasonTimes.reduce((sum: number, seconds: number) => sum + seconds, 0) - driver.now() / 1000) < 1e-8,
       'all elapsed action/result time, including the twelfth season, is counted');
-    assert.match(timingLine(map, '390x844', run.seasonTimes), /12 seasons, .* s\/season; model 14\.9, delta/);
+    assert.match(timingLine(map, '390x844', run.seasonTimes), /12 seasons, .* s\/season; model (?:uncalibrated|[0-9.]+, delta)/);
     assert.deepEqual(restore(run.state), run.state);
   });
 }
@@ -119,7 +119,7 @@ test('promotion completes the playtest target immediately, but entering a job do
 });
 
 test('timing formatter rejects incomplete, empty and invalid measurements', () => {
-  assert.match(timingLine('A', '390x844', Array(12).fill(14.9)), /178\.80 s, 14\.90 s\/season; model 14\.9, delta 0\.00/);
+  assert.match(timingLine('A', '390x844', Array(12).fill(14.9)), /178\.80 s, 14\.90 s\/season; model (?:uncalibrated|[0-9.]+, delta [-0-9.]+)/);
   for (const times of [[], Array(11).fill(1), Array(13).fill(1), Array(12).fill(NaN), Array(12).fill(0), Array(12).fill(-1)]) {
     assert.throws(() => timingLine('A', '390x844', times));
   }

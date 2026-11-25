@@ -1,5 +1,5 @@
 export const POPUP_RULES = { pageSize: 3, sheetPercent: 55, textPage: 72, readingPage: 240, resultPage: 180, titleLength: 18,
-  notificationHeight: 240, dockGap: 6 } as const;
+  notificationHeight: 240, dockGap: 6, enterMs: 180 } as const;
 export const ABILITY_STATS = ['skill', 'theory', 'xp', 'rep', 'net', 'teach', 'biz', 'support'] as const;
 export const CHAPTER_COPY: Record<string, string> = {
   중년기: '직업의 성장과 가족, 주거 계획을 돌아봅니다.',
@@ -41,7 +41,8 @@ export const POPUP_GROUPS: readonly (readonly PopupKind[])[] = [
   ['shop'], ['estate'], ['wedding'], ['education'], ['biz'], ['fund'], ['luck'], ['transfer'],
   ['phone'], ['my-life'], ['year-end'], ['chapter'], ['retirement'],
 ];
-export const LIFE_TABS = { ability: '능력', career: '직업', family: '가족과 집', assets: '자산', records: '기록' } as const;
+export const LIFE_TABS = { ability: '능력', career: '직업', family: '가족과 집', assets: '자산', records: '기록', settings: '설정' } as const;
+export const SETTINGS_COPY = { tilt: '기울임 보기', on: '켜짐', off: '꺼짐', body: '보드를 기울여 봅니다. 설정은 이 브라우저에 저장돼요.' } as const;
 export type LifeTab = keyof typeof LIFE_TABS;
 export const LIFE_COPY = {
   status: { student: '학생', jobless: '구직 중', working: '재직 중', retired: '은퇴' },

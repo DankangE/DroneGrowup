@@ -4,6 +4,68 @@ import { el, svg } from '../ui/dom.ts';
 import { tileIcon } from './icons.ts';
 
 export const GRID = { columns: 7, rows: 9 } as const;
+export const TILT = { degrees: 28, perspective: 6000, clearance: 2 } as const;
+
+/** Inverse-project tile centers above the tilted plane, then counter-rotate the
+ * upright DOM tiles (including pawn/buildings). Their screen targets remain
+ * square, disjoint and at the original grid coordinates, even on 360px phones.
+ */
+export function uprightTile(x: number, y: number, height: number) {
+  const radians = TILT.degrees * Math.PI / 180;
+  const sin = Math.sin(radians), cos = Math.cos(radians);
+  // Counter-rotation puts the bottom corners behind the board unless lifted.
+  // Lift the whole tile (including its flattened face/art/labels/pawn) so the
+  // board cannot occlude either its pixels or its native pointer target.
+  const lift = height / 2 * sin + TILT.clearance;
+  // Solve with dz = lift * scale: after the board rotation, Y = y * scale
+  // and Z = perspective * (1 - scale), preserving the original screen square.
+  const scale = cos / (cos + (y * sin + lift) / TILT.perspective);
+  const planeY = scale * (y + lift * sin) / cos;
+  return { dx: x * scale - x, dy: planeY - y, dz: lift * scale, scale };
+}
+export function setBoardTilt(frame: HTMLElement, enabled: boolean): void {
+  const grid = frame.querySelector<HTMLElement>('[data-map]')!;
+  grid.className = `life2-board${enabled ? ' life2-board-tilted' : ''}`;
+  if (!enabled || !grid.offsetWidth) return;
+  // Layout dimensions, not projected bounding boxes. No custom pointer math:
+  // native DOM hit-testing uses these same inverse-projected tile transforms.
+  for (const tile of grid.querySelectorAll<HTMLElement>('[data-space]')) {
+    const { dx, dy, dz, scale } = uprightTile(tile.offsetLeft + tile.offsetWidth / 2 - grid.offsetWidth / 2,
+      tile.offsetTop + tile.offsetHeight / 2 - grid.offsetHeight / 2, tile.offsetHeight);
+    tile.style.setProperty('--upright-x', `${dx}px`); tile.style.setProperty('--upright-y', `${dy}px`);
+    tile.style.setProperty('--upright-z', `${dz}px`);
+    tile.style.setProperty('--upright-scale', String(scale));
+  }
+}
+export const TILT_STYLE = `
+.life2 .life2-board-tilted {
+  --cell:min(calc((100cqw - 24px) / 7),calc((100cqh - 16px) / 9),72px);
+  isolation:auto; transform-style:preserve-3d;
+  transform:perspective(${TILT.perspective}px) rotateX(${TILT.degrees}deg);
+}
+.life2 .life2-board-tilted .life2-tile,.life2 .life2-board-tilted .life2-tile:active {
+  transform:translate3d(var(--upright-x,0px),var(--upright-y,0px),var(--upright-z,0px)) rotateX(-${TILT.degrees}deg) scale(var(--upright-scale,1));
+  transform-style:flat;
+  background:transparent; border-color:transparent; box-shadow:none;
+}
+/* Tilt the tile face while its readable content and native target stand upright. */
+.life2 .life2-board-tilted .life2-tile::before { content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background:var(--face,#fff9eb); border:1px solid #80758b; border-radius:6px; box-shadow:0 3px 0 #80758b;
+  transform:rotateX(${TILT.degrees}deg); }
+.life2 .life2-board-tilted [data-kind=station] { --face:#d8e9ff; }
+.life2 .life2-board-tilted [data-kind=rankup] { --face:#f1dfff; }
+.life2 .life2-board-tilted [data-kind=pay],.life2 .life2-board-tilted [data-kind=start] { --face:#ffe39b; }
+.life2 .life2-board-tilted [aria-current] { --face:#c5efdf; }
+.life2 .life2-board-tilted [data-dest] { --face:#e8dcff; }
+.life2 .life2-board-tilted [aria-current]::before,.life2 .life2-board-tilted [data-dest]::before { border:2px solid #6c3ec4; }
+.life2 .life2-board-tilted .life2-paths,.life2 .life2-board-tilted .life2-preview {
+  transform-origin:center; transform-box:border-box; transform:rotateX(-${TILT.degrees}deg);
+}
+/* Animate the transfer overlay only: board opacity would flatten its 3D children. */
+.life2[data-phase=transfer] .life2-board-tilted { animation:none; }
+/* Static tilt is intentional. No camera transition, also with reduced motion. */
+@media(prefers-reduced-motion:reduce) { .life2 .life2-board-tilted { transition:none; animation:none; } }
+`;
 export const KINDS: Record<SpaceKind, string> = {
   start: '출발', pay: '월급', train: '배움', job: '일감',
   contest: '대회', event: '사건', rest: '휴식', rankup: '심사',

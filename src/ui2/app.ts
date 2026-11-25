@@ -3,7 +3,7 @@ import type { OptionView } from '../life/flow.ts';
 import type { GameState } from '../life/types.ts';
 import { PLACES, WORLD } from '../life/world.ts';
 import { button, el, reducedMotion } from '../ui/dom.ts';
-import { board, KINDS } from './board.ts';
+import { board, KINDS, setBoardTilt, TILT_STYLE } from './board.ts';
 import { POLISH as P } from './popups/polish-data.ts';
 import { POLISH_STYLE } from './popups/polish-style.ts';
 import { tileIcon } from './icons.ts';
@@ -18,7 +18,7 @@ import type { PopupModel } from './popups/index.ts';
 import { resultPopups } from './popups/presentation.ts';
 import { COPY } from './popups/data.ts';
 import { mountEnding, mountEndingCollection } from './popups/ending.ts';
-import { loadLifeRun, loadLifeMeta, mergeLifeMeta, saveLifeRun, recordLifeEnding, migrateLifeSave, V1_NOTICE } from '../save.ts';
+import { loadLifeRun, loadLifeMeta, mergeLifeMeta, saveLifeRun, recordLifeEnding, migrateLifeSave, V1_NOTICE, loadLifeSettings, saveLifeSettings } from '../save.ts';
 import { PLATFORM, bootPlatform, sessionOk, runStatus } from '../platform.ts';
 
 const DESTINATION_PAGE_SIZE = 1;
@@ -34,6 +34,7 @@ declare global {
 
 export function mountLife(root: HTMLElement, seed: number, debug = false): void {
   let state = newGame(seed), page = 0;
+  let settings = loadLifeSettings();
   let meta: ReturnType<typeof loadLifeMeta>;
   const collection = () => mergeLifeMeta(meta, loadLifeMeta());
   let ready = false, atTitle = false, notice = false, startedAt = performance.now();
@@ -161,10 +162,14 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     panel.append(heading, list, pager);
     if (pages === 1) { pager.hidden = true; panel.dataset.singlePage = ''; }
     shell.append(bands.top, map, panel, bands.bottom);
-    const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE + POLISH_STYLE);
+    const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE + POLISH_STYLE + TILT_STYLE);
     root.replaceChildren(style, shell);
+    setBoardTilt(map, settings.tilt);
     if (model && !dismissed) {
       mountPopup(panel, model, { choose: takeOption, returnFocus: heading, navigation: bands.bottom,
+        settings: { tilt: () => settings.tilt, toggleTilt: () => {
+          settings = { tilt: !settings.tilt }; saveLifeSettings(settings); setBoardTilt(map, settings.tilt);
+        } },
         dismiss: () => {
           if (menu) menu = undefined;
           else if (pending.length) menu = pending.shift()!.resume;
@@ -216,6 +221,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     },
   };
   const start = () => {
+    settings = loadLifeSettings();
     notice = migrateLifeSave(); meta = loadLifeMeta(); state = loadLifeRun() ?? newGame(seed); ready = true;
     if (notice) showTitle(); else render();
   };

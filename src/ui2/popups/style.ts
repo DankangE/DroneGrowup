@@ -7,7 +7,7 @@ export const POPUP_STYLE = `
   padding:8px; border:2px solid #3a2861; border-radius:16px 16px 8px 8px;
   background:#fff6e0; color:#2b2440; display:grid; gap:6px;
   grid-template-rows:44px 80px minmax(0,1fr) 44px; min-width:0;
-  font:600 12px/16px system-ui,sans-serif; animation:life2-sheet-in .18s ease-out;
+  font:600 12px/16px system-ui,sans-serif; animation:life2-sheet-in ${POPUP_RULES.enterMs}ms ease-out;
 }
 .life2 .life2-popup * { box-sizing:border-box; min-width:0; }
 .life2 .life2-popup button { min-width:44px; min-height:44px; font:700 12px/16px system-ui,sans-serif;

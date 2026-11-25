@@ -86,6 +86,7 @@ export function pagingChecks(page, check, activate = control => control.click())
     return controls();
   };
   return {
+    prepare, dismissResults,
     async checkPages(name) {
       await prepare(name);
       // A prior audit leaves the pager at its end. Always include earlier pages
@@ -153,6 +154,58 @@ export async function keyboardActivate(page, control, key = 'Enter') {
     await page.keyboard.press('Tab');
   }
   await page.keyboard.press(key);
+}
+
+/** Reuse the live my-life sheet; keys mode never uses a mouse or direct focus. */
+export async function toggleTilt(page, check, keyboard = false) {
+  const activate = control => keyboard ? keyboardActivate(page, control) : control.click();
+  const before = await page.evaluate(() => window.__life.state());
+  await activate(page.locator('[data-nav=life]'));
+  await activate(page.locator('[data-tab=settings]'));
+  await check('settings before tilt');
+  const toggle = page.locator('[data-action=toggle-tilt]');
+  const enabled = await toggle.getAttribute('aria-checked') !== 'true';
+  await activate(toggle);
+  assert.equal(await toggle.getAttribute('aria-checked'), String(enabled));
+  assert.equal(await page.locator('.life2-board-tilted').count(), Number(enabled));
+  await check('settings after tilt');
+  await activate(page.locator('[data-action=popup-close]'));
+  assert.deepEqual(await page.evaluate(() => window.__life.state()), before, 'settings never choose or consume RNG');
+}
+
+async function tiltChecks(page, load, check) {
+  const starter = choose(newGame(1), 'start:school').state;
+  await load(starter); await toggleTilt(page, check, true);
+  await page.reload(); await page.waitForFunction(() => window.__life);
+  await page.evaluate(() => document.fonts.ready);
+  assert.equal(await page.locator('.life2-board-tilted').count(), 1, 'tilt persists across reload');
+  for (const motion of ['reduce', 'no-preference']) {
+    await page.emulateMedia({ reducedMotion: motion });
+    for (const map of Object.keys(MAPS)) {
+      const state = structuredClone(starter);
+      state.board.pos = `${map}-o0`; state.board.step = 'pick'; state.board.dice = [6, 6];
+      await load(state); await check(`tilt ${map} ${motion}`);
+      const ids = await page.locator('[data-space][data-dest]').evaluateAll(tiles => tiles.map(tile => tile.dataset.space));
+      assert.ok(ids.length, 'tilted map offers native board buttons');
+      for (const id of ids) {
+        await load(state);
+        const tile = page.locator(`[data-space="${id}"][data-dest]`);
+        assert.equal(await tile.evaluate(node => {
+          const box = node.getBoundingClientRect();
+          return node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+        }), true, `${id}: projected center hits its own tile`);
+        await tile.click();
+        // movementChecks froze browser timers: step them so the move animation can finish.
+        if (motion === 'no-preference') await page.clock.runFor(5000);
+        await page.waitForFunction(() => !document.querySelector('[data-action=skip-move]'));
+        assert.deepEqual(await page.evaluate(() => window.__life.state()), choose(state, `go:${id}`).state,
+          `${id}: native click reaches the expected engine destination`);
+      }
+    }
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await load(starter); await toggleTilt(page, check, true); await check('tilt off');
+  console.log('  T24: settings persistence, six tilted maps, native destination clicks, both motion preferences; all size/scroll gates retained');
 }
 
 async function movementChecks(page, load, check) {
@@ -656,6 +709,7 @@ async function main() {
         await fix3Checks(page, load, check);
         await fix4Checks(page, load, check);
         await fix5Checks(page, load, check);
+        await tiltChecks(page, load, check);
         const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];
         assertPopupCoverage(popupKinds);
         // Fixture choices autosave. Entry checks need a fresh run, independent of the last fixture.

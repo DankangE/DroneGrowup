@@ -24,7 +24,7 @@ const check = (out: Batch, id: string, runs = 1) => evaluateCriteria(out, runs).
 test('every hard gate uses inclusive raw bounds, rejects nonfinite values and fails immediately outside its bounds', () => {
   const rows = evaluateCriteria(sample(), 1);
   assert.ok(rows.length >= 120); assert.equal(new Set(rows.map(c => c.id)).size, rows.length);
-  for (const row of rows.filter(c => c.status !== 'ESTIMATE')) {
+  for (const row of rows) {
     for (const n of [NaN, Infinity, -Infinity]) assert.equal(criterion(row.id, row.area, n, row.min, row.max).status, 'FAIL');
     if (Number.isFinite(row.min)) {
       assert.equal(criterion(row.id, row.area, row.min, row.min, row.max).status, 'PASS');
@@ -47,15 +47,14 @@ test('every hard gate uses inclusive raw bounds, rejects nonfinite values and fa
   ] as const) assert.deepEqual([check(sample(), id).min, check(sample(), id).max], [min, max], id);
 });
 
-test('all 14 areas, target policies, 19 careers and 21 endings have separate gates; only time is deferred', () => {
+test('all 14 areas, target policies, 19 careers and 21 endings have separate gates; time also fails closed', () => {
   const rows = evaluateCriteria(sample(), 1);
   assert.equal(new Set(rows.map(c => c.area)).size, 14);
   assert.equal(rows.filter(c => c.id.startsWith('career:seen:')).length, 19);
   assert.equal(rows.filter(c => c.id.startsWith('career:top:')).length, 14);
   assert.equal(rows.filter(c => c.id.startsWith('ending:')).length, 21);
-  assert.equal(rows.filter(c => c.status === 'ESTIMATE').length, 20);
-  assert.ok(rows.filter(c => c.status === 'ESTIMATE').every(c => c.area === '시간'));
-  assert.match(criteriaTable(rows), /ESTIMATE/); assert.match(criteriaTable(rows), /FAIL/);
+  assert.equal(rows.filter(c => c.id.startsWith('time:')).length, 20);
+  assert.doesNotMatch(criteriaTable(rows), /ESTIMATE/); assert.match(criteriaTable(rows), /FAIL/);
 });
 
 test('completion checks sample identities, all experiments, action limits, forbidden banking and crashes', () => {
