@@ -2,13 +2,12 @@
 // all luck comes from the seeded generator stored in the state, so a seed plus a list of choices replays a run.
 import { ACTIONS, ENDINGS, EVENTS, FLAG_LABEL, ITEMS, LOAN_STEPS, REST_LIGHT, RULES, STAGES, STAT_LABEL, STAT_MAX, WIND_DOWN_NOTE } from './data.ts';
 import type {
-  ActionDef, Choice, Cond, Derived, Effect, EndingDef, EndingId, EventDef, GameState, ItemKind, OptionKind, OptionView,
+  ActionDef, BranchForecast, BranchId, Choice, Cond, Derived, Effect, EndingDef, EndingId, EventDef, Forecast, GameState, ItemKind, OptionKind, OptionView,
   OutcomeView, PlaceId, Result, Stage, Stat, StatMap, UpkeepLine,
 } from './types.ts';
 
 const STATS = Object.keys(STAT_LABEL) as Stat[];
 const ITEM_KINDS: ItemKind[] = ['drone', 'gear', 'car'];
-const HIDDEN_IN_SUMMARY: Stat[] = ['acts', 'flights', 'crashes', 'wins', 'losses', 'overdue'];
 const LOG_MAX = 30;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -50,9 +49,11 @@ function settle(state: GameState) {
 function applyEffect(state: GameState, effect: Effect, add: StatMap) {
   for (const [k, v] of entries(add)) setStat(state, k, state.s[k] + v);
   for (const [k, v] of entries(effect.set)) setStat(state, k, v);
-  if (effect.flag && !state.flags.includes(effect.flag)) state.flags.push(effect.flag);
+  const flag = effect.flag && !state.flags.includes(effect.flag) ? effect.flag : undefined;
+  if (flag) state.flags.push(flag);
   if (effect.stage) state.stage = effect.stage;
   settle(state);
+  return flag;
 }
 
 const itemValue = (state: GameState) => ITEM_KINDS.reduce((sum, kind) => {
@@ -146,26 +147,11 @@ const met = (state: GameState, cond: Cond | undefined) => unmet(state, cond).loc
 
 /** 12345 -> "12,345" (hand-rolled: toLocaleString is slow enough to dominate the simulation). */
 export const num = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-const won = (n: number) => `${n > 0 ? '+' : ''}${num(n)}만원`;
-
-function summarize(add: StatMap, effect: Effect): string {
-  const parts: string[] = [];
-  if (add.money) parts.push(won(add.money));
-  for (const [k, v] of entries(add)) {
-    if (k === 'money' || v === 0 || HIDDEN_IN_SUMMARY.includes(k)) continue;
-    parts.push(`${STAT_LABEL[k]} ${v > 0 ? '+' : ''}${num(v)}`);
-  }
-  if (effect.set?.cond === 100) parts.push('기체 상태 회복');
-  if (effect.flag) parts.push(`${FLAG_LABEL[effect.flag] ?? effect.flag} 획득`);
-  if (effect.stage) parts.push(`→ ${STAGES[effect.stage].name}`);
-  if (effect.end) parts.push(`엔딩: ${endingInfo(effect.end).title}`);
-  return parts.join(' · ') || '변화 없음';
-}
 
 function outcome(state: GameState, effect: Effect, payPct: number): OutcomeView {
   const add: StatMap = { ...effect.add };
   if (add.money && add.money > 0 && payPct !== 100) add.money = Math.floor((add.money * payPct) / 100);
-  return { text: effect.text, add, summary: summarize(add, effect), stage: effect.stage !== state.stage ? effect.stage : undefined, end: effect.end };
+  return { text: effect.text, add, stage: effect.stage !== state.stage ? effect.stage : undefined, end: effect.end };
 }
 
 export function staminaBand(state: GameState): 'fresh' | 'normal' | 'tired' | 'exhausted' {
@@ -328,9 +314,13 @@ function endSeason(state: GameState, result: Result, rest: number, auto: boolean
   const from = dateLabel(state.turn);
   const lines = upkeepLines(state);
   const total = lines.reduce((sum, l) => sum + l.amount, 0);
-  result.upkeep = { lines, total };
+  const balance = state.s.money - state.s.debt;
   state.s.money += total;
   settle(state);
+  // Near the saved-stat ceiling, only part of a shortfall can become debt.
+  const applied = state.s.money - state.s.debt - balance;
+  if (applied !== total) lines.push({ label: '부채 상한 조정', amount: applied - total });
+  result.upkeep = { lines, total: applied };
   if (state.stage === 'academy') {
     const seated = Math.min(state.s.students, academySeats(state));
     setStat(state, 'students', seated - Math.max(1, Math.floor(seated / RULES.academy.leaveDiv)));
@@ -359,70 +349,122 @@ function endSeason(state: GameState, result: Result, rest: number, auto: boolean
   }
 }
 
-/** Plays one option on a copy of the state. Throws when the option is not offered or is disabled. */
-export function choose(prev: GameState, optionId: string): { state: GameState; result: Result } {
-  const r = resolve(prev).get(optionId);
-  if (!r) throw new Error(`option not available: ${optionId}`);
-  const v = view(prev, optionId, r.kind, r.place, r.choice, r.flight);
-  if (!v.enabled) throw new Error(`option disabled: ${optionId} (${v.locks.join(', ')})`);
+function resolveOption(state: GameState, id: string) {
+  const r = resolve(state).get(id);
+  if (!r) throw new Error(`option not available: ${id}`);
+  return { r, v: view(state, id, r.kind, r.place, r.choice, r.flight) };
+}
 
-  const state: GameState = structuredClone(prev);
+function diff(before: GameState['s'], after: GameState['s']): StatMap {
+  const deltas: StatMap = {};
+  for (const k of STATS) if (after[k] !== before[k]) deltas[k] = after[k] - before[k];
+  return deltas;
+}
+
+/** Both callers supply a private state and the view priced at the original stamina/condition. */
+function applyBranch(state: GameState, before: GameState['s'], r: Resolved, v: OptionView, branch: BranchId): Result {
   const s = state.s;
-  const before = { ...s };
-  const result: Result = { optionId, title: v.title, place: v.place, free: v.free, text: '', deltas: {}, crashed: false, notes: [], stageFrom: prev.stage, stageTo: prev.stage };
-  let picked: { effect: Effect; view: OutcomeView };
+  const success = branch === 'success';
+  const crashed = branch === 'crash';
+  const side = success ? 'success' : 'fail';
+  const effect = branch === 'sure' ? r.choice.effect! : r.choice.roll![side];
+  const outcome = branch === 'sure' ? v.sure! : v.roll![side];
+  const result: Result = { optionId: v.id, title: v.title, place: v.place, free: v.free, text: effect.text,
+    deltas: {}, crashed, notes: [], stageFrom: state.stage, stageTo: state.stage };
 
   s.money -= v.cost;
-  s.stamina -= v.tire;
-  if (r.choice.roll && v.roll) {
-    const value = randInt(state, 100);
-    const success = value < v.roll.chance;
-    result.roll = { chance: v.roll.chance, value, success };
+  s.stamina = Math.max(0, s.stamina - v.tire);
+  if (branch !== 'sure') {
     s[success ? 'wins' : 'losses'] += 1;
-    picked = success ? { effect: r.choice.roll.success, view: v.roll.success } : { effect: r.choice.roll.fail, view: v.roll.fail };
     if (r.flight) {
       const f = RULES.flight;
       s.flights += 1;
       setStat(state, 'cond', s.cond - f.wear);
-      if (!success && randInt(state, 100) < (v.roll.crashPct ?? 0)) {
-        result.crashed = true;
+      if (crashed) {
         s.crashes += 1;
         setStat(state, 'drone', s.drone - 1);
         s.cond = f.crashCond;
         result.notes.push(s.drone > 0 ? '기체가 추락해 크게 부서졌다. 드론 등급이 한 단계 내려갔다.' : '기체가 추락해 전손됐다. 드론을 잃었다.');
       } else if (!success) setStat(state, 'cond', s.cond - f.failWear);
     }
-  } else {
-    picked = { effect: r.choice.effect!, view: v.sure! };
   }
-  applyEffect(state, picked.effect, picked.view.add);
-  result.text = picked.effect.text;
+  const flag = applyEffect(state, effect, outcome.add);
+  if (flag) result.flag = flag;
   result.stageTo = state.stage;
-  for (const k of STATS) if (s[k] !== before[k]) result.deltas[k] = s[k] - before[k];
-  state.log.push({ turn: state.turn, text: `${v.title} — ${result.text}`, tone: result.roll ? (result.roll.success ? 'good' : 'bad') : 'info' });
+  state.log.push({ turn: state.turn, text: `${v.title} — ${result.text}`, tone: branch === 'sure' ? 'info' : success ? 'good' : 'bad' });
   for (const note of result.notes) state.log.push({ turn: state.turn, text: note, tone: 'bad' });
 
+  let endsSeason = false;
   if (state.phase === 'event') {
     state.phase = 'action';
     state.eventId = null;
-  } else if (optionId === 'rest') {
-    endSeason(state, result, s.stamina - before.stamina, false); // the gain actually received, after the cap
+  } else if (v.id === 'rest') {
+    endsSeason = true;
   } else if (!v.free) {
     setStat(state, 'acts', s.acts + 1);
-    if (picked.effect.end) {
+    if (effect.end) {
       state.turn += 1;
-      finish(state, picked.effect.end, true);
-    } else if (!ACTIONS.some(a => a.id !== 'rest' && (a.tire ?? 0) <= s.stamina && met(state, a.when))) {
-      const tired = s.stamina;
-      setStat(state, 'stamina', tired + RULES.rest.light);
+      finish(state, effect.end, true);
+    } else {
+      endsSeason = !ACTIONS.some(a => a.id !== 'rest' && (a.tire ?? 0) <= s.stamina && met(state, a.when));
+    }
+  }
+  result.deltas = diff(before, s);
+  if (endsSeason) {
+    const afterOption = { ...s };
+    const auto = v.id !== 'rest';
+    let rest = s.stamina - before.stamina;
+    if (auto) {
+      setStat(state, 'stamina', s.stamina + RULES.rest.light);
+      rest = s.stamina - afterOption.stamina;
       result.notes.push(WIND_DOWN_NOTE);
       state.log.push({ turn: state.turn, text: WIND_DOWN_NOTE, tone: 'info' });
-      endSeason(state, result, s.stamina - tired, true);
     }
+    endSeason(state, result, rest, auto);
+    result.settle = { deltas: diff(afterOption, s) };
   }
   if (state.ending) result.ended = state.ending;
   if (state.log.length > LOG_MAX) state.log.splice(0, state.log.length - LOG_MAX);
+  return result;
+}
+
+/** Plays one option on a copy of the state. Throws when the option is not offered or is disabled. */
+export function choose(prev: GameState, optionId: string): { state: GameState; result: Result } {
+  const { r, v } = resolveOption(prev, optionId);
+  if (!v.enabled) throw new Error(`option disabled: ${optionId} (${v.locks.join(', ')})`);
+  const state: GameState = structuredClone(prev);
+  let branch: BranchId = 'sure';
+  let roll: Result['roll'];
+  if (v.roll) {
+    const value = randInt(state, 100);
+    const success = value < v.roll.chance;
+    roll = { chance: v.roll.chance, value, success };
+    branch = success ? 'success' : 'fail';
+    if (!success && r.flight && randInt(state, 100) < (v.roll.crashPct ?? 0)) branch = 'crash';
+  }
+  const result = applyBranch(state, prev.s, r, v, branch);
+  if (roll) result.roll = roll;
   return { state, result };
+}
+
+/** Preview even locked choices. Any season/event RNG draws happen on the branch's private copy. */
+export function forecast(prev: GameState, optionId: string): Forecast {
+  const { r, v } = resolveOption(prev, optionId);
+  const ids: BranchId[] = v.roll ? ['success', 'fail'] : ['sure'];
+  if (v.roll?.crashPct) ids.push('crash');
+  const branches = ids.map((id): BranchForecast => {
+    const state = { ...prev, s: { ...prev.s }, flags: [...prev.flags], seen: { ...prev.seen }, log: [...prev.log] };
+    const result = applyBranch(state, prev.s, r, v, id);
+    const branch: BranchForecast = { id, deltas: result.deltas, endsSeason: !!result.season };
+    if (result.flag) branch.flag = result.flag;
+    if (result.stageTo !== result.stageFrom) branch.stage = result.stageTo;
+    if (result.ended) branch.end = result.ended;
+    return branch;
+  });
+  const f: Forecast = { cost: v.cost, tire: v.tire, branches };
+  if (v.roll) f.chance = v.roll.chance;
+  if (v.roll?.crashPct !== undefined) f.crashPct = v.roll.crashPct;
+  return f;
 }
 
 // ---------------------------------------------------------------- saves

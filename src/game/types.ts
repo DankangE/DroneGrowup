@@ -115,10 +115,8 @@ export type GameState = {
 
 export type OutcomeView = {
   text: string;
-  /** Net stat changes of this outcome, cost excluded, stage pay scaling included. */
+  /** Nominal additive effect used by the bots, including stage pay scaling. */
   add: StatMap;
-  /** e.g. "+200만원 · 평판 +3". */
-  summary: string;
   stage?: Stage;
   end?: EndingId;
 };
@@ -146,6 +144,24 @@ export type OptionView = {
 
 export type UpkeepLine = { label: string; amount: number };
 
+export type BranchId = 'sure' | 'success' | 'fail' | 'crash';
+export type BranchForecast = {
+  id: BranchId;
+  /** Complete option diff, before season settlement. */
+  deltas: StatMap;
+  flag?: string;
+  stage?: Stage;
+  end?: EndingId;
+  endsSeason: boolean;
+};
+export type Forecast = {
+  cost: number;
+  tire: number;
+  chance?: number;
+  crashPct?: number;
+  branches: BranchForecast[];
+};
+
 export type Result = {
   optionId: string;
   title: string;
@@ -155,6 +171,10 @@ export type Result = {
   text: string;
   /** Net stat changes of the option itself (cost included), before upkeep. */
   deltas: StatMap;
+  /** Net changes after the option, including automatic rest, upkeep and refill. */
+  settle?: { deltas: StatMap };
+  /** A flag acquired for the first time. */
+  flag?: string;
   crashed: boolean;
   notes: string[];
   /** Present when the turn advanced. */

@@ -22,7 +22,7 @@ leave a `TODO(engine):` note at the call site and work with what exists.
 ## Engine API (read `src/game/types.ts` and `src/game/career.ts` for the exact shapes)
 
 ```ts
-import { newGame, options, choose, derived, dateLabel, currentEvent, endingInfo, num, staminaBand } from './game/engine.ts';
+import { newGame, options, forecast, choose, derived, dateLabel, currentEvent, endingInfo, num, staminaBand } from './game/engine.ts';
 import { GRADED_STATS, grade, careerRank, careerPerks, nextRanks, rankChange } from './game/career.ts';
 import { PLACES, ITEMS, ENDINGS, STAGES, STAT_LABEL, RULES, GRADES, GRADE_STEPS, CAREER } from './game/data.ts';
 ```
@@ -30,9 +30,13 @@ import { PLACES, ITEMS, ENDINGS, STAGES, STAT_LABEL, RULES, GRADES, GRADE_STEPS,
 - `newGame(seed)` → `GameState` (JSON-serialisable). Pick the seed with `crypto.getRandomValues` (or `?seed=N` in the URL).
 - `options(state)` → `OptionView[]`: everything the player may look at now. Each has `id`, `kind`
   (`action | job | event | shop | repair | bank`), `place`, `title`, `desc`, `cost`, `tire`, `free` (uses no stamina and leaves the season and its action count intact), `enabled`, `locks` (Korean reasons when disabled), and either `roll` (`chance` in %, signed `staminaPct` in percentage points, `success` and
-  `fail` outcomes with a ready-made Korean `summary`, optional `crashPct`) or `sure` (one outcome).
+  `fail` outcomes with pay-scaled `add`, optional `crashPct`) or `sure` (one outcome).
+- `forecast(state, optionId)` runs every possible branch on its own copy, including for a locked option.
+  Its `deltas` include fees, stamina, wear, sets, stat caps and cash shortfalls converted to debt.
+  Each branch includes the newly acquired flag, changed stage, ending and season-end marker when applicable.
+  `src/game/outcome-text.ts` formats the preview, chips and settlement ledger.
 - `choose(state, optionId)` → `{ state, result }`. Pure: returns a new state. `result` has the roll
-  (`chance`, `value` 0-99, `success`; success means `value < chance`), `text`, `deltas` (stat changes), `crashed`, `notes`, `upkeep` (the
+  (`chance`, `value` 0-99, `success`; success means `value < chance`), `text`, `deltas` (the option itself), `settle?.deltas` (subsequent season settlement), `flag` (newly acquired), `crashed`, `notes`, `upkeep` (the
   season’s income / cost lines on a season change), `stageFrom` / `stageTo`, `eventId` (a random event
   now waits for a choice), `ended`.
 - `state.phase`: `'action'` (pick what to do this season), `'event'` (answer `currentEvent(state)` with one of
@@ -181,17 +185,19 @@ the player plate spans the top and the tabs sit in the plate's row or under the 
      glyph with the chance ("66%") or a "확정" stamp for a sure outcome. The selected row is inked, and
      locked rows carry a lock icon. Below the list a **detail strip**
      for the picked row: title, description, for a roll the **preview wheel** (`data-wheel-preview`,
-     `data-chance`; the same wedges as the result wheel, about 56 px) beside “성공 66%”, "성공: …" and "실패: …" (the `summary` strings) and
-     "추락 위험 25%" when `crashPct` is set, for a sure outcome its `summary`, for a disabled option its
+     `data-chance`; the same wedges as the result wheel, compact on phones) beside “성공 66%”. A paid roll shows the unconditional
+     선불 line, then 성공 and 실패 with the remaining changes. 추락 시 gives the conditional crash chance
+     and replaces only the listed failed-flight changes. 확정 shows the entire sure outcome. Each branch
+     that winds down marks 계절 종료. A disabled option also shows its
      `locks`; and one large gold button: “룰렛 돌리기 · 66%” with the cost for a roll, "실행" with the cost
      otherwise. The first enabled row of a page is
      picked by default. Rows and the detail button show the up-front stamina cost beside the price
      (무료 · 체력 -14). For a nonzero stamina modifier the row and detail show 체력 여유 +4%p,
      피로 -8%p or 탈진 -20%p. The detail keeps the crash risk and lock reasons visible together.
-     Rest stays available in every action phase. Its button reads “푹 쉰다 · 체력 +60 · 계절 전체” before the
-     first action and “쉬고 계절 넘기기 · 체력 +20” afterwards. Either rest ends the season.
+     Rest stays available in every action phase. Its button shows “푹 쉰다 · 체력 +N · 계절 전체” before the
+     first action and “쉬고 계절 넘기기 · 체력 +N” afterwards. N is the actual gain after the stamina cap. Either rest ends the season.
    - **상점** — `shop` and `repair` options as upgrade cards (a grid, paged if needed): item icon, title,
-     effect / description, and the price as the button label. Marked "계절 소모 없음". Locked cards are
+     description, full sure forecast, and the price as the button label. Marked "계절 소모 없음". Locked cards are
      dimmed and show the first lock reason.
    - **은행** — `bank` options as cards in the same style, above them a debt gauge (`debt / creditLimit`).
    - **내 정보** — tabs “능력” (`data-tab="stats"`), “살림” (`data-tab="money"`) and “등급표” (`data-tab="grades"`).
@@ -214,7 +220,7 @@ outline, coloured header band) over the dimmed table. Each fits inside the viewp
   fills the frame when the file is unavailable), then one compact line of the player's standing (자금, 빚 / 한도,
   체력 number, and the grade badges of the grade strip), then the event's choices (two at most) as large
   buttons. Each button carries the
-  choice title, cost, for a roll the preview wheel with "성공 66%", and the success / fail (or sure) summaries.
+  choice title, cost, for a roll the preview wheel with "성공 66%", and the same up-front and branch lines as the action detail.
   A nonzero stamina modifier appears on the same reason line as in the action detail. Disabled choices show their locks.
 - **Result** (`data-phase="result"`): after `choose`.
   - For a roll, the **wheel** (`data-wheel`, with `data-chance`, `data-value` and, once it has stopped,
@@ -227,9 +233,10 @@ outline, coloured header band) over the dimmed table. Each fits inside the viewp
     is disabled until then. With `prefers-reduced-motion` the disc appears already stopped on the same tick and
     fades in for 150 ms. The crash roll is a second, separate roll of the engine and is reported as a note,
     not drawn on the wheel.
-  - Then, for every result: a banner 성공! / 실패 (or “확정” for a sure outcome), `result.text`, the stat deltas, including 체력, as chips (+mint / -coral; a graded stat that changed grade shows “D → C”), `notes` (추락!), the season change when present
-  (`data-season-change`: “24세 봄 → 24세 여름”, 휴식 +N when positive and 계절 회복 +N), then the “계절 결산” ledger with one
-  line per entry or a total when there are many. Auto wind-down includes the engine’s note. One "계속" button (`data-action="continue"`).
+  - Then, for every result: a banner 성공! / 실패 (or “확정” for a sure outcome), `result.text`, the non-bookkeeping option deltas as chips (+mint / -coral; a graded stat that changed grade shows “D → C”), `notes` (추락!), the season change when present
+  (`data-season-change`: “24세 봄 → 24세 여름”, 휴식 +N for automatic rest and 계절 회복 +N). Voluntary rest is in the option chips.
+  The “계절 결산” ledger shows each entry or 합계 above three entries, plus tokens for any new debt,
+  lost students, company growth or other visible settlement change. Auto wind-down includes the engine’s note. One "계속" button (`data-action="continue"`).
 - **Rank card** (`data-phase="rankup"`): after "계속" on a result whose `rankChange(before, after)` is not
   null and whose run has not ended. It covers the screen (`data-rank-card`, `data-kind="up | move"`,
   `data-rank-title`, `data-rank-level`).

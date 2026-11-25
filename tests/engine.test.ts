@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
 import { ACTIONS, ENDINGS, EVENTS, PLACES, RULES, STAGES, STAT_MAX } from '../src/game/data.ts';
-import { choose, creditLimit, dateLabel, derived, newGame, options, restore, staminaBand } from '../src/game/engine.ts';
+import { choose, creditLimit, dateLabel, derived, forecast, newGame, options, restore, staminaBand } from '../src/game/engine.ts';
 import type { GameState, Stage, StatMap } from '../src/game/types.ts';
 
 /** A fresh run moved to a stage with some stats set, as plain data (the state is JSON all the way down). */
@@ -58,8 +58,12 @@ test('the wind-turbine job shows its odds and pays +250 / -150', () => {
   assert.equal(wind.roll?.fail.add.money, -150);
   assert.ok(wind.roll!.chance >= RULES.chanceMin && wind.roll!.chance <= RULES.chanceMax);
   assert.equal(wind.roll?.crashPct, RULES.flight.crashPct);
-  assert.match(wind.roll!.success.summary, /\+250만원/);
-  assert.match(wind.roll!.fail.summary, /-150만원/);
+  const [success, fail, crash] = forecast(state, wind.id).branches;
+  assert.deepEqual([success.id, fail.id, crash.id], ['success', 'fail', 'crash']);
+  assert.deepEqual([success.deltas.cond, fail.deltas.cond, crash.deltas.cond], [-12, -27, -30]);
+  assert.equal(crash.deltas.drone, -1);
+  assert.equal(success.deltas.money, 250);
+  assert.deepEqual([fail.deltas.money, fail.deltas.debt], [-60, 90]);
 });
 
 test('stamina costs are paid before outcomes and rest recovers up to the cap', () => {
@@ -353,7 +357,7 @@ test('two actions and a bank visit stay in spring until a light rest settles it 
   const rest = option(state, 'rest');
   assert.equal(rest.title, '쉬고 계절 넘기기');
   assert.equal(rest.sure!.add.stamina, 20);
-  assert.equal(rest.sure!.summary, '체력 +20');
+  assert.equal(forecast(state, rest.id).branches[0].deltas.stamina, 20);
   const next = choose(state, rest.id);
   assert.equal(next.state.turn, 1);
   assert.equal(next.state.s.acts, 0);
@@ -370,7 +374,7 @@ test('first-action rest gives full rest followed by a capped season refill', () 
     const rest = option(state, 'rest');
     assert.equal(rest.title, '푹 쉰다');
     assert.equal(rest.sure!.add.stamina, 60);
-    assert.equal(rest.sure!.summary, '체력 +60');
+    assert.equal(forecast(state, rest.id).branches[0].deltas.stamina, Math.min(60, 100 - initial));
     const next = choose(state, rest.id);
     assert.equal(next.state.turn, 1);
     assert.equal(next.state.s.acts, 0);
@@ -447,4 +451,38 @@ test('a career-winning action keeps its early score bonus and skips season settl
     return;
   }
   assert.fail('expected a winning seed');
+});
+
+
+test('cram enrolment pays on both branches and clamps the failed stamina loss', () => {
+  const state = at('student', { stamina: 4, money: 60, theory: 998 });
+  state.phase = 'event';
+  state.eventId = 'cram';
+  const before = structuredClone(state);
+  const [success, fail] = forecast(state, 'ev:0').branches;
+  assert.equal(success.deltas.money, -60);
+  assert.equal(success.deltas.theory, 1);
+  assert.deepEqual(fail.deltas, { money: -60, stamina: -4, losses: 1 });
+  assert.deepEqual(state, before);
+  state.s.money = 5;
+  assert.equal(option(state, 'ev:0').enabled, false);
+  assert.deepEqual(forecast(state, 'ev:0').branches[1].deltas, { money: -5, debt: 55, stamina: -4, losses: 1 });
+});
+
+test('forecasts resolve sets against current values and keep wind-down and its RNG private', () => {
+  const state = at('employee', { money: 375, stamina: 30, rank: 2, support: 5, net: 150, rep: 120 }, ['licensed', 'member']);
+  const before = structuredClone(state);
+  const success = forecast(state, 'assoc_run').branches[0];
+  assert.deepEqual([success.stage, success.deltas.rank, success.deltas.support, success.endsSeason], ['director', -2, 15, true]);
+  assert.deepEqual(state, before);
+  state.phase = 'event';
+  state.eventId = 'restructure';
+  assert.equal(forecast(state, 'ev:0').branches[1].deltas.rank, -2);
+});
+
+test('a held flag is only announced on its first acquisition', () => {
+  const state = at('company', { money: 1500 });
+  assert.equal(forecast(state, 'co_rnd').branches[0].flag, 'tech');
+  state.flags.push('tech');
+  assert.equal(forecast(state, 'co_rnd').branches[0].flag, undefined);
 });

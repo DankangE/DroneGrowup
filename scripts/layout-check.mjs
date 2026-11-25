@@ -217,6 +217,18 @@ for (const [width, height] of SIZES) {
     await page.locator('.stage-toggle button', { hasText: '현장' }).click();
     await resume(event);
     await check('play-event');
+    await resume({ ...start, phase: 'event', eventId: 'cram' });
+    const paid = page.locator('[data-option="ev:0"]');
+    await paid.locator('.upfront', { hasText: '자금 -60만원' }).waitFor();
+    await check('play-event-cram');
+
+    await resume(windDown.state);
+    await revealOption(page, windDown.option);
+    await page.locator('.detail .risk', { hasText: '추락 시' }).waitFor();
+    for (const problem of await page.evaluate(audit, { minTap: MIN_TAP, minFont: MIN_FONT })) {
+      failures.push(`${size} flight detail: ${problem}`);
+    }
+    viewCount++;
 
     await resume(rollStep.state);
     await tap(rollStep);

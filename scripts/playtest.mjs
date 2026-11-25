@@ -20,7 +20,8 @@ import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
-import { choose, derived, options } from '../src/game/engine.ts';
+import { choose, derived, forecast, options } from '../src/game/engine.ts';
+import { forecastLines, resultChips, resultMarkers, settlementText } from '../src/game/outcome-text.ts';
 import { grade, rankChange } from '../src/game/career.ts';
 import { finishChoice, revealOption, stoppedResult } from './ui-driver.mjs';
 
@@ -145,6 +146,9 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
       const preview = state.phase === 'event' ? target.locator('[data-wheel-preview]') : page.locator('.detail [data-wheel-preview]');
       assert.equal(await preview.getAttribute('data-chance'), String(option.roll.chance));
     }
+    const outcomeLines = await target.evaluate(button => [...button.closest('.answer, .detail, .service-card')
+      .querySelectorAll('.outcomes > :is(.upfront, .success, .failure, .risk)')].map(line => line.textContent));
+    assert.deepEqual(outcomeLines, forecastLines(forecast(state, id)).map(line => line.text), id);
     await target.click();
     assert.equal(await phase(page), 'result');
     if (option.roll) {
@@ -173,6 +177,14 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
     }
     assert.equal(await page.locator('[data-season-change]').count(), Number(!!next.result.season));
     assert.equal(await page.getByText('계절 결산', { exact: true }).count(), Number(!!next.result.upkeep));
+    const chips = [...resultChips(next.result, state).map(chip => chip.text), ...resultMarkers(next.result)];
+    assert.deepEqual(await card.locator('.delta-chip').allTextContents(), chips);
+    const settlement = settlementText(next.result);
+    if (settlement) {
+      const expected = [settlement.recovery, ...settlement.ledger];
+      if (settlement.other.length) expected.push(settlement.other.join(' · '));
+      assert.deepEqual(await card.locator('.ledger p').allTextContents(), expected);
+    }
     if (resultShot) await shot(page, resultShot);
     const change = next.state.phase === 'ended' ? null : rankChange(state, next.state);
     const appeared = await finishChoice(page, async rank => {

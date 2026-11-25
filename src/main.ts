@@ -189,7 +189,7 @@ function takeOption(id: string) {
     endingRecord = recordEnding(state, Math.max(1, Math.round((performance.now() - startedAt) / 1000)));
   }
   root.dataset.phase = 'result';
-  showResult(root, next.result, previous, state, () => {
+  showResult(root, next.result, previous, () => {
     if (state.phase === 'ended') { showEnding(); return; }
     renderPlay(option.free ? nav : 'home', previous, rankChange(previous, state));
   });

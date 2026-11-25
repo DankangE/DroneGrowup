@@ -1,13 +1,11 @@
 import { careerRank, grade, nextRanks } from '../game/career.ts';
 import { RULES, STAT_MAX } from '../game/data.ts';
 import { derived, num, staminaBand } from '../game/engine.ts';
-import type { GameState, OptionView, Stat } from '../game/types.ts';
+import { signed } from '../game/outcome-text.ts';
+import type { GameState, OptionView } from '../game/types.ts';
 import { button, countNumber, el, meter, reducedMotion } from './dom.ts';
 import { icon } from './icons.ts';
 import { chibi, gradeBadge, plateStats, requirements, shortLabel, stars } from './pieces.ts';
-
-export const signed = (value: number) => `${value > 0 ? '+' : ''}${num(value)}`;
-export const statValue = (stat: Stat, value: number) => num(value) + (['money','debt','value'].includes(stat) ? '만원' : ['support','cond'].includes(stat) ? '%' : '');
 
 function changePop(node: HTMLElement, diff: number) {
   if (!diff || reducedMotion()) return;

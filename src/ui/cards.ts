@@ -2,31 +2,28 @@ import { GRADED_STATS, grade } from '../game/career.ts';
 import { gradeBadge, rankLine } from './pieces.ts';
 import { previewWheel } from './wheel.ts';
 import { GRADE_STEPS, GRADES, PLACES, RULES, STAT_LABEL } from '../game/data.ts';
-import { dateLabel, derived, num } from '../game/engine.ts';
-import type { GameState, OptionView, PlaceId, Stat } from '../game/types.ts';
+import { dateLabel, derived, forecast, num } from '../game/engine.ts';
+import type { Forecast, GameState, OptionView, PlaceId, Stat } from '../game/types.ts';
 import { button, el, meter, paginateRows } from './dom.ts';
 import { icon, type IconName } from './icons.ts';
-import { signed, statValue } from './hud.ts';
+import { detailLabel, forecastLines, price, restGain, signed, statValue } from '../game/outcome-text.ts';
 import { shortNames } from './scene.ts';
 
 export type Nav = 'home' | 'shop' | 'bank' | 'info' | 'log';
 type Tab = 'all' | 'job' | 'action' | 'place';
 const navigation: [Nav, string, IconName][] = [['home','홈','home'], ['shop','상점','bag'], ['bank','은행','bank'], ['info','내 정보','drone'], ['log','기록','book']];
 const symbols: Record<PlaceId,IconName> = { home:'home', school:'book', airfield:'drone', exam:'flag', town:'bag', shop:'bag', garage:'tool', bank:'bank', farm:'sun', site:'tool', bridge:'map', windfarm:'bolt', studio:'drone', coast:'map', office:'home', hq:'bank', academy:'book', assoc:'flag' };
-export const price = (o: OptionView) => (o.cost ? num(o.cost) + '만원' : '무료') + (o.tire ? ` · 체력 -${o.tire}` : '');
 function staminaReason(o: OptionView) {
   const pct = o.roll?.staminaPct;
   if (!pct) return '';
   const reason = pct > 0 ? '체력 여유' : pct === -RULES.stamina.exhaustedPenalty ? '탈진' : '피로';
   return `${reason} ${signed(pct)}%p`;
 }
-export function outcomes(o: OptionView) {
+export function outcomes(o: OptionView, f: Forecast) {
   const body = el('span', 'outcomes');
-  if (o.roll) {
-    if (o.roll.staminaPct) body.append(el('span', 'stamina-reason', staminaReason(o)));
-    body.append(el('span', 'success', '성공: ' + o.roll.success.summary), el('span', 'failure', '실패: ' + o.roll.fail.summary));
-    if (o.roll.crashPct !== undefined) body.append(el('span', 'risk', `실패 시 추락 위험 ${o.roll.crashPct}%`));
-  } else if (o.sure) body.append(el('span', 'success', '확정 · ' + o.sure.summary));
+  if (o.roll?.staminaPct) body.append(el('span', 'stamina-reason', staminaReason(o)));
+  const classes = { upfront: 'upfront', success: 'success', sure: 'success', fail: 'failure', crash: 'risk' };
+  for (const line of forecastLines(f)) body.append(el('span', classes[line.id], line.text));
   if (o.locks.length) body.append(el('span', 'lock-reasons', o.locks.join(' · ')));
   return body;
 }
@@ -85,14 +82,23 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     nav.append(b);
     navButtons.set(key,b);
   }
+  // The pager measures and re-renders rows repeatedly for this one immutable state.
+  const previews = new Map<string, Forecast>();
+  function preview(o: OptionView) {
+    let f = previews.get(o.id);
+    if (!f) {
+      f = forecast(state, o.id);
+      previews.set(o.id, f);
+    }
+    return f;
+  }
   function detailFor(o: OptionView) {
     const detail = el('article', 'detail');
     const head = el('div', 'detail-head');
     head.append(el('small', '', PLACES[o.place].name), el('h2', '', o.title));
     const rest = o.id === 'rest';
-    const label = rest
-      ? `${o.title} · ${o.sure!.summary}${restMode === 'full' ? ' · 계절 전체' : ''}`
-      : (o.roll ? `룰렛 돌리기 · ${o.roll.chance}%` : '실행') + ' · ' + price(o);
+    const f = preview(o);
+    const label = detailLabel(o.title, f, rest ? restMode : undefined);
     const commit = commitButton(o, label, choose);
     if (rest) {
       commit.dataset.rest = restMode;
@@ -100,7 +106,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     }
     const effects = el('div', 'detail-effects');
     if (o.roll) effects.append(previewWheel(o.roll.chance));
-    effects.append(outcomes(o));
+    effects.append(outcomes(o, f));
     detail.append(head, el('p', 'desc', o.desc), effects, commit);
     return detail;
   }
@@ -115,7 +121,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
     patch.append(icon(o.enabled ? symbols[o.place] : 'lock'));
     const title = el('strong', '', o.title);
     if (o.roll?.staminaPct) title.append(el('small', 'row-reason', staminaReason(o)));
-    row.append(patch, title, el('small', 'row-price', o.id === 'rest' ? o.sure!.summary : price(o)),
+    row.append(patch, title, el('small', 'row-price', o.id === 'rest' ? restGain(preview(o)) : price(o)),
       el('b', o.roll ? 'odds' : 'odds sure', o.roll ? o.roll.chance + '%' : '확정'));
     return row;
   }
@@ -234,7 +240,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
           const card = el('article','service-card' + (o.enabled ? '' : ' locked'));
           const symbol = o.kind === 'bank' ? 'bank' : o.id === 'buy:car' ? 'car' : o.id === 'buy:drone' ? 'drone' : 'tool';
           card.append(icon(symbol), el('h3','',o.title), el('p','desc',o.desc));
-          if (o.locks.length) card.append(el('p','lock-reasons',o.locks[0]));
+          card.append(outcomes(o, preview(o)));
           card.append(commitButton(o, o.kind === 'bank' && !o.cost ? o.title : price(o),choose));
           return card;
         });

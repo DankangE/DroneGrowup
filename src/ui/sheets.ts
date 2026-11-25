@@ -1,14 +1,14 @@
-import { careerRank, grade, nextRanks } from '../game/career.ts';
+import { careerRank, nextRanks } from '../game/career.ts';
 import type { NextRank, RankChange } from '../game/career.ts';
 import { chibi, requirements, standingGrades, stars } from './pieces.ts';
 import { previewWheel, resultWheel } from './wheel.ts';
-import { PLACES, STAT_LABEL } from '../game/data.ts';
-import type { EventDef, GameState, OptionView, Result, Stat } from '../game/types.ts';
-import { commitButton, outcomes, pager, price } from './cards.ts';
+import { PLACES } from '../game/data.ts';
+import type { EventDef, GameState, OptionView, Result } from '../game/types.ts';
+import { commitButton, outcomes, pager } from './cards.ts';
 import { button, el } from './dom.ts';
 import { icon } from './icons.ts';
-import { signed, statValue } from './hud.ts';
-import { derived, num } from '../game/engine.ts';
+import { price, resultChips, resultMarkers, settlementText, signed } from '../game/outcome-text.ts';
+import { derived, forecast, num } from '../game/engine.ts';
 import { eventPortrait } from './art.ts';
 import { portrait } from './images.ts';
 
@@ -83,7 +83,7 @@ export function createSheet(root: HTMLElement, title: string, dismissible = true
   return sheet;
 }
 
-export function showResult(root: HTMLElement, result: Result, previous: GameState, state: GameState, onContinue: () => void) {
+export function showResult(root: HTMLElement, result: Result, previous: GameState, onContinue: () => void) {
   const sheet = createSheet(root, '이번 선택의 결과', false);
   sheet.dialog.classList.add('result-sheet');
   if (result.season && result.roll) sheet.dialog.classList.add('settlement-roll');
@@ -99,34 +99,23 @@ export function showResult(root: HTMLElement, result: Result, previous: GameStat
     if (!sheet.dialog.isConnected) return;
     live.replaceChildren(el('p', `result-status ${result.roll?.success === false ? 'negative' : 'positive'}`, result.roll ? result.roll.success ? '성공!' : '실패' : '확정'), el('p', 'result-text', result.text));
     const chips = el('div', 'delta-chips');
-    for (const [stat, value] of Object.entries(result.deltas) as [Stat, number][]) {
-      if (!value || stat === 'acts') continue;
-      const beneficial = stat === 'debt' ? value < 0 : value > 0;
-      const oldGrade = grade(stat, previous.s[stat]);
-      const newGrade = grade(stat, state.s[stat]);
-      const change = oldGrade && newGrade && oldGrade.letter !== newGrade.letter ? ` · ${oldGrade.letter} → ${newGrade.letter}` : '';
-      chips.append(el('span', `delta-chip ${beneficial ? 'positive' : 'negative'}`, `${STAT_LABEL[stat]} ${value > 0 ? '+' : ''}${statValue(stat, value)}${change}`));
+    for (const chip of resultChips(result, previous)) {
+      chips.append(el('span', `delta-chip ${chip.positive ? 'positive' : 'negative'}`, chip.text));
     }
+    for (const text of resultMarkers(result)) chips.append(el('span', 'delta-chip', text));
     reveal.append(chips);
     if (result.crashed) reveal.append(el('p', 'crash-banner', '기체 추락! 정비와 장비 상태를 확인하세요.'));
     for (const note of result.notes) reveal.append(el('p', 'result-note', note));
-    if (result.season) {
-      const { from, to, rest, refill } = result.season;
+    const settlement = settlementText(result);
+    if (settlement) {
       const change = el('div', 'ledger');
       change.dataset.seasonChange = '';
-      change.append(el('b', '', `${from.replace(' · ', ' ')} → ${to.replace(' · ', ' ')}`));
-      const gains = [rest > 0 ? `휴식 +${rest}` : '', `계절 회복 +${refill}`].filter(Boolean);
-      change.append(el('p', '', gains.join(' · ')));
-      reveal.append(change);
-    }
-    if (result.upkeep) {
+      change.append(el('b', '', settlement.date), el('p', '', settlement.recovery));
       const ledger = el('div', 'ledger');
-      const {lines, total} = result.upkeep;
       ledger.append(el('b', '', '계절 결산'));
-      for (const line of lines.length <= 3 ? lines : [{ label: '합계', amount: total }]) {
-        ledger.append(el('p', '', line.label + ' ' + signed(line.amount) + '만원'));
-      }
-      reveal.append(ledger);
+      for (const line of settlement.ledger) ledger.append(el('p', '', line));
+      if (settlement.other.length) ledger.append(el('p', '', settlement.other.join(' · ')));
+      reveal.append(change, ledger);
     }
     if (result.eventId) reveal.append(el('p', 'event-notice', '새로운 소식이 도착했어요. 계속해서 확인해 보세요.'));
     sheet.dialog.dataset.spin = 'done';
@@ -168,7 +157,7 @@ export function showEvent(root: HTMLElement, event: EventDef, state: GameState, 
     answer.removeAttribute('aria-label');
     answer.replaceChildren(el('strong','',o.title), el('small','',price(o)));
     if (o.roll) answer.append(previewWheel(o.roll.chance));
-    answer.append(outcomes(o));
+    answer.append(outcomes(o, forecast(state, o.id)));
     answers.append(answer);
   }
   sheet.body.append(answers);
@@ -199,7 +188,7 @@ export function showLadder(root: HTMLElement, state: GameState, go: (id: string)
     const goButton = button('이 도전 보기', 'primary', () => { sheet.close(); go(target.optionId); }, 'ladder-go');
     detail.append(head, requirements(target.requirements, true),
       el('b', '', `${target.action} · ${chanceLine(target)}`),
-      el('span', '', `비용 ${num(target.cost)}만원 · 체력 -${target.tire}`));
+      el('span', '', '비용 ' + price(target)));
     if (target.locks.length) detail.append(el('p', 'lock-reasons', target.locks.join(' · ')));
     detail.append(goButton);
     return detail;

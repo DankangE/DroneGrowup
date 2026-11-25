@@ -310,7 +310,7 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
 .service-grid,.fact-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; }
 .service-card { display: grid; align-content: start; align-items: center; grid-template-columns: 19px 1fr; gap: 4px; padding: 6px; }
 .service-card > .icon { width: 17px; }
-.service-card p,.service-card button { grid-column: 1/-1; }
+.service-card p,.service-card .outcomes,.service-card button { grid-column: 1/-1; }
 .service-card button { width: 100%; margin-top: 2px; font-size: 13px; padding: 3px; }
 .empty { flex: 1; display: grid; place-content: center; justify-items: center; gap: 5px; text-align: center; font-size: 13px; }
 .fact-grid > div { padding: 4px 7px; }
@@ -486,14 +486,14 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
   .action-rows { gap: 2px; }
   .detail { grid-template: 'name commit' auto 'copy commit' auto 'effects effects' auto / minmax(0,1fr) minmax(98px,.65fr); gap: 1px 4px; padding: 3px 4px; margin-top: auto; }
   .detail:has(.wheel-preview) {
-    grid-template: 'wheel name commit' auto 'wheel copy commit' auto 'wheel effects effects' auto / auto minmax(0,1fr) minmax(98px,.65fr);
+    grid-template: 'wheel name commit' auto 'wheel copy commit' auto 'effects effects effects' auto / auto minmax(0,1fr) minmax(98px,.65fr);
   }
   .detail-head { grid-area: name; }.detail-head small { display: none; }
   .detail .desc { grid-area: copy; }
   .detail-effects { display: contents; }
   .detail .wheel-preview { grid-area: wheel; align-self: center; }
-  .detail .outcomes { grid-area: effects; display: block; }
-  .detail .outcomes > span { margin-right: 5px; }
+  .detail .wheel.preview { width: 30px; }
+  .detail .outcomes { grid-area: effects; gap: 1px; }
   .detail .outcomes,.detail .desc { line-height: 1.2; }
   .detail .primary { grid-area: commit; font-size: 12px; line-height: 1.2; padding: 3px 4px; align-self: center; }
   .detail .primary .icon { display: none; }
@@ -566,4 +566,11 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
   .settlement-roll .result-live { grid-area: outcome; }
   .settlement-roll .result-details { grid-area: ledger; }
   .settlement-roll .full-width { grid-area: continue; }
+}
+@media (max-width: 899px) and (max-height: 780px) {
+  /* The upfront line takes the description's slot on the smallest phone so three rows still fit. */
+  .detail .outcomes { display: contents; font-size: 11px; }
+  .detail .outcomes > span { grid-column: 1 / -1; }
+  .detail .outcomes > .upfront { grid-area: copy; }
+  .detail:has(.upfront) .desc { display: none; }
 }

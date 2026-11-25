@@ -14,7 +14,7 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
 
 - `src/game/` — the rules. Pure, DOM-free, seeded RNG kept in the state, money as integers (만원).
   - `data.ts` — every number and every sentence: rules, stages, places, items, actions, events, endings.
-  - `engine.ts` — `newGame`, `options`, `choose`, `derived`, `restore`.
+  - `engine.ts` — `newGame`, `options`, `forecast`, `choose`, `derived`, `restore`.
   - `career.ts` — read-only views for the board UI: letter grades, the current rank, next ranks, rank changes.
     It changes no state, roll or payout; the grade steps and the ladder are the `GRADE_STEPS` and `CAREER` tables in `data.ts`.
   - `bots.ts` — the policies the simulation plays with.
@@ -31,7 +31,10 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
 ## Commands
 
 - `npm run dev` — dev server (PORT env, default 5173).
-- `npm run verify` — typecheck, build, unit tests, simulation, dominance check, both headless playtests, layout check. Run it before every PR.
+- `npm run verify` — typecheck, build, unit tests, simulation, dominance and outcome checks, both headless playtests, layout check. Run it before every PR.
+- `npm run outcomes` — parse the Korean forecast, result chips and season settlement shown by the UI and
+  compare them with real choices across bot runs and forced event/roll/crash branches. Fails on a mismatch
+  or an unexercised choice/branch pair.
 - `npm run layout` — every screen, tab and pager page at 390x844, 360x740, 1280x800 and 1366x768; fails on
   page or inner scroll, content outside the viewport, cut-off content, tap targets under 44 px or text under
   11 px. `LAYOUT_SHOTS=<dir>` also writes a screenshot per view.

@@ -174,13 +174,13 @@ const FLYERS: Stage[] = ['pilot', 'solo', 'company'];
 export const WIND_DOWN_NOTE = '체력이 바닥났다. 남은 계절은 쉬면서 보냈다.';
 export const REST_LIGHT = {
   title: '쉬고 계절 넘기기',
-  get desc() { return `남은 계절을 쉬며 보낸다. 체력 +${RULES.rest.light}.`; },
+  desc: '남은 계절을 쉬며 보낸다.',
   effect: { text: '조종기를 내려놓고 남은 계절을 쉬었다.', add: { get stamina() { return RULES.rest.light; } } },
 };
 
 export const ACTIONS: ActionDef[] = [
   // ------------------------------------------------------------ 어디서나
-  { id: 'rest', place: 'home', when: {}, title: '푹 쉰다', get desc() { return `이번 계절을 통째로 쉰다. 체력 +${RULES.rest.full}.`; },
+  { id: 'rest', place: 'home', when: {}, title: '푹 쉰다', desc: '이번 계절을 통째로 쉰다.',
     effect: { text: '밀린 잠을 자고, 하늘을 올려다봤다. 몸이 가벼워졌다.', add: { get stamina() { return RULES.rest.full; } } } },
   { id: 'self_study', place: 'home', when: { stage: [...LICENSED, 'academy', 'company', 'director'] }, tire: 15, title: '항공법 · 기상 독학', desc: '개정된 법규와 기상 자료를 혼자 읽는다. 시험과 서류에 쓰인다.',
     effect: { text: '개정 항공안전법에 밑줄을 그었다.', add: { theory: 7 } } },
@@ -231,7 +231,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'job_rescue', place: 'coast', flight: true, when: { stage: FLYERS }, need: { min: { drone: 3, car: 2 } }, tire: 35, title: '해안 수색 · 재난 지원', desc: '돈보다 이름이 남는 공공 임무.',
     roll: { base: 68, mods: [skillMod(240)],
       success: { text: '실종자를 열화상으로 찾아냈다. 뉴스에 내 기체가 나왔다.', add: { money: 110, xp: 12, skill: 4, rep: 6, net: 3 } },
-      fail: { text: '해무에 기체를 띄우지 못했다. 출동비만 날렸다.', add: { money: -60, xp: 4, skill: 1 } } } },
+      fail: { text: '해무 속을 날았지만 수색에 실패했다. 출동비만 날렸다.', add: { money: -60, xp: 4, skill: 1 } } } },
   { id: 'job_film', place: 'studio', flight: true, when: { stage: FLYERS }, need: { min: { drone: 4, gear: 3, rep: 105 } }, tire: 30, title: '방송 · 영화 항공 촬영', desc: '감독의 한 컷을 위해 하루 종일 같은 선을 난다.',
     roll: { base: 60, mods: [skillMod(330)],
       success: { text: '엔딩 크레딧에 이름이 올라갔다.', add: { money: 400, xp: 14, skill: 4, rep: 5 } },
@@ -248,7 +248,7 @@ export const ACTIONS: ActionDef[] = [
     effect: { text: '명함 스무 장이 사라지고 연락처 스무 개가 생겼다.', add: { net: 5, rep: 1, biz: 1 } } },
   { id: 'emp_apply', place: 'town', when: { stage: ['pilot'] }, need: { min: { xp: 270 } }, tire: 20, title: '드론 회사 입사 지원', desc: '월급이 나오는 안정적인 길. 대신 성장 폭은 작다.',
     roll: { base: 55, mods: [mod('rep', 0, 2, 25)],
-      success: { text: '합격 통보. 다음 계절부터 사원증을 목에 건다.', stage: 'employee', set: { rank: 0 } },
+      success: { text: '합격 통보. 새 사원증을 목에 걸었다.', stage: 'employee', set: { rank: 0 } },
       fail: { text: '최종 면접에서 떨어졌다.', add: { rep: -1 } } } },
   { id: 'inst_course', place: 'academy', when: { stage: ['pilot'] }, need: { min: { xp: 480, theory: 150 } }, cost: 500, tire: 30, title: '지도조종자(교관) 과정', desc: '비행 경력을 채우고 교관 자격에 도전한다.',
     roll: { base: 58, mods: [mod('teach', 0, 1, 25), mod('theory', 150, 4, 10)],
@@ -430,7 +430,7 @@ export const EVENTS: EventDef[] = [
     ] },
   // ------------------------------------------------------------ 파일럿 · 사업자
   { id: 'illegal', place: 'town', weight: 9, when: { stage: ['pilot', 'solo'], min: { drone: 1 } }, title: '수상한 의뢰',
-    text: '비행 금지 구역 안쪽을 찍어 달라는 의뢰가 왔다. 허가는 "알아서" 하라고 하고, 단가는 평소의 세 배다.',
+    text: '비행 금지 구역 안쪽을 찍어 달라는 의뢰가 왔다. 허가는 "알아서" 하라고 하고, 후한 보수를 제안한다.',
     choices: [
       { title: '몰래 찍는다', desc: '걸리지만 않으면.', roll: { base: 55,
         success: { text: '아무 일 없이 끝났다. 찜찜하지만 돈은 들어왔다.', add: { money: 260 } },
@@ -458,7 +458,7 @@ export const EVENTS: EventDef[] = [
       { title: '관람만 한다', desc: '신기술 세미나를 듣고 인사만 나눈다.', effect: { text: '신형 기체와 규제 동향 세미나를 실컷 들었다.', add: { net: 1, theory: 4 } } },
     ] },
   { id: 'friend', place: 'home', weight: 5, when: {}, title: '친구의 부탁',
-    text: '오랜 친구가 급하게 돈을 빌려 달라고 한다. 다음 계절에 꼭 갚겠다고 한다.',
+    text: '오랜 친구가 급하게 돈을 빌려 달라고 한다. 이자를 얹어 갚겠다고 한다.',
     choices: [
       { title: '빌려준다', desc: '돌아올 수도, 아닐 수도.', cost: 50, roll: { base: 55,
         success: { text: '약속대로 이자까지 얹어 돌려받았다.', add: { money: 75, net: 3 } }, fail: { text: '친구는 연락이 뜸해졌다.', add: { net: 1 } } } },
