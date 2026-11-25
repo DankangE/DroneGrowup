@@ -151,8 +151,12 @@ async function main() {
         assert.deepEqual(await page.evaluate(() => window.__life.state()), newGame(11), 'life=1 starts exactly newGame(seed)');
         assert.equal(await page.evaluate(() => window.__game === undefined), true, 'v1 is not mounted');
         assert.equal(await page.locator('#app').getAttribute('data-screen'), 'play');
+        await checkPages('start choices');
+        await clickChoice('start:school');
+        const started = choose(newGame(11), 'start:school').state;
+        assert.deepEqual(await page.evaluate(() => window.__life.state()), started, 'start choice calls the engine');
         for (const map of Object.keys(MAPS)) {
-          const run = newGame(11); run.board.pos = `${map}-o0`;
+          const run = structuredClone(started); run.board.pos = `${map}-o0`;
           await load(run);
           assert.equal(await page.locator('[data-map]').getAttribute('data-map'), map);
           assert.deepEqual((await page.locator('[data-space]').evaluateAll(nodes => nodes.map(node => node.dataset.space))).sort(),
@@ -184,13 +188,13 @@ async function main() {
           assert.equal(expected.turn, 1, 'plain buttons finish a season'); seasons++;
           await check(`${map} next season`);
           for (const step of ['pick', 'space', 'bonus']) {
-            const fixture = newGame(11);
+            const fixture = structuredClone(started);
             fixture.board.pos = step === 'pick' ? `${map}-o0` : WORLD.find(node => node.map === map && node.kind === 'train').id;
             fixture.board.step = step; fixture.board.dice = step === 'pick' ? [6, 6] : [1, 1];
             await load(fixture); await checkPages(`${map} ${step} menu`);
           }
         }
-        const event = newGame(11); event.phase = 'event'; event.eventId = EVENTS[0].id;
+        const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
         event.board.step = 'space'; event.board.dice = [1, 1];
         await load(event); await checkPages('event');
         await page.goto(`${base}?life=1&seed=11`);

@@ -87,7 +87,8 @@ class PagingPage {
 }
 
 test('life layout paging can audit the same four-option state twice from the last page', async () => {
-  const state = choose(newGame(11), 'spin').state;
+  const started = choose(newGame(11), 'start:school').state;
+  const state = choose(started, 'spin').state;
   state.s.money = 0;
   assert.deepEqual(options(state).map(option => option.id), ['act:st_theory', 'act:st_sim', 'act:st_flight', 'skip']);
   assert.ok(options(state).some(option => !option.enabled), 'the fixture includes disabled options');
@@ -104,7 +105,8 @@ test('life layout paging can audit the same four-option state twice from the las
 });
 
 test('life layout choice lookup rewinds to an earlier page and waits for the resulting state', async () => {
-  const state = choose(newGame(11), 'spin').state;
+  const started = choose(newGame(11), 'start:school').state;
+  const state = choose(started, 'spin').state;
   state.s.money = 0;
   const page = new PagingPage(state);
   const { checkPages, clickChoice } = pagingChecks(page, async () => {});
@@ -117,8 +119,18 @@ test('life layout choice lookup rewinds to an earlier page and waits for the res
 });
 
 test('life layout fixtures restore, page every option, and finish a season on all six maps', async () => {
+  const startPage = new PagingPage(newGame(11));
+  const startChecks = pagingChecks(startPage, async () => {});
+  await startChecks.checkPages('start choices');
+  assert.equal(startPage.index, 1, 'all three start choices span two pages');
+  await assert.rejects(startChecks.clickChoice('spin'), /spin is enabled/);
+  await startChecks.clickChoice('start:school');
+  const started = choose(newGame(11), 'start:school').state;
+  assert.deepEqual(startPage.state, started, 'start choice calls the engine');
+  assert.equal(startPage.index, 0);
+  await startChecks.checkPages('ready to spin');
   for (const map of Object.keys(MAPS)) {
-    const run = newGame(11); run.board.pos = `${map}-o0`;
+    const run = structuredClone(started); run.board.pos = `${map}-o0`;
     assert.deepEqual(restore(run), run);
     const page = new PagingPage(run);
     const { checkPages, clickChoice } = pagingChecks(page, async () => {});
@@ -141,14 +153,14 @@ test('life layout fixtures restore, page every option, and finish a season on al
     }
     assert.equal(expected.turn, 1);
     for (const step of ['pick', 'space', 'bonus'] as const) {
-      const fixture = newGame(11);
+      const fixture = structuredClone(started);
       fixture.board.pos = step === 'pick' ? `${map}-o0` : WORLD.find(node => node.map === map && node.kind === 'train')!.id;
       fixture.board.step = step; fixture.board.dice = step === 'pick' ? [6, 6] : [1, 1];
       assert.deepEqual(restore(fixture), fixture);
       await pagingChecks(new PagingPage(fixture), async () => {}).checkPages(`${map} ${step}`);
     }
   }
-  const event = newGame(11); event.phase = 'event'; event.eventId = EVENTS[0].id;
+  const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
   event.board.step = 'space'; event.board.dice = [1, 1];
   assert.deepEqual(restore(event), event);
   const checks = pagingChecks(new PagingPage(event), async () => {});
