@@ -1,5 +1,5 @@
 // T20 harness settings; these are reading pauses/policy preferences, never game balance.
-export const SIZES = [[390, 844], [360, 740], [1280, 800], [1366, 768]];
+export const SIZES = [[390, 844], [360, 740], [500, 679], [600, 700], [1280, 800], [1366, 768]];
 import { TIMING_SAMPLE } from './life-time-data.ts';
 import { readCalibration } from './life-time-calibration.ts';
 export { THINK_MS, LARGE_POPUPS } from './life-time-data.ts';

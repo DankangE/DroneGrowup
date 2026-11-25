@@ -44,9 +44,12 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     closed = true; actions.navigation?.removeEventListener?.('keydown', handleKeys); host.replaceChildren(); previousFocus?.focus({ preventScroll: true }); actions.dismiss();
   }
   function render(focus = true) {
-    const compact = !model.fullscreen && (sheetSpace(host) ?? Infinity) < 390;
+    const space = sheetSpace(host) ?? Infinity;
+    const compact = !model.fullscreen && space < 390;
+    const tight = compact && space < 260;
     panel = el('section', 'life2-popup');
     if (compact) panel.dataset.compact = ''; panel.dataset.popup = model.kind; panel.dataset.phase = model.phase;
+    if (tight) panel.dataset.tight = '';
     panel.setAttribute('role', model.notification ? 'status' : 'dialog');
     panel.setAttribute('aria-label', model.title);
     if (model.fullscreen) panel.dataset.fullscreen = '';
@@ -71,14 +74,27 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     const selectedTab = model.tabs?.find(item => item.id === lifeTab) ?? model.tabs?.[0];
     const reading = !model.choices.length;
     if (reading && !detail && !confirming) panel.dataset.reading = '';
-    const structured = !detail && !confirming && (model.rows || selectedTab);
+    const structured = !detail && !confirming && (model.rows || selectedTab || model.accounting);
+    const summary = structured && (selectedTab?.id === 'ability' || model.kind === 'result');
+    if (summary) panel.dataset.summary = '';
     const rows = selectedTab ? labelledRows(selectedTab.lines) : (card && model.kind !== 'chapter') || model.kind === 'result'
       ? [...(model.rows ?? []), ...labelledRows(model.lines)] : [...labelledRows(model.lines), ...(model.rows ?? [])];
-    const rowPages = itemPages(rows.flatMap(row => textPages([row.value], P.rowLimit)
+    const rowLimit = summary ? tight ? 36 : 60 : tight ? 45 : P.rowLimit;
+    const rowCount = summary ? !reading ? 1 : selectedTab?.id === 'ability' && !compact ? 11 : tight && model.roll ? 2 : 3
+      : model.roll || compact ? 1 : card && !reading ? 2 : P.rowCount;
+    const rowPages: { rows: typeof rows; heading?: string }[] = itemPages(rows.flatMap(row => textPages([row.value], rowLimit)
       .map(value => ({ ...row, value }))), row => row.label.length + row.value.length,
-      card ? 150 : model.roll ? 70 : P.rowLimit, model.roll || compact ? 1 : card && !reading ? 2 : P.rowCount);
+      summary ? rowCount * rowLimit : card ? 150 : model.roll ? 70 : P.rowLimit, rowCount).map(rows => ({ rows }));
+    if (model.accounting && !selectedTab) {
+      const accounts = model.accounting.flatMap(section =>
+        itemPages([{ label: P.timing, value: section.timing }, ...section.rows].flatMap(row =>
+          textPages([row.value], rowLimit).map(value => ({ ...row, value }))), row => row.label.length + row.value.length,
+        P.rowLimit, tight ? 1 : P.rowCount).map(rows => ({ rows, heading: section.title })));
+      // A review or luck card leads with its decision/story; ordinary results lead with payment timing.
+      if (model.kind === 'result') rowPages.unshift(...accounts); else rowPages.push(...accounts);
+    }
     const pages = structured ? rowPages : textPages(confirming ? [confirming === 'quit' ? COPY.quitQuestion : P.retireQuestion]
-      : detail ?? model.lines, compact ? reading || detail || confirming ? 90 : 24 : model.notification || (reading && model.roll) ? POPUP_RULES.resultPage
+      : detail ?? model.lines, compact ? reading || detail || confirming ? tight ? 45 : 90 : tight ? 16 : 24 : model.notification || (reading && model.roll) ? POPUP_RULES.resultPage
         : reading || detail ? POPUP_RULES.readingPage : P.choiceTextPage);
     copyPage = Math.min(copyPage, pages.length - 1);
     if (!detail && !confirming) {
@@ -100,13 +116,22 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
       toggle.setAttribute('aria-label', SETTINGS_COPY.tilt);
       toggle.textContent = `${SETTINGS_COPY.tilt} · ${settings.tilt() ? SETTINGS_COPY.on : SETTINGS_COPY.off}`;
       copy.append(toggle);
-    } else if (structured) copy.append(displayRows(rowPages[copyPage]));
+    } else if (structured) {
+      const current = rowPages[copyPage];
+      if (current.heading) {
+        const section = el('section', 'life2-accounting'); section.dataset.accounting = '';
+        section.append(el('h3', '', current.heading), displayRows(current.rows)); copy.append(section);
+      } else copy.append(displayRows(current.rows));
+    }
     else {
       const text = el('p', '', (pages as string[])[copyPage]); text.setAttribute('aria-live', 'polite'); copy.append(text);
     }
-    if (pages.length > 1) copy.append(button(COPY.pages(copyPage, pages.length), '', () => {
-      copyPage = (copyPage + 1) % pages.length; render();
-    }, 'popup-text-next'));
+    if (pages.length > 1) {
+      const nextText = button(COPY.pages(copyPage, pages.length), '', () => {
+        copyPage = (copyPage + 1) % pages.length; render();
+      }, 'popup-text-next');
+      if (tight) header.insertBefore(nextText, header.lastChild); else copy.append(nextText);
+    }
     panel.append(header);
     if (card) panel.append(cardHero(model));
     else if (model.stage && !detail && !confirming) { panel.append(stageBanner(model.stage)); panel.dataset.stage = ''; }

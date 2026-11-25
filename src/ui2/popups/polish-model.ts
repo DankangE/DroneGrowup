@@ -81,10 +81,9 @@ export function careerRows(state: GameState, before?: GameState): DisplayRow[] {
 export function statChanges(before: GameState, after: GameState): DisplayRow[] {
   return (Object.keys(STAT_LABEL) as Stat[]).filter(stat => before.s[stat] !== after.s[stat] && stat !== 'acts'
     && stat !== 'rank').map(stat => {
-    const value = (state: GameState) => {
-      const g = grade(stat as GradedStat, state.s[stat]); return g ? P.grade(g.letter, state.s[stat]) : String(state.s[stat]);
-    };
-    return { label: STAT_LABEL[stat], value: `${value(before)} → ${value(after)}`, stat,
+    const from = grade(stat as GradedStat, before.s[stat]), to = grade(stat as GradedStat, after.s[stat]);
+    return { label: STAT_LABEL[stat], value: from && to ? P.gradeChange(from.letter, to.letter, before.s[stat], after.s[stat])
+      : `${before.s[stat]} → ${after.s[stat]}`, stat,
       direction: after.s[stat] > before.s[stat] ? 'up' : 'down' };
   });
 }

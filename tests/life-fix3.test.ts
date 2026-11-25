@@ -292,11 +292,12 @@ test('F3/F5: sheet paging remeasures both edges and shrinks to keep the pawn and
   });
 });
 
-test('F3: measured mobile docks fade without moving into a tight pawn gap and retain the 55% cap', () => {
+test('F3: measured mobile docks stay opaque without moving into a tight pawn gap and retain the 55% cap', () => {
   const animation = /\.life2 \.life2-popup\[data-dock\]\s*\{\s*animation-name:([^;]+);/.exec(POPUP_STYLE)?.[1];
   assert.ok(animation);
   const keyframes = POPUP_STYLE.slice(POPUP_STYLE.indexOf(`@keyframes ${animation} `)).split('@')[1];
-  assert.match(keyframes, /opacity:0/);
+  assert.match(keyframes, /border-color:/);
+  assert.doesNotMatch(keyframes, /opacity:/);
   assert.doesNotMatch(keyframes, /transform|translate|top:|bottom:/);
   assert.match(POPUP_STYLE, /height:min\(360px,55dvh\); max-height:55vh/);
 });

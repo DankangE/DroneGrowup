@@ -2,7 +2,8 @@ import type { Move } from '../life/move.ts';
 import type { MapId } from '../life/types.ts';
 import { MAPS, PLACES, WORLD } from '../life/world.ts';
 import { button, el, svg } from '../ui/dom.ts';
-import { GRID, gridCell } from './board.ts';
+import { GRID, gridCell, projectBoardPaths } from './board.ts';
+import { COPY } from './popups/data.ts';
 
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 export const destinationDetails = (move: Move): string =>
@@ -40,11 +41,12 @@ export function pick(frame: HTMLElement, origin: string, moves: readonly Move[],
   grid.append(preview);
   heading.setAttribute('aria-live', 'polite');
   function show(move: Move) {
-    heading.textContent = destinationDetails(move);
+    heading.textContent = COPY.pickDestination;
     preview.dataset.pathPreview = move.node;
     preview.replaceChildren(...pathSegments(origin, move.path, map).map(({ from, to }) => svg('line', {
       x1: from.column - .5, y1: from.row - .5, x2: to.column - .5, y2: to.row - .5,
     })));
+    projectBoardPaths(grid);
   }
   function decorate(control: HTMLButtonElement, move: Move) {
     control.dataset.dest = move.node;

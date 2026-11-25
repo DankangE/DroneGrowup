@@ -118,7 +118,9 @@ test('year-end renders supplied changes and engine accounting without deriving a
   const engineResult = result(false);
   engineResult.season = { from: '겨울', to: '봄', refill: 17, accrual: [{ label: '생활비', amount: -42 }] };
   const model = popupModel(started(), { kind: 'year-end', result: frozen(engineResult), offered: [], lines: ['승진 심사 대기'] })!;
-  for (const line of ['승진 심사 대기', '겨울 → 봄', '체력 회복 17', '생활비 -42']) assert.ok(model.lines.includes(line));
+  for (const line of ['승진 심사 대기', '겨울 → 봄', '체력 회복 17']) assert.ok(model.lines.includes(line));
+  assert.deepEqual(model.accounting![0].rows, [{ label: '생활비', value: '-42만' }]);
+  assert.match(model.accounting![0].timing, /월급·출발 칸/);
 });
 
 test('phone tabs show only offered services, preserve disabled services and tolerate new phone ids', () => {

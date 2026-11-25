@@ -51,6 +51,9 @@ export function resultPopups(before: GameState, state: GameState, result: Result
   if (result.optionId.startsWith('family:')) return [];
   if (state.phase === 'ended' && result.optionId !== 'phone:retire') return [];
   const queue: PopupModel[] = [], changes = statChanges(before, state);
+  const stamina = changes.find(row => row.stat === 'stamina');
+  if (stamina && result.season?.refill) stamina.value = P.staminaChange(before.s.stamina, state.s.stamina,
+    result.deltas.stamina ?? 0, result.season.refill);
   const add = (context: PopupContext, motion?: PopupModel['motion']) => queue.push({
     ...popupModel(state, { offered: [], before, ...context })!, presentation: true, ...(motion && { motion }) });
   const change = rankChange(before, state), notice = state.timers[CAREER_KEYS.noticeAt] === state.turn ? reviewNotice(state) : null;
@@ -66,8 +69,8 @@ export function resultPopups(before: GameState, state: GameState, result: Result
     rows: [...careerRows(state, before), ...changes], lines: [result.text] });
     queue.at(-1)!.fullscreen = true;
   } else if (result.luck) {
-    add({ kind: 'luck', title: result.luck.title, lines: [result.luck.text, ...(result.upkeep ? [P.settle(result.upkeep.total)] : [])],
-      rows: [...changes, ...(result.upkeep?.lines ?? []).map(line => ({ label: line.label, value: P.pay(line.amount) }))] });
+    add({ kind: 'luck', result, title: result.luck.title, lines: [result.luck.text, ...(result.upkeep ? [P.settle(result.upkeep.total)] : [])],
+      rows: changes });
   } else if (result.season || result.optionId !== 'spin' && !result.optionId.startsWith('go:')) add({ kind: 'result', result, rows: changes });
 
   if (result.season && state.phase !== 'ended') {
@@ -78,10 +81,9 @@ export function resultPopups(before: GameState, state: GameState, result: Result
       if (result.season.refill < 0) lines.push(COPY.refill(result.season.refill));
       const annual = [...changes];
       if (state.fund.amount !== before.fund.amount) annual.push({ label: '펀드', value: `${before.fund.amount}만 → ${state.fund.amount}만` });
-      for (const line of result.season.accrual ?? []) annual.push({ label: line.label, value: P.pay(line.amount) });
       if (queue[0]?.kind === 'luck') {
         queue[0].lines.push(...lines); queue[0].rows!.push(...annual.filter(row => !queue[0].rows!.some(old => old.label === row.label && old.value === row.value)));
-      } else add({ kind: 'year-end', ...(result.roll && !rankCard && { result }), lines, rows: annual });
+      } else add({ kind: 'year-end', result: rankCard ? { ...result, roll: undefined } : result, lines, rows: annual });
     }
     if (current.period !== previous.period) add({ kind: 'chapter', lines: [],
       summary: { netWorth: current.netWorth, nextPeriod: CHAPTER_COPY[current.period] ?? current.period } }, 'stage');

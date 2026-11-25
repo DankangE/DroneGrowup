@@ -15,6 +15,17 @@ export const POLISH_STYLE = `
 .life2 .life2-labelled-row dt { color:#5b536b; font-size:11px; line-height:15px; }
 .life2 .life2-labelled-row dd { margin:0; font-size:14px; line-height:20px; overflow-wrap:anywhere; }
 .life2 .life2-popup-copy:has(.life2-labelled-rows) { align-items:center; }
+.life2 .life2-accounting { width:100%; min-width:0; }
+.life2 .life2-accounting h3 { font-size:13px; line-height:18px; margin:0 0 4px; }
+.life2 .life2-popup[data-summary] .life2-labelled-rows { gap:2px; }
+.life2 .life2-popup[data-summary] .life2-labelled-row { display:grid; grid-template-columns:auto minmax(0,1fr); gap:6px; padding:2px 4px; }
+.life2 .life2-popup[data-summary] .life2-labelled-row dt,.life2 .life2-popup[data-summary] .life2-labelled-row dd { font-size:12px; line-height:16px; }
+.life2 .life2-popup[data-tight] { padding:4px; gap:4px; }
+.life2 .life2-popup[data-tight]:not([data-reading]):not([data-details]):not([data-stage]) { grid-template-rows:44px minmax(16px,1fr) 50px 44px; }
+.life2 .life2-popup[data-tight] .life2-popup-copy > img,.life2 .life2-popup[data-tight] .life2-popup-copy > svg { display:none; }
+.life2 .life2-popup[data-tight] .life2-popup-copy p { font-size:12px; line-height:16px; }
+.life2 .life2-popup[data-tight] .life2-labelled-row { padding:2px 4px; }
+.life2 .life2-popup[data-tight] .life2-labelled-row dd { font-size:12px; line-height:16px; }
 .life2 .life2-popup[data-card] { height:auto; max-height:none; grid-template-rows:44px auto minmax(0,1fr) auto 44px;
   align-content:stretch; gap:10px; padding:16px max(16px,calc((100vw - 650px)/2)); background:#fff6e0; }
 .life2 .life2-popup[data-card][data-reading] { grid-template-rows:44px auto minmax(0,1fr) 44px; }
@@ -48,7 +59,7 @@ export const POLISH_STYLE = `
 .life2 .life2-tile-callout strong { font-size:20px; line-height:26px; }
 @media(orientation:landscape) and (min-width:900px) { .life2 .life2-popup:not([data-fullscreen]):not([data-notification]) { height:100%; } }
 @media(max-width:899px) {
-  .life2 .life2-shell:has(.life2-popup-host) { grid-template-rows:110px minmax(412px,1fr) 0 44px; }
+  .life2 .life2-shell:has(.life2-popup-host) { grid-template-rows:var(--life2-hud-height,110px) minmax(0,1fr) 0 44px; }
   .life2 .life2-options.life2-popup-host { border:0; padding:0; background:transparent; box-shadow:none; }
 }
 @keyframes life2-rank-burst { from { transform:scale(.9); opacity:.2; } 45% { transform:scale(1.03); } to { transform:scale(1); opacity:1; } }

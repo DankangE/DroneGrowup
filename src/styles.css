@@ -578,7 +578,7 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
 .life2 .life2-shell {
   width: min(100%,1100px); height: 100%; min-width: 0; min-height: 0;
   display: grid; gap: 6px;
-  grid-template: 'hud' 54px 'board' minmax(412px,1fr) 'options' 192px 'bottom' 44px / minmax(0,1fr);
+  grid-template: 'hud' 110px 'board' minmax(0,1fr) 'options' clamp(50px,18dvh,136px) 'bottom' 44px / minmax(0,1fr);
 }
 .life2 .life2-hud,.life2 .life2-options,.life2 .life2-bottom {
   min-width: 0; border: 1px solid var(--ink); border-radius: 10px; background: var(--paper);
@@ -588,7 +588,7 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
 .life2 .life2-date h1 { font-size: 17px; }
 .life2 .life2-date > span { font-size: 13px; }
 .life2 .life2-stats { font-size: 12px; }
-.life2 .life2-board-frame { grid-area: board; min-width: 0; min-height: 0; container-type: size; display: grid; place-items: center; }
+.life2 .life2-board-frame { grid-area: board; z-index:0; min-width: 0; min-height: 0; container-type: size; display: grid; place-items: center; }
 .life2 .life2-board {
   --cell: min(calc((100cqw - 12px) / 7),calc((100cqh - 16px) / 9),72px);
   position: relative; isolation: isolate; display: grid; gap: 2px;
@@ -600,7 +600,7 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
 .life2 [data-map=D] { background: #b8d7e4; }
 .life2 [data-map=E] { background: #b7d9d3; }
 .life2 [data-map=F] { background: #e5d5a6; }
-.life2 .life2-paths { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+.life2 .life2-paths { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
 .life2 .life2-paths line { stroke: #645f73; stroke-width: .08; }
 .life2 .life2-tile {
   position: relative; display: grid; place-content: center; justify-items: center;
@@ -625,6 +625,8 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
 .life2 .life2-pager button { font-size: 12px; }
 .life2 .life2-bottom { grid-area: bottom; display: grid; grid-template-columns: 72px minmax(0,1fr) 72px; gap: 6px; border: 0; background: none; }
 .life2 .life2-bottom button { font-size: 13px; }
+.life2 .life2-turn-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px; min-width:0; }
+.life2 .life2-turn-controls [data-action=end-season] { padding:0 6px; }
 .life2 .life2-spin { background: var(--gold); }
 .life2 .life2-dice { display: grid; place-content: center; border: 1px solid var(--ink); border-radius: 10px; background: var(--paper); font-size: 20px; }
 @media (min-width: 900px) {

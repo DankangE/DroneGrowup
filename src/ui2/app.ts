@@ -57,9 +57,10 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
   window.addEventListener?.('resize', () => render());
   function takeOption(id: string) {
     if (PLATFORM) { if (!sessionOk()) return; }
-    const source = menu === 'phone' ? 'phone' : 'board';
-    if (sequence || (pending.length && source !== 'phone') || !options(state, source)
+    const source = id !== 'end' && menu === 'phone' ? 'phone' : 'board';
+    if (sequence || (pending.length && source !== 'phone' && id !== 'end') || !options(state, source)
       .some(option => option.id === id && option.enabled)) return;
+    if (id === 'end') pending = [];
     before = state; glowBefore = state;
     const outcome = choose(state, id, source);
     state = outcome.state;
@@ -104,7 +105,10 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     }, frame ? undefined : glowBefore);
     const mode = frame?.phase ?? (!pending.length && !menu && offered.some(option => option.id === 'spin') ? 'ready' : 'idle');
     const center = wheel(state.board.dice, mode, () => sequence ? skip() : takeOption('spin'));
-    bands.bottom.querySelector('.life2-spin, .life2-dice')!.replaceWith(center);
+    const end = offered.find(option => option.id === 'end' && option.enabled);
+    const turnControls = end ? el('div', 'life2-turn-controls') : center;
+    if (end) turnControls.append(center, button(end.title, '', () => takeOption(end.id), 'end-season'));
+    bands.bottom.querySelector('.life2-spin, .life2-dice')!.replaceWith(turnControls);
     const map = board(state, shown.board.pos);
     if (frame?.phase === 'transfer') {
       map.querySelector<HTMLElement>('[data-map]')!.inert = true;
@@ -161,6 +165,9 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     pager.append(previous, el('span', '', `${page + 1} / ${pages}`), next);
     panel.append(heading, list, pager);
     if (pages === 1) { pager.hidden = true; panel.dataset.singlePage = ''; }
+    // Popup docking removes the options row on mobile. Measure the tilted board
+    // only after that final shell geometry is in place, including on resize.
+    if (model && !dismissed) panel.classList.add('life2-popup-host');
     shell.append(bands.top, map, panel, bands.bottom);
     const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE + POLISH_STYLE + TILT_STYLE);
     root.replaceChildren(style, shell);

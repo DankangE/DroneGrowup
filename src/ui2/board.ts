@@ -4,7 +4,7 @@ import { el, svg } from '../ui/dom.ts';
 import { tileIcon } from './icons.ts';
 
 export const GRID = { columns: 7, rows: 9 } as const;
-export const TILT = { degrees: 28, perspective: 6000, clearance: 2 } as const;
+export const TILT = { degrees: 38, perspective: 6000, clearance: 2 } as const;
 
 /** Inverse-project tile centers above the tilted plane, then counter-rotate the
  * upright DOM tiles (including pawn/buildings). Their screen targets remain
@@ -23,9 +23,30 @@ export function uprightTile(x: number, y: number, height: number) {
   const planeY = scale * (y + lift * sin) / cos;
   return { dx: x * scale - x, dy: planeY - y, dz: lift * scale, scale };
 }
+/** Inverse-project path vertices onto z=0, below every lifted tile corner. */
+export function groundPoint(x: number, y: number) {
+  const radians = TILT.degrees * Math.PI / 180, sin = Math.sin(radians), cos = Math.cos(radians);
+  const scale = cos / (cos + y * sin / TILT.perspective);
+  return { x: x * scale, y: y * scale / cos };
+}
+export function projectBoardPaths(grid: HTMLElement): void {
+  if (!grid.offsetWidth) return;
+  const tilted = grid.className.includes('life2-board-tilted');
+  for (const layer of grid.querySelectorAll<SVGSVGElement>('.life2-paths,.life2-preview')) {
+    for (const line of layer.querySelectorAll('line')) for (const end of ['1', '2']) {
+      const xKey = `flatX${end}`, yKey = `flatY${end}`;
+      const x = Number(line.dataset[xKey] ??= line.getAttribute(`x${end}`)!);
+      const y = Number(line.dataset[yKey] ??= line.getAttribute(`y${end}`)!);
+      const point = groundPoint((x / GRID.columns - .5) * grid.offsetWidth, (y / GRID.rows - .5) * grid.offsetHeight);
+      line.setAttribute(`x${end}`, String(tilted ? (point.x / grid.offsetWidth + .5) * GRID.columns : x));
+      line.setAttribute(`y${end}`, String(tilted ? (point.y / grid.offsetHeight + .5) * GRID.rows : y));
+    }
+  }
+}
 export function setBoardTilt(frame: HTMLElement, enabled: boolean): void {
   const grid = frame.querySelector<HTMLElement>('[data-map]')!;
   grid.className = `life2-board${enabled ? ' life2-board-tilted' : ''}`;
+  projectBoardPaths(grid);
   if (!enabled || !grid.offsetWidth) return;
   // Layout dimensions, not projected bounding boxes. No custom pointer math:
   // native DOM hit-testing uses these same inverse-projected tile transforms.
@@ -59,7 +80,9 @@ export const TILT_STYLE = `
 .life2 .life2-board-tilted [data-dest] { --face:#e8dcff; }
 .life2 .life2-board-tilted [aria-current]::before,.life2 .life2-board-tilted [data-dest]::before { border:2px solid #6c3ec4; }
 .life2 .life2-board-tilted .life2-paths,.life2 .life2-board-tilted .life2-preview {
-  transform-origin:center; transform-box:border-box; transform:rotateX(-${TILT.degrees}deg);
+  /* Lines stay on the board plane. Counter-rotating this board-sized SVG lifts
+     its far edge through the upright tile faces, regardless of z-index. */
+  transform:none; overflow:visible;
 }
 /* Animate the transfer overlay only: board opacity would flatten its 3D children. */
 .life2[data-phase=transfer] .life2-board-tilted { animation:none; }

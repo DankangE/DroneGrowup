@@ -4,10 +4,11 @@ import type { Derived, OptionView } from '../life/engine.ts';
 import type { GameState } from '../life/types.ts';
 import { MAPS, WORLD } from '../life/world.ts';
 import { statChanges } from './popups/polish-model.ts';
+import { COPY } from './popups/data.ts';
 import { button, el } from '../ui/dom.ts';
 
 export const HUD_STYLE = `
-.life2 .life2-shell { grid-template-rows:110px minmax(412px,1fr) 136px 44px; }
+.life2 .life2-shell { grid-template-rows:110px minmax(0,1fr) clamp(50px,18dvh,136px) 44px; }
 .life2 .life2-bottom { position:relative; z-index:11; }
 .life2 .life2-hud { gap:2px; }
 .life2 .life2-funds { display:flex; justify-content:space-between; gap:6px; font-size:12px; line-height:16px; }
@@ -18,6 +19,20 @@ export const HUD_STYLE = `
 .life2 .life2-stats { font-size:11px; line-height:14px; }
 
 .life2 .life2-grades { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:1px 3px; font-size:11px; line-height:12px; }
+/* At 600px: 16px app padding + 60px HUD + 412px board + 50px choices + 44px nav + 18px gaps.
+   Detailed abilities remain in My Life; no tile or control shrinks below 44px. */
+@media (max-width:899px) and (max-height:739px) {
+  .life2 .life2-shell { --life2-hud-height:60px; grid-template-rows:60px minmax(0,1fr) 50px 44px; }
+  .life2 .life2-hud { padding:2px 8px; gap:2px; }
+  .life2 .life2-date { line-height:18px; }
+  .life2 .life2-grades,.life2 .life2-change-strip { display:none; }
+  .life2 .life2-options,.life2 .life2-options[data-single-page] {
+    position:relative; padding:2px; gap:4px; grid-template: minmax(0,1fr) / minmax(0,1fr) auto;
+  }
+  .life2 .life2-options > h2 { position:absolute; width:1px; height:1px; clip-path:inset(50%); }
+  .life2 .life2-pager { gap:4px; font-size:11px; }
+  .life2 .life2-pager button { padding:0 6px; }
+}
 @media (min-width:900px) {
   .life2 .life2-shell { grid-template-rows:138px minmax(0,1fr) 44px; }
   .life2 .life2-hud { gap:4px; }
@@ -42,8 +57,10 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
   const funds = el('div', 'life2-funds'); funds.dataset.debtState = state.s.debt > 0 ? 'owing' : 'clear';
   funds.append(mark(el('span', '', `자금 ${state.s.money.toLocaleString('ko-KR')}만`), 'money'),
     mark(el('span', 'life2-debt', `빚 ${state.s.debt.toLocaleString('ko-KR')}만`), 'debt'));
-  stats.append(
-    mark(el('span', '', `체력 ${state.s.stamina}/${view.capStamina}`), 'stamina'), el('span', '', offered.some(option => option.id.startsWith('start:')) ? '진로 선택 전' : view.rankName || view.stageName));
+  const status = el('span', '', offered.some(option => option.id.startsWith('go:')) ? COPY.pickDestination
+    : offered.some(option => option.id.startsWith('start:')) ? '진로 선택 전' : view.rankName || view.stageName);
+  if (offered.some(option => option.id.startsWith('go:'))) { status.dataset.pickPrompt = ''; status.setAttribute('role', 'status'); }
+  stats.append(mark(el('span', '', `체력 ${state.s.stamina}/${view.capStamina}`), 'stamina'), status);
   const grades = el('div', 'life2-grades'); grades.setAttribute('aria-label', '능력치 등급');
   for (const stat of GRADED_STATS) {
     const letter = grade(stat, state.s[stat])!.letter;

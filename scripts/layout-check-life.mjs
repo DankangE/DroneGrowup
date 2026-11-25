@@ -185,6 +185,10 @@ async function tiltChecks(page, load, check) {
       const state = structuredClone(starter);
       state.board.pos = `${map}-o0`; state.board.step = 'pick'; state.board.dice = [6, 6];
       await load(state); await check(`tilt ${map} ${motion}`);
+      for (const selector of ['.life2-paths', '.life2-preview']) {
+        assert.equal(await page.locator(selector).evaluate(node => getComputedStyle(node).transform), 'none',
+          `${selector}: lines remain on the board plane below lifted tiles`);
+      }
       const ids = await page.locator('[data-space][data-dest]').evaluateAll(tiles => tiles.map(tile => tile.dataset.space));
       assert.ok(ids.length, 'tilted map offers native board buttons');
       for (const id of ids) {
@@ -325,6 +329,13 @@ export function audit() {
   const issues = [], vw = innerWidth, vh = innerHeight;
   const doc = document.scrollingElement;
   if (doc.scrollWidth > vw || doc.scrollHeight > vh) issues.push('document scrolls');
+  for (const selector of ['.life2-bottom', '.life2-bottom .life2-wheel', '[data-action=end-season]']) {
+    const node = document.querySelector(selector);
+    if (!node) { if (selector !== '[data-action=end-season]') issues.push(`${selector}: missing`); continue; }
+    const box = node.getBoundingClientRect();
+    if (!node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true }) || box.width < 44 || box.height < 44
+      || box.left < 0 || box.top < 0 || box.right > vw || box.bottom > vh) issues.push(`${selector}: not fully inside viewport`);
+  }
   for (const node of document.querySelectorAll('#app, #app *')) {
     if (!node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
     if (node.closest('svg') && node.tagName.toLowerCase() !== 'svg') continue;
@@ -366,6 +377,9 @@ export function audit() {
   const popup = document.querySelector('.life2-popup');
   if (popup) {
     const sheet = popup.getBoundingClientRect();
+    const paint = getComputedStyle(popup);
+    if (paint.opacity !== '1' || paint.backgroundColor === 'transparent'
+      || /rgba\(.*,[\s]*0(?:\.\d+)?\)/.test(paint.backgroundColor)) issues.push('popup sheet is translucent');
     if (vw < 900 && !popup.hasAttribute('data-fullscreen') && sheet.height > vh * .55 + 1) issues.push('sheet exceeds 55%');
     for (const node of popup.querySelectorAll('p, button, h2, dt, dd, .life2-card-hero, .life2-stage-banner')) {
       const box = node.getBoundingClientRect();
@@ -383,6 +397,43 @@ export function audit() {
     }
   }
   return [...new Set(issues)];
+}
+
+async function playReviewChecks(page, load, check) {
+  const started = choose(newGame(11), 'start:school').state;
+  for (const kind of ['train', 'jobfair']) {
+    const run = structuredClone(started);
+    run.board.pos = WORLD.find(node => node.map === 'A' && node.kind === kind).id;
+    run.board.step = 'bonus'; run.board.dice = [1, 1];
+    await load(run);
+    const expected = options(run).some(option => option.id === 'end' && option.enabled);
+    assert.ok(expected);
+    const end = page.locator('[data-action=end-season]');
+    assert.equal(await end.count(), 1); assert.ok(await end.isEnabled());
+    for (;;) {
+      await check(`${kind} permanent end`);
+      const next = page.locator('[data-action=popup-page-next]');
+      if (!await next.count() || await next.isDisabled()) break;
+      await next.click();
+    }
+    await page.locator('[data-action=popup-close]').click();
+    await check(`${kind} dismissed`);
+    assert.ok(await end.isVisible());
+    await page.locator('[data-action=popup-reopen]').click();
+    await check(`${kind} reopened`);
+    await page.locator('[data-action=popup-close]').click();
+    await keyboardActivate(page, end);
+    assert.deepEqual(await page.evaluate(() => window.__life.state()), choose(run, 'end').state);
+  }
+  const job = structuredClone(started);
+  job.board.pos = WORLD.find(node => node.map === 'A' && node.kind === 'jobfair').id;
+  job.board.step = 'space'; job.board.dice = [1, 1];
+  await load(job);
+  assert.equal(await page.locator('.life2-popup').getAttribute('data-popup'), 'job');
+  assert.equal(await page.locator('[data-action=end-season]').count(), 0, 'exclusive jobs must resolve before end is offered');
+  await page.locator('[data-action=popup-close]').click(); await check('job dismissed');
+  await page.locator('[data-action=popup-reopen]').click(); await check('job reopened');
+  await load(started); assert.equal(await page.locator('[data-action=end-season]').count(), 0);
 }
 
 // F3 regressions exercise mounted engine transitions, not just named popup fixtures.
@@ -406,6 +457,17 @@ async function fix3Checks(page, load, check) {
     run.board.pos = WORLD.find(node => node.map === 'A' && node.kind === 'rankup').id;
     run.board.step = 'bonus'; run.board.dice = [1, 1]; return run;
   };
+  // Short sheets page the copy (popup-text-next); read every page before matching sentences.
+  const fullCopy = async () => {
+    const copy = popup().locator('.life2-popup-copy');
+    const read = () => copy.evaluate(node => [...node.querySelectorAll('p')].map(p => p.textContent).join('') || node.textContent);
+    let text = await read();
+    const next = popup().locator('[data-action=popup-text-next]');
+    for (let i = 0; i < 12 && await next.count() && (await next.textContent()).match(/^(\d+) \/ (\d+)$/)?.[1] !== (await next.textContent()).split(' / ')[1]; i++) {
+      await next.click(); text += await read();
+    }
+    return text;
+  };
   const expect = async kind => {
     assert.equal(await popup().getAttribute('data-popup'), kind); await check(`F3 ${kind}`);
     assert.equal(await page.locator('[data-action=popup-close]').textContent(), '닫기');
@@ -413,7 +475,7 @@ async function fix3Checks(page, load, check) {
   const promotion = worker(); promotion.board.step = 'space'; promotion.job.perf = 95;
   await load(promotion); await select('promo'); await expect('rankup');
   const warning = worker(); await load(warning); await select('end'); await expect('year-end');
-  assert.match(await popup().locator('.life2-popup-copy').textContent(), /성과 26: 경고 기준 30 미만/);
+  assert.match(await fullCopy(), /성과 26: 경고 기준 30 미만/);
   // Navigation must work above a pending result and return to that same result.
   await keyboardActivate(page, page.locator('[data-nav=phone]')); await expect('phone'); await close(); await expect('year-end');
   await page.locator('[data-nav=life]').click(); await expect('my-life');
@@ -421,7 +483,7 @@ async function fix3Checks(page, load, check) {
     await page.locator(`[data-tab=${tab}]`).click(); await check(`F3 life ${tab}`);
   }
   await close(); await close(); await expect('review');
-  assert.match(await popup().locator('.life2-popup-copy').textContent(), /성과 26: 경고 기준 30 미만/);
+  assert.match(await fullCopy(), /성과 26: 경고 기준 30 미만/);
   const demotion = worker(1); demotion.job.warn = 1;
   await load(demotion); await select('end'); await expect('demotion');
   for (const turn of [63, 143]) {
@@ -531,7 +593,7 @@ async function popupChecks(page, base) {
           const rect = node.getBoundingClientRect(), css = getComputedStyle(node);
           if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) issues.push('popup content outside sheet');
           if (node.matches('button') && (rect.width < 44 || rect.height < 44)) issues.push('tap target below 44px');
-          if (['auto', 'scroll'].includes(css.overflowY) || node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push('popup content overflows');
+          if (['auto', 'scroll'].includes(css.overflowY) || node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push(`popup content overflows (${innerWidth}x${innerHeight} ${node.tagName}.${node.className} sh${node.scrollHeight}/ch${node.clientHeight} sw${node.scrollWidth}/cw${node.clientWidth})`);
           if (parseFloat(css.fontSize) < 11) issues.push('text below 11px');
         }
         return [...new Set(issues)];
@@ -709,6 +771,7 @@ async function main() {
         await fix3Checks(page, load, check);
         await fix4Checks(page, load, check);
         await fix5Checks(page, load, check);
+        await playReviewChecks(page, load, check);
         await tiltChecks(page, load, check);
         const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];
         assertPopupCoverage(popupKinds);
@@ -730,7 +793,7 @@ async function main() {
     finally { await server.close(); }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
-  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x 4 sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll`);
+  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

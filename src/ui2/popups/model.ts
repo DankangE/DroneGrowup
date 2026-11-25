@@ -20,6 +20,7 @@ export type PopupModel = {
   tabs?: LifeTabModel[];
   presentation?: boolean;
   rows?: DisplayRow[]; stage?: StageView; motion?: 'rankup' | 'demotion' | 'stage';
+  accounting?: { title: string; timing: string; rows: DisplayRow[] }[];
 };
 export type PopupContext = {
   kind?: PopupKind; offered?: readonly OptionView[]; previews?: Readonly<Record<string, Forecast>>;
@@ -101,6 +102,7 @@ function choiceModel(option: OptionView, preview?: Forecast): PopupChoice {
     details.push(`${COPY.expected} · ${COPY[branch.id]}: ${deltas(branch.deltas, branch.status) || COPY.noChange}`);
     if (branch.status) details.push(LIFE_COPY.status[branch.status]);
     if (branch.endsSeason) details.push(COPY.endsSeason);
+    if (branch.accrual?.length) details.push(P.ledger, P.accrued);
     for (const line of branch.accrual ?? []) details.push(COPY.delta(line.label, line.amount));
   }
   if (option.sure) details.push(option.sure.text);
@@ -130,8 +132,12 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
       deltas(result.settle?.deltas ?? {}, result.statusTo)] : []), ...result.notes.filter(note => note !== result.luck?.text));
     if (result.roll) lines.push(result.roll.success ? COPY.success : COPY.fail, COPY.roll(result.roll.value, result.roll.chance));
     if (result.season) lines.push(`${result.season.from} → ${result.season.to}`, COPY.refill(result.season.refill));
-    for (const line of result.upkeep?.lines ?? result.season?.accrual ?? []) lines.push(COPY.delta(line.label, line.amount));
   }
+  const accounting = [
+    ...(result?.upkeep?.lines.length ? [{ title: P.record, timing: P.paid, lines: result.upkeep.lines }] : []),
+    ...(result?.season?.accrual?.length ? [{ title: P.ledger, timing: P.accrued, lines: result.season.accrual }] : []),
+  ].map(section => ({ title: section.title, timing: section.timing,
+    rows: section.lines.map(line => ({ label: line.label, value: P.pay(line.amount) })) }));
   // A caller supplying future option ids also supplies their previews, if available.
   // Never ask the current engine to resolve an id it does not know yet.
   const visible = kind === 'result' ? [] : kind === 'phone' ? phoneChoices(offered, 'all')
@@ -144,6 +150,7 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
   }
   const card = FULLSCREEN_POPUPS.includes(kind);
   return { kind, phase: POPUP_DEFINITIONS[kind].phase, title: humanCopy(title), lines: [...new Set(lines.filter(Boolean).map(humanCopy))], choices, place, track: state.track ?? context.before?.track ?? state.job.tracks.at(-1) ?? null,
+    ...(accounting.length && { accounting }),
     ...(card && { rows: context.rows ?? careerRows(state, context.before) }),
     ...(!card && context.rows && { rows: context.rows }),
     ...((kind === 'chapter' || context.stage) && { stage: context.stage ?? stageView(state) }),

@@ -64,6 +64,7 @@ export const PHONE_TABS = { all: '전체', shop: '상점', repair: '정비', ban
 export type PhoneTab = keyof typeof PHONE_TABS;
 export const COPY = {
   exit: '닫기', reopen: '다시 열기',
+  pickDestination: '빛나는 도착 칸을 고르세요',
   quitTitle: '퇴사 확인', quitQuestion: '퇴사하고 구직자가 될까요?', quitConfirm: '퇴사한다', cancel: '취소', previous: '이전', next: '다음', details: '상세', back: '목록',
   empty: '지금 가능한 선택지가 없습니다.', success: '성공', fail: '실패', sure: '확정', crash: '추락',
   expected: '예상 결과', locked: '잠김', noChange: '변화 없음', endsSeason: '계절 마감',

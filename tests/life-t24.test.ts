@@ -166,8 +166,8 @@ test('T24: lifted upright corners stay above the board and keep square 44px targ
       assert.ok(Math.abs(worldY * projection - (y + cornerY)) < 1e-9);
     }
   }
-  assert.match(TILT_STYLE, /perspective\(6000px\) rotateX\(28deg\)/);
-  assert.match(TILT_STYLE, /translate3d\(var\(--upright-x,0px\),var\(--upright-y,0px\),var\(--upright-z,0px\)\) rotateX\(-28deg\) scale\(var\(--upright-scale,1\)\)/);
+  assert.ok(TILT_STYLE.includes(`perspective(${TILT.perspective}px) rotateX(${TILT.degrees}deg)`));
+  assert.ok(TILT_STYLE.includes(`translate3d(var(--upright-x,0px),var(--upright-y,0px),var(--upright-z,0px)) rotateX(-${TILT.degrees}deg) scale(var(--upright-scale,1))`));
   assert.match(TILT_STYLE, /transform-style:flat/);
   assert.match(TILT_STYLE, /:active/); assert.match(TILT_STYLE, /prefers-reduced-motion:reduce/);
 });

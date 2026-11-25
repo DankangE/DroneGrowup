@@ -76,7 +76,7 @@ for (const turn of [64, 144]) test(`F4 A1/B1: chapter ${turn} has a portrait and
   const s = worker(); s.turn = turn;
   const model = popupModel(s, { kind: 'chapter', offered: [] })!, root = new TestNode('div'); mount(root, model);
   const stage = stageView(s); assert.equal(stage.remaining, turn === 64 ? 80 : 60);
-  assert.ok(root.querySelector('[data-job-portrait]')); assert.ok(textOf(root).includes(`${stage.remaining}계절 남음`));
+  assert.ok(root.querySelector('[data-job-portrait]')); assert.ok(textOf(root).includes(`이 시기 ${stage.remaining}개 계절 남음`));
   const progress = root.querySelector('[role=progressbar]')!;
   assert.equal(progress.attributes['aria-valuenow'], '0'); assert.equal(progress.attributes['aria-valuemax'], String(stage.total));
 }));
@@ -184,7 +184,7 @@ test('F4 A8: review acknowledgement is 확인; annual changes and lucky copy are
 test('F4 A9/A10/B3: opaque sheets, labelled empty states and changed HUD/result chips', () => browserDOM(() => {
   const before = worker(), after = structuredClone(before); after.s.skill = 50;
   const changes = statChanges(before, after), row = changes.find(row => row.stat === 'skill')!;
-  assert.match(row.value, /G등급 0 → E등급 50/);
+  assert.equal(row.value, 'G → E등급 · 점수 0 → 50');
   const bands = hud(after, derived(after), options(after), () => {}, undefined, before);
   const chip = (bands.top as unknown as TestNode).querySelector('[data-changed-stat=skill]')!;
   assert.ok(chip); assert.ok(!chip.querySelector('.life2-stat-tick')); assert.ok(bands.top.querySelector('.life2-change-strip'));
