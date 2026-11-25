@@ -7,7 +7,7 @@ export const RULES = {
   startAge: 20,
   seasons: ['봄', '여름', '가을', '겨울'],
   board: { die: 6, restGain: 60, achievement: { fork: 30, contest: 150, rankup: 300 }, bonusCap: 10000 },
-  seasonRefill: 30,
+  seasonRefill: 20,
   start: { money: 60, cond: 100, stamina: 100 } as Partial<Record<Stat, number>>,
   /** 체력 0..100. Every roll (actions and events) reads it; the card shows the chance after it. */
   stamina: {
@@ -39,7 +39,7 @@ export const RULES = {
   itemResalePct: 50,
   score: { turnBonus: 50, max: 9_999_999 },
   academy: { tuition: 22, baseSeats: 8, seatsPerStaff: 8, pay: 70, overhead: 60, overheadPerLevel: 30, leaveDiv: 8, worthPerLevel: 900, timeoutLevel: 3 },
-  solo: { contractPay: 30 },
+  solo: { contractPay: 60 },
   examinerPay: 40,
   company: { perStaff: 2, contractPay: 90, pay: 75, overhead: 90, valuePerContract: 20, worthDiv: 10, timeoutValue: 60000 },
 };
@@ -703,13 +703,13 @@ export const BOARD_PLACES: Record<Stage, PlaceId[]> = {
     'town', 'academy', 'assoc', 'academy', 'assoc', 'town',
   ],
   solo: [
-    'office', 'office', 'town', 'assoc', 'office', 'home', 'assoc', 'office',
-    'town', 'town', 'office', 'office', 'farm', 'home', 'office', 'hq',
+    'office', 'office', 'town', 'assoc', 'office', 'home', 'site', 'office',
+    'town', 'town', 'office', 'office', 'farm', 'home', 'bridge', 'hq',
     'site', 'bridge', 'studio', 'windfarm', 'coast', 'town',
   ],
   company: [
-    'bank', 'hq', 'hq', 'hq', 'hq', 'home', 'assoc', 'bank',
-    'hq', 'hq', 'bank', 'hq', 'farm', 'home', 'hq', 'hq',
+    'bank', 'hq', 'assoc', 'hq', 'hq', 'home', 'hq', 'bank',
+    'farm', 'hq', 'bank', 'hq', 'hq', 'home', 'hq', 'hq',
     'site', 'bridge', 'studio', 'windfarm', 'coast', 'town',
   ],
   director: [

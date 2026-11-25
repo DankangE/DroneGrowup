@@ -6,7 +6,7 @@ import * as data from '../src/game/data.ts';
 import { POLICIES, pick, botRandom } from '../src/game/bots.ts';
 import { choose, finalRank, netWorth, newGame, options } from '../src/game/engine.ts';
 import type { SpaceKind, Stage } from '../src/game/types.ts';
-import { forkBalance } from './fork-balance.ts';
+import { MAX_ROUTE_GAP, forkBalance } from './fork-balance.ts';
 
 if (process.env.SIM_TUNE) {
   const tuning = await import(pathToFileURL(resolve(process.env.SIM_TUNE)).href);
@@ -171,19 +171,21 @@ row('\nmean forks', 'mean contests', 'mean rankups', 'mean achievement points', 
 row(...(['forks','contests','rankups','points'] as const).map(k => mean(results.map(r => r[k])).toFixed(2)),
   pct(mean(results.map(r => r.credited)), mean(results.map(r => r.score))));
 
-row('\nforced route (100 seeds per route)', 'A mean score', 'A goal share', 'B mean score', 'B goal share');
+const forcedRuns = Number(process.env.SIM_FORCED_RUNS ?? 300);
+row(`\nforced route (${forcedRuns} seeds per route)`, 'A mean score', 'A goal share', 'B mean score', 'B goal share', 'better', 'gap');
 const routeScores: { a: number; b: number }[] = [];
 for (const name of names.filter(n => POLICIES[n].style === 'planner')) {
   const [a,b] = [0,1].map(route => {
-    const group = Array.from({ length: 100 }, (_, i) => run(name, i + 1, route));
+    const group = Array.from({ length: forcedRuns }, (_, i) => run(name, i + 1, route));
     return { score: mean(group.map(r => r.score)), goals: group.filter(r => r.ending === name).length };
   });
-  row(name, a.score.toFixed(1), pct(a.goals, 100), b.score.toFixed(1), pct(b.goals, 100));
+  row(name, a.score.toFixed(1), pct(a.goals, forcedRuns), b.score.toFixed(1), pct(b.goals, forcedRuns),
+    a.score > b.score ? 'A' : 'B', pct(Math.max(a.score, b.score) - Math.min(a.score, b.score), Math.min(a.score, b.score)));
   routeScores.push({ a: a.score, b: b.score });
 }
 const balance = forkBalance(routeScores);
-row('planners with higher mean score', balance.aWins, '—', balance.bWins, '—');
-if (!balance.passed) problems.add('each route needs a higher mean score for at least two planners');
+row('planners with higher mean score', balance.aWins, '—', balance.bWins, '—', 'worst gap', pct(balance.worstGap, 1));
+if (!balance.passed) problems.add(`each route needs a higher mean score for at least two planners, and no planner may gain more than ${pct(MAX_ROUTE_GAP, 1)} from one route (worst ${pct(balance.worstGap, 1)})`);
 row('\nAPI maxima (including forced runs)', ...Object.keys(maxima));
 row('observed', ...Object.values(maxima));
 row('limit', 120, 0, 0, 2, 340000, 0);
