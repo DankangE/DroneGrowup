@@ -141,7 +141,7 @@ test('net worth includes every §10 component with integer resale floors, then h
   state.holdings = [{ id: 'drone_cafe', level: 1, paid: 1201 }]; state.fund.amount = 2345;
   state.board.ledger = { 급여: 77, 생활비: -99 };
   // A home multiplier is 70%; each item/shop/organization percentage floors independently.
-  const worth = 10000 - 1234 + 562 + 187 + 437 + 4326 + 10815 + 840 + 2345 + 1234 + 77 - 99;
+  const worth = 10000 - 1234 + 562 + 187 + 437 + 4326 + 5768 + 840 + 2345 + 1234 + 77 - 99;
   assert.equal(finalNetWorth(state), worth);
   const final = finish(state);
   assert.equal(final.score, worth + 17 * 30 + 200 + 500);

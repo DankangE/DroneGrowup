@@ -30,8 +30,8 @@ function tile(state: GameState, kind: 'shop' | 'life', map: MapId = 'B') {
   state.board.step = 'space'; state.board.dice = [1, 1];
 }
 
-for (const [map, expected] of [['B', 275], ['E', 325], ['F', 200]] as const) {
-  test(`§6.6 employee manager in ${map}: 250 → ${expected}`, () => {
+for (const [map, expected] of [['B', 412], ['E', 487], ['F', 300]] as const) {
+  test(`§6.6 employee manager in ${map}: 375 → ${expected}`, () => {
     const state = stateAt(map, 'employee', 2);
     assert.equal(salary(state), expected); assert.equal(lines(state)['급여'], expected);
     assert.equal(choose(state, 'end').state.board.ledger['급여'], expected);
@@ -61,7 +61,7 @@ test('conditional map pay, rehire pay and flight rank multipliers use the curren
   assert.equal(salary(stateAt('E', 'service', 1)), 110);
   assert.equal(salary(stateAt('A', 'service', 0)), 63);
   const rehire = stateAt('E', 'employee', 2); rehire.flags.push(C.rehire);
-  assert.equal(salary(rehire), 195);
+  assert.equal(salary(rehire), 292);
   assert.deepEqual([0, 1, 2, 3, 4].map(rank => flightPay(stateAt('C', 'pilot', rank), 235)), [305, 351, 397, 458, 534]);
 });
 
@@ -130,12 +130,12 @@ test('business operations retain v1 contract, payroll and academy formulas witho
   state.track = 'academy'; state.s.students = 30; state.s.level = 1;
   assert.equal(lines(state)['수강료 수입'], 528); assert.equal(lines(state)['교관 급여'], -140); assert.equal(lines(state)['실습장 운영비'], -90);
   state.track = 'instructor'; state.job.rank = 1; state.flags.push('examiner');
-  assert.equal(lines(state)['급여'], 180); assert.equal(lines(state)['평가관 수당'], undefined);
+  assert.equal(lines(state)['급여'], 270); assert.equal(lines(state)['평가관 수당'], undefined);
 });
 test('accrual defers cash; settlement preserves net worth, clears once and borrows exactly the shortfall', () => {
   const state = stateAt('B', 'employee', 2), before = structuredClone(state);
   const accrued = accrue(frozen(state));
-  assert.equal(accrued.s.money, 500); assert.equal(accrued.board.ledger['급여'], 275);
+  assert.equal(accrued.s.money, 500); assert.equal(accrued.board.ledger['급여'], 412);
   assert.deepEqual(state, before); assert.equal(netWorth(settle(accrued)), netWorth(accrued));
   assert.deepEqual(settle(settle(accrued)), settle(accrued));
   const poor = stateAt(); poor.s.money = 3; poor.s.debt = 4; poor.board.ledger = { expense: -25 };
@@ -145,18 +145,18 @@ test('accrual defers cash; settlement preserves net worth, clears once and borro
 
 test('credit uses eight current-map salaries plus half of held assets, excluding cash and pending salary', () => {
   const state = stateAt('B', 'employee', 2); state.s.drone = 1; state.fund.amount = 1000;
-  assert.equal(assetValue(state), 1100); assert.equal(creditLimit(state), 1000 + 275 * 8 + 550);
+  assert.equal(assetValue(state), 1100); assert.equal(creditLimit(state), 1000 + 412 * 8 + 550);
   state.s.money = 10000; state.board.ledger = { 급여: 500 };
-  assert.equal(creditLimit(state), 3750); assert.equal(netWorth(state), 11600);
+  assert.equal(creditLimit(state), 4846); assert.equal(netWorth(state), 11600);
 });
 test('asset valuation includes deposits, indexed homes, extra estates, businesses and organization value once', () => {
   const state = stateAt('B'); state.home = { map: 'B', tier: 2, deposit: 1500 };
   assert.equal(assetValue(state), 1500);
   state.home = { map: 'E', tier: 4, deposit: 0 }; state.s.homeIndex = 110;
-  assert.equal(homeValue(state, state.home), 21450);
+  assert.equal(homeValue(state, state.home), 11440);
   state.estates = [{ map: 'A', tier: 3, paid: 4200 }]; state.holdings = [{ id: 'shop', level: 1, paid: 1200 }];
   state.fund.amount = 100; state.track = 'company'; state.s.value = 12345;
-  assert.equal(assetValue(state), 21450 + 4620 + 840 + 100 + 1234);
+  assert.equal(assetValue(state), 11440 + 4620 + 840 + 100 + 1234);
 });
 
 function assets(): GameState {
@@ -218,8 +218,8 @@ test('lap allowance is strictly after eight seasons, records every crossing and 
   const state = stateAt('E', 'employee', 2); state.board.lapAt.B = 4;
   state.turn = 12; assert.equal(passStart(state, 'B').s.money, 500);
   state.turn = 13;
-  const next = passStart(state, 'B'); assert.equal(next.s.money, 555); assert.equal(next.board.lapAt.B, 13);
-  assert.equal(next.board.lapAt.E, -1); assert.equal(passStart(next, 'B').s.money, 555);
+  const next = passStart(state, 'B'); assert.equal(next.s.money, 582); assert.equal(next.board.lapAt.B, 13);
+  assert.equal(next.board.lapAt.E, -1); assert.equal(passStart(next, 'B').s.money, 582);
   for (const status of ['student', 'jobless'] as const) {
     state.status = status; assert.equal(passStart(state, 'B').s.money, 530);
   }

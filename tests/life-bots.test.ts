@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { bankChoice, pickBot, POLICIES, POLICY_IDS } from '../src/life/bots.ts';
+import { bankChoice, phoneWanted, pickBot, POLICIES, POLICY_IDS } from '../src/life/bots.ts';
 import { choose, newGame, options, reachable } from '../src/life/engine.ts';
 import { LIFE_RULES } from '../src/life/life-data.ts';
 import { rollDice } from '../src/life/move.ts';
@@ -120,4 +120,54 @@ test('a second free popup exit in the same season never gets filtered out', () =
   for (const [id,seed] of [['racer_creator',18],['bon_vivant',10],['random',17]] as const) {
     assert.equal(runLife(id,seed).state.turn,204);
   }
+});
+
+const budgetContext = { phoneUsed: false, tried: [], salaryIncome: 20000, invested: 0 };
+test('students preserve tuition and exam cash instead of purchasing equipment before their first career', () => {
+  const fresh = newGame(1);
+  assert.equal(phoneWanted('pilot', fresh, budgetContext), false);
+  const state = choose(fresh, 'start:school').state;
+  state.s.money = 2000;
+  const phone = options(state, 'phone');
+  const exit = { ...options(state).find(o => o.id === 'spin')!, id: 'end' };
+  assert.equal(pickBot('pilot', state, [...phone, exit], budgetContext).id, 'end');
+});
+
+test('family buys with cash and refuses a mortgage even when the cheaper card is enabled', () => {
+  const state = choose(newGame(1), 'start:school').state;
+  state.status = 'working'; state.track = 'clerk'; state.turn = 40; state.board.pos = 'B-o2'; state.board.step = 'space';
+  state.s.money = 20000; state.job.tracks = ['clerk'];
+  const choice = pickBot('clerk_family', state, options(state), budgetContext);
+  assert.equal(choice.id, 'home:buy:4'); assert.equal(bankChoice(choice.id), false);
+});
+
+test('an existing dual-income choice does not consume the family leisure tile again', () => {
+  const state = choose(newGame(1), 'start:school').state;
+  state.status = 'working'; state.track = 'clerk'; state.turn = 60; state.board.pos = 'B-i3'; state.board.step = 'space';
+  state.s.money = 5000; state.family.marriedAt = 20; state.family.dual = true;
+  state.home = { map: 'B', tier: 4, deposit: 0 };
+  assert.match(pickBot('clerk_family', state, options(state), budgetContext).id, /^leisure:/);
+});
+
+test('field career upgrades equipment to the next rank requirement rather than stopping at gear two', () => {
+  const state = choose(newGame(1), 'start:work').state;
+  state.status = 'working'; state.track = 'inspector'; state.turn = 80; state.job.rank = 1;
+  state.job.tracks = ['pilot', 'inspector']; state.flags.push('licensed');
+  Object.assign(state.s, { money: 30000, skill: 330, rep: 120, xp: 630, drone: 4, gear: 2, car: 2 });
+  const gear = options(state, 'phone').find(o => o.id === 'buy:gear')!;
+  const exit = { ...gear, id: 'end', cost: 0, sure: { text: '', add: {} } };
+  assert.equal(pickBot('specialist_field', state, [gear, exit], budgetContext).id, 'buy:gear');
+});
+
+test('an expensive event failure cannot be financed by an implicit loan in a planned policy', () => {
+  const state = choose(newGame(1), 'start:work').state;
+  state.phase = 'event'; state.eventId = 'partner_exit'; state.track = 'company'; state.status = 'working';
+  state.s.money = 100; state.s.stamina = 100;
+  const choice = pickBot('solo_ceo', state, options(state), budgetContext);
+  assert.equal(choice.cost, 0);
+});
+
+test('first jobs are early in a reproducible sixteen-policy cohort', () => {
+  const ages = POLICY_IDS.map(id => runLife(id, 1).report.firstJob ?? Infinity).sort((a,b) => a-b);
+  assert.ok((ages[7] + ages[8]) / 2 <= 22, ages.join(','));
 });

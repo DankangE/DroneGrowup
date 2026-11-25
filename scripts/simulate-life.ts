@@ -1,4 +1,6 @@
-// T14: observations only. Balance thresholds become failures in T15; stalls/crashes fail today.
+// T15: §13.2 gates fail closed. Human-speed timing remains an estimate until T24.
+import { writeFileSync } from 'node:fs';
+import { GRADE_STEPS } from '../src/game/data.ts';
 import { availableParallelism } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
@@ -32,7 +34,7 @@ export type RunReport = {
   dismissed: boolean; specials: number; jobs: string[]; maps: number[]; visited: number; choices: number; forks: number;
   noCar: number; seconds: number[]; activities: Record<string, number>; wealth: Record<string, number>;
   events: Record<string, number>; promotions: { cohort: 'specialist' | 'ordinary'; rank: number; seasons: number }[];
-  zone: Record<string, { income: number; seasons: number }>; bankUses: number; violations: number; rerolls: number; skipped: number;
+  earlyS: boolean; zone: Record<string, { income: number; seasons: number }>; bankUses: number; violations: number; rerolls: number; skipped: number;
 };
 const counts = () => Object.fromEntries(TIME_MODEL.map(row => [row.id, 0]));
 const periodAt = (turn: number) => LIFE_RULES.periods.findIndex(p => LIFE_RULES.startAge + Math.floor(turn / LIFE_RULES.seasons.length) <= p.maxAge);
@@ -53,7 +55,7 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     feat: 0, grade: '', ending: '', noLoan: true, debtSeasons: 0, income: 0, spending: 0, cashHeavy: false,
     firstJob: null, top: false, demoted: false, dismissed: false, specials: 0, jobs: [], maps: MAP_IDS.map(() => 0),
     visited: 0, choices: 0, forks: 0, noCar: 0, seconds: LIFE_RULES.periods.map(() => 0), activities: counts(),
-    wealth: {}, events: {}, promotions: [], zone: {}, bankUses: 0, violations: 0, rerolls: 0, skipped: 0 };
+    wealth: {}, events: {}, promotions: [], earlyS: false, zone: {}, bankUses: 0, violations: 0, rerolls: 0, skipped: 0 };
   while (state.phase !== 'ended') {
     if (++seasonSteps > (config.stepLimit ?? BOT_LIMITS.stepsPerSeason)) throw new Error(`stuck ${policy}/${seed}/${experiment} turn=${state.turn} ${state.board.step}`);
     const before = state, context: BotContext = { phoneUsed, tried, noBank: experiment === 'no-bank', salaryIncome, invested };
@@ -70,6 +72,9 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     const option = pickBot(policy, state, offered, context), id = option.id;
     const moves = before.board.step === 'pick' && id.startsWith('go:') ? offered.filter(o => o.id.startsWith('go:')).length : 0;
     const next = choose(state, id, menu, experiment === 'single'); state = next.state;
+    if (state.turn < (45 - LIFE_RULES.startAge) * LIFE_RULES.seasons.length) {
+      report.earlyS ||= Object.entries(GRADE_STEPS).some(([stat, steps]) => stat !== 'stamina' && state.s[stat as keyof typeof state.s] >= steps.at(-1)!);
+    }
     const result = next.result, elapsed = state.turn - before.turn;
     if (bankChoice(id)) report.bankUses++;
     if (id.startsWith('fund:in:')) invested += Number(id.split(':')[2]);
@@ -133,7 +138,7 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     if (promoted > 0 && (id === 'luck:promote' || answering)) report.specials += promoted;
     if (state.status === 'working' && report.firstJob === null) report.firstJob = LIFE_RULES.startAge + Math.floor(state.turn / LIFE_RULES.seasons.length);
     if (elapsed) {
-      report.violations += Number(spin - rerolls > 1 || tile > 1 || bonus > 1);
+      report.violations += Number((spin - rerolls !== 1 && !result.effects && id !== ENDING_RULES.earlyId) || tile > 1 || bonus > 1);
       report.skipped += Math.max(0, elapsed - 1); report.debtSeasons += state.s.debt > 0 ? elapsed : 0;
       happySum += state.s.happy * elapsed;
       const map = before.board.pos[0] as MapId; report.maps[MAP_IDS.indexOf(map)] += elapsed;
@@ -179,7 +184,7 @@ export function reportTables(base: RunReport[], single: RunReport[], noBank: Run
     POLICY_IDS.map(id => { const rs = base.filter(r => r.policy === id); return [id,rs.length,round(avg(rs,r=>sum(r.seconds)/C.minute)),
       round(median(rs.map(r=>r.worth))),round(avg(rs,r=>r.score)),`${round(avg(rs,r=>r.meanHappy))}/${round(avg(rs,r=>r.happy))}`,
       rate(rs,r=>r.noLoan),rate(rs,r=>r.top),ratio(rs,r=>r.spending,r=>r.income)]; })),
-    table('§13.2 전체 지표 (T14: 밸런스 기준은 관측만)', ['영역','측정','기준'], [
+    table('§13.2 전체 지표 (세부 실패 판정은 아래 표)', ['영역','측정','기준'], [
       ['완주',`${base.length}/${base.length}; 행동한도 위반 ${sum(base.map(r=>r.violations))}; 행운 재돌림 ${sum(base.map(r=>r.rerolls))}; 사건 생략 ${sum(base.map(r=>r.skipped))}계절`,'204계절; 돌림1/칸≤1/추가≤1 (행운·사건 예외 별도)'],
       ['시간',`${round(avg(base,r=>sum(r.seconds)/C.minute))}분; 시기 ${LIFE_RULES.periods.map((_,i)=>round(avg(base,r=>r.seconds[i]/C.minute))).join('/')}`,'전체45–55; 정책40–60; 시기16/20/14 ±4분'],
       ['이동',`무차량 선택지 ${round(sum(base.map(r=>r.choices))/sum(base.map(r=>r.noCar)))}; ≥2 ${ratio(base,r=>r.forks,r=>r.noCar)}; 지도 중앙 ${median(base.map(r=>r.visited))}; 비집중 정책 최장체류 ${percent(Math.max(...base.filter(r=>!('focus' in POLICIES[r.policy])).map(r=>Math.max(...r.maps)/r.turn)),1)}`,'≥2.2; ≥85%; ≥4지도; ≤60%'],
@@ -193,7 +198,7 @@ export function reportTables(base: RunReport[], single: RunReport[], noBank: Run
       ['엔딩','아래 21종 표','각1.5–20%; 빚쟁이0–3%'],
       ['사건',`${round(avg(base,r=>sum(Object.values(r.events))))}/판; 최대 사건별 판평균 ${round(Math.max(...Object.values(eventTotals))/base.length)}; 첫 ${coverage.length}판 ${ALL_EVENTS.length-missing.length}/${ALL_EVENTS.length}종`,'35–55/판; 동일사건 평균≤2.5; 3000판 120종'],
       ['갈림',`기본 ${round(avg(base,r=>r.score))}; 한개 ${round(avg(single,r=>r.score))}; 상승 ${percent(avg(base,r=>r.score)-avg(single,r=>r.score),avg(single,r=>r.score))}`,'5–20%'],
-      ['상한',`최고점 ${Math.max(...base.map(r=>r.score))}; 초과 ${base.filter(r=>r.score>Math.max(0,r.worth)+C.scoreCap).length}판`,'max(0,순자산)+59,970 (문서 기록은 T15)'],
+      ['상한',`최고점 ${Math.max(...base.map(r=>r.score))}; 초과 ${base.filter(r=>r.score>Math.max(0,r.worth)+C.scoreCap).length}판`,'max(0,순자산)+59,970 (T15 범위 문서에 기록)'],
     ]),
     table('연령별 계획형 순자산 (만원)', ['나이','표본','중앙값','목표'], AGES.map((age,i)=>[age,planners.filter(r=>r.wealth[age]!==undefined).length,round(median(planners.map(r=>r.wealth[age]))),TARGETS[i]])),
     table('직업 경험률', ['직업','경험 판','비율'], TRACKS.map(t=>[t.id,base.filter(r=>r.jobs.includes(t.id)).length,rate(base,r=>r.jobs.includes(t.id))])),
@@ -206,7 +211,101 @@ export function reportTables(base: RunReport[], single: RunReport[], noBank: Run
   return sections.join('\n');
 }
 
-type Batch = { base: RunReport[]; single: RunReport[]; noBank: RunReport[]; failures: string[] };
+export type Criterion = { id: string; area: string; value: number; min: number; max: number;
+  unit: string; status: 'PASS' | 'FAIL' | 'ESTIMATE'; within: boolean; detail: string };
+/** Nonfinite observations and empty cohorts never silently pass. Bounds are inclusive, before rounding. */
+export function criterion(id: string, area: string, value: number, min: number, max: number,
+  unit = '', detail = '', estimate = false): Criterion {
+  const within = Number.isFinite(value) && value >= min && value <= max;
+  return { id, area, value, min, max, unit, within, detail, status: estimate ? 'ESTIMATE' : within ? 'PASS' : 'FAIL' };
+}
+export function evaluateCriteria(out: Batch, runs = C.runs): Criterion[] {
+  const { base, single, noBank } = out, all = [...base, ...single, ...noBank];
+  const planners = base.filter(planned), notRandom = base.filter(r => r.policy !== 'random');
+  const avg = (rows: RunReport[], get: (r: RunReport) => number) => mean(rows.map(get));
+  const pct = (n: number, d: number) => d > 0 ? 100 * n / d : NaN;
+  const share = (rows: RunReport[], test: (r: RunReport) => boolean) => pct(rows.filter(test).length, rows.length);
+  const ratio = (rows: RunReport[], a: (r: RunReport) => number, b: (r: RunReport) => number) => pct(sum(rows.map(a)),sum(rows.map(b)));
+  const family = base.filter(r=>r.policy==='clerk_family'), frugal = base.filter(r=>r.policy==='service_frugal');
+  const checks: Criterion[] = [];
+  const add = (...args: Parameters<typeof criterion>) => checks.push(criterion(...args));
+  for (const [name, rows] of [['base',base],['single',single],['no-bank',noBank]] as const) {
+    const valid = rows.length === runs * POLICY_IDS.length && POLICY_IDS.every(policy => {
+      const seeds = rows.filter(r=>r.policy===policy).map(r=>r.seed);
+      return seeds.length === runs && new Set(seeds).size === runs && seeds.every(seed=>Number.isInteger(seed) && seed>=1 && seed<=runs);
+    });
+    add(`complete:${name}`, '완주', Number(valid), 1, 1, '', `${rows.length}/${runs * POLICY_IDS.length}`);
+  }
+  add('complete:turns', '완주', all.filter(r=>r.turn!==LIFE_RULES.maxTurns).length, 0, 0, '판');
+  add('complete:stalls', '완주', out.failures.length, 0, 0, '', out.failures.join('; '));
+  add('complete:actions', '완주', sum(all.map(r=>r.violations)), 0, 0);
+  add('bank:forbidden', '은행', sum(noBank.map(r=>r.bankUses)), 0, 0);
+  add('time:all', '시간', avg(base,r=>sum(r.seconds)/60), 45, 55, '분', 'T24 human-speed calibration', true);
+  for (const policy of POLICY_IDS) add(`time:${policy}`, '시간', avg(base.filter(r=>r.policy===policy),r=>sum(r.seconds)/60),40,60,'분','T24',true);
+  [16,20,14].forEach((target,i)=>add(`time:period${i}`, '시간',avg(base,r=>r.seconds[i]/60),target-4,target+4,'분','T24',true));
+  add('move:choices', '이동', sum(base.map(r=>r.choices))/sum(base.map(r=>r.noCar)), 2.2, Infinity);
+  add('move:forks', '이동', ratio(base,r=>r.forks,r=>r.noCar), 85, 100, '%');
+  add('move:maps', '이동', median(base.map(r=>r.visited)), 4, 6);
+  add('move:residence', '이동', Math.max(...base.filter(r=>!('focus' in POLICIES[r.policy])).map(r=>100*Math.max(...r.maps)/r.turn)),0,60,'%');
+  add('bank:no-loan', '은행', share(planners,r=>r.noLoan),90,100,'%');
+  add('bank:debt-seasons', '은행', ratio(planners,r=>r.debtSeasons,r=>r.turn),0,10,'%');
+  add('bank:score-loss', '은행', pct(avg(base,r=>r.score)-avg(noBank,r=>r.score),avg(base,r=>r.score)),-Infinity,10,'%');
+  add('bank:debtor', '은행', share(notRandom,r=>r.ending==='debtor'),0,3,'%');
+  add('wealth:samples', '자산', planners.filter(r=>AGES.some(age=>!Number.isFinite(r.wealth[age]))).length,0,0,'판');
+  AGES.forEach((age,i)=>add(`wealth:${age}`, '자산', median(planners.map(r=>r.wealth[age])),TARGETS[i]*.7,TARGETS[i]*1.3,'만원',
+    `${planners.filter(r=>Number.isFinite(r.wealth[age])).length}/${planners.length} samples`));
+  add('spend:all', '지출', ratio(base,r=>r.spending,r=>r.income),30,Infinity,'%');
+  add('spend:family', '지출', ratio(family,r=>r.spending,r=>r.income),45,Infinity,'%');
+  add('spend:cash', '지출', share(base,r=>r.cashHeavy),0,20,'%');
+  // Never-employed runs sort after employed runs rather than disappearing from the median.
+  add('career:first', '직업', median(base.map(r=>r.firstJob??Infinity)),-Infinity,22,'세');
+  for (const policy of POLICY_IDS.filter(id=>POLICIES[id].tracks.length)) {
+    add(`career:top:${policy}`, '직업',share(base.filter(r=>r.policy===policy),r=>r.top),30,70,'%');
+  }
+  add('career:demoted', '직업',share(base,r=>r.demoted),10,30,'%');
+  add('career:dismissed', '직업',share(base,r=>r.dismissed),2,10,'%');
+  add('career:special', '직업',avg(base,r=>r.specials),.3,1,'회/판');
+  for (const track of TRACKS) add(`career:seen:${track.id}`, '직업',share(base,r=>r.jobs.includes(track.id)),2,100,'%');
+  // Only ranks with a next rank in BOTH groups have a meaningful comparison; missing samples fail.
+  const sharedRanks = Math.min(Math.max(...TRACKS.filter(t=>t.tier===3).map(t=>t.ranks.length)),
+    Math.max(...TRACKS.filter(t=>t.salaried&&t.tier<3).map(t=>t.ranks.length)))-1;
+  const promotions = base.flatMap(r=>r.promotions);
+  for (let rank=0;rank<sharedRanks;rank++) {
+    const spec = promotions.filter(p=>p.rank===rank&&p.cohort==='specialist');
+    const normal = promotions.filter(p=>p.rank===rank&&p.cohort==='ordinary');
+    add(`zone:promotion:${rank}`, '특구',pct(mean(spec.map(p=>p.seasons)),mean(normal.map(p=>p.seasons))),55,70,'%',`D n=${spec.length}; ordinary n=${normal.length}`);
+  }
+  const zoneMean = (map: string) => sum(base.map(r=>r.zone[map]?.income??0))/sum(base.map(r=>r.zone[map]?.seasons??0));
+  add('zone:income', '특구',pct(zoneMean('D')-zoneMean('B'),Math.abs(zoneMean('B'))),-10,25,'%');
+  add('happy:all', '행복',avg(base,r=>r.meanHappy),300,700);
+  add('happy:family', '행복',avg(family,r=>r.meanHappy),600,Infinity);
+  add('happy:frugal', '행복',avg(frugal,r=>r.meanHappy),0,350);
+  add('score:happy', '점수',ratio(base,r=>r.happy*ENDING_RULES.happyPoints,r=>r.score),15,35,'%');
+  add('score:feats', '점수',ratio(base,r=>r.feat,r=>r.score),10,20,'%');
+  const scores = POLICY_IDS.map(id=>avg(base.filter(r=>r.policy===id),r=>r.score));
+  add('score:policy', '점수',Math.max(...scores)/median(scores),0,3,'배');
+  add('score:S', '점수',share(planners,r=>r.grade==='S'),5,10,'%');
+  for (const ending of ENDINGS2) add(`ending:${ending.id}`, '엔딩',share(base,r=>r.ending===ending.id),ending.id==='debtor'?0:1.5,ending.id==='debtor'?3:20,'%');
+  add('event:count', '사건',avg(base,r=>sum(Object.values(r.events))),35,55,'회/판');
+  const totals = ALL_EVENTS.map(e=>({id:e.id,n:sum(base.map(r=>r.events[e.id]??0))})).sort((a,b)=>b.n-a.n);
+  add('event:repeat', '사건',totals[0].n/base.length,0,2.5,'회/판',totals[0].id);
+  const coverage = [...base].sort((a,b)=>a.seed-b.seed||POLICY_IDS.indexOf(a.policy)-POLICY_IDS.indexOf(b.policy)).slice(0,C.coverageRuns);
+  const missing = ALL_EVENTS.filter(e=>!coverage.some(r=>r.events[e.id])).map(e=>e.id);
+  add('event:sample', '사건',coverage.length,C.coverageRuns,C.coverageRuns,'판');
+  add('event:coverage', '사건',ALL_EVENTS.length-missing.length,120,120,'종',missing.join(', '));
+  add('fork:gain', '갈림',pct(avg(base,r=>r.score)-avg(single,r=>r.score),avg(single,r=>r.score)),5,20,'%');
+  add('score:cap', '상한',all.filter(r=>!Number.isSafeInteger(r.score)||r.score<0||r.score>Math.max(0,r.worth)+C.scoreCap).length,0,0,'판',
+    `base max=${Math.max(...base.map(r=>r.score))}; all max=${Math.max(...all.map(r=>r.score))}`);
+  return checks;
+}
+export function criteriaTable(checks: Criterion[]): string {
+  const bound = (n: number) => n===Infinity?'∞':n===-Infinity?'−∞':round(n);
+  return table('§13.2 기준별 판정', ['영역','ID','판정','값','범위','근거'],checks.map(c=>[
+    c.area,c.id,c.status+(c.status==='ESTIMATE'?` (${c.within?'within':'outside'})`:''),round(c.value)+c.unit,
+    `${bound(c.min)}..${bound(c.max)}${c.unit}`,c.detail]));
+}
+
+export type Batch = { base: RunReport[]; single: RunReport[]; noBank: RunReport[]; failures: string[] };
 function batch(policy: PolicyId, runs: number): Batch {
   const out: Batch = { base: [], single: [], noBank: [], failures: [] };
   for (let seed = 1; seed <= runs; seed++) {
@@ -219,10 +318,12 @@ function batch(policy: PolicyId, runs: number): Batch {
   }
   return out;
 }
-export async function simulate(runs: number, workers = Math.min(C.workers, availableParallelism())): Promise<Batch> {
+export async function simulate(runs: number, workers = Math.min(C.workers, availableParallelism()), policies: PolicyId[] = POLICY_IDS): Promise<Batch> {
   if (!Number.isSafeInteger(runs) || runs < 1) throw new Error('SIM_RUNS must be a positive integer');
-  const output: Batch = { base: [], single: [], noBank: [], failures: [] }, pending = [...POLICY_IDS];
-  await Promise.all(Array.from({length: Math.min(workers,POLICY_IDS.length)}, async () => {
+  if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('workers must be a positive integer');
+  if (!policies.length || new Set(policies).size !== policies.length || policies.some(p => !POLICY_IDS.includes(p))) throw new Error('invalid SIM_POLICIES');
+  const output: Batch = { base: [], single: [], noBank: [], failures: [] }, pending = [...policies];
+  await Promise.all(Array.from({length: Math.min(workers,policies.length)}, async () => {
     const worker = new Worker(new URL(import.meta.url), { workerData: true });
     try {
       while (pending.length) {
@@ -261,12 +362,20 @@ if (!isMainThread && workerData) parentPort!.on('message', ({policy,runs}) => pa
 if (isMainThread && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const started = performance.now();
   try {
-    const runs = Number(process.env.SIM_RUNS ?? C.runs), out = await simulate(runs);
-    console.log('T14 observations. Planned = all except drifter/random. No-bank blocks loans, repayments and mortgages; automatic shortfall debt remains an engine obligation. Income excludes capital transfers; spending includes housing/family upkeep. Promotion intervals are observational, not matched cohorts.');
+    const runs = Number(process.env.SIM_RUNS ?? C.runs);
+    const policies = (process.env.SIM_POLICIES ? process.env.SIM_POLICIES.split(',') : undefined) as PolicyId[] | undefined;
+    const out = await simulate(runs, undefined, policies);
+    const criteria = evaluateCriteria(out, runs);
+    console.log('T15 hard gates; timing estimates only (T24). Planned = all except drifter/random. No-bank blocks loans, repayments and mortgages; automatic shortfall debt remains an engine obligation. Income excludes capital transfers; spending includes housing/family upkeep. Promotion intervals are observational, not matched cohorts.');
     console.log(reportTables(out.base,out.single,out.noBank));
+    console.log(criteriaTable(criteria));
+    console.log(`Before age 45, any graded ability at S (excluding stamina): ${rate(out.base,r=>r.earlyS)}; §13.3 action ability gains are globally scaled to 85%.`);
+    if (process.env.SIM_REPORT) writeFileSync(process.env.SIM_REPORT, JSON.stringify({ ...out, criteria }));
     for (const failure of out.failures) console.error(failure);
     const complete = out.base.length === runs*POLICY_IDS.length && out.single.length === out.base.length && out.noBank.length === out.base.length;
     console.log(`life simulation: ${out.base.length}/${runs*POLICY_IDS.length} base, ${out.single.length} single, ${out.noBank.length} no-bank; stuck/crashes=${out.failures.length}; elapsed=${round((performance.now()-started)/1000)}s`);
-    if (!complete || out.failures.length) process.exitCode = 1;
+    const failed = criteria.filter(c => c.status === 'FAIL');
+    console.log(`life balance: ${criteria.filter(c=>c.status==='PASS').length} passed, ${failed.length} failed, ${criteria.filter(c=>c.status==='ESTIMATE').length} timing estimates (T24)`);
+    if (!complete || out.failures.length || failed.length) process.exitCode = 1;
   } catch (error) { console.error(error); process.exitCode = 1; }
 }

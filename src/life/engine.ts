@@ -6,18 +6,18 @@ import type { BranchId, Derived as V1Derived, Forecast as V1Forecast,
   Result as V1Result } from '../game/types.ts';
 import { CONTEST_EVENTS } from '../game/data.ts';
 import { ACTIONS, EVENTS } from './compat.ts';
-import { CAREER_TEXT, promotionView, retirementView } from './career2.ts';
+import { CAREER_KEYS, CAREER_TEXT, promotionView, retirementView } from './career2.ts';
 import { applyAssetChoice, applyAssetMove, assetPopup, assetReachable, consumeLuck,
   discountedChoice, drawLuck, luckChanceBonus, rollAssetDice, shortcutMoves } from './assets.ts';
 import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, ECONOMY_TEXT,
   flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
 import { canRetireEarly, finish, recordAchievements, recordEndingEffect, retireEarly } from './ending.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
-  contestPrize, creatorIncome, performance, review, specialistChoices, startingAction } from './jobs.ts';
+  contestPrize, creatorIncome, entryRank, performance, review, specialistChoices, startingAction } from './jobs.ts';
 import { applyHomeChoice, homeRecovery, yearEndHome } from './home.ts';
 import type { EstateOffer } from './home.ts';
 import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery } from './family.ts';
-import { CREATOR_VIDEO, JOB_RULES, SPECIAL_RULES as S, SPECIAL_TEXT as ST, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
+import { CREATOR_VIDEO, JOB_RULES, SPECIAL_RULES as S, SPECIAL_TEXT as ST, TRACKS, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
 import { BOARD_CHOICES, CAREER_ACTIONS, ENDING_KEYS, ENDING_RULES, ENDING_TEXT, FAMILY_RULES, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT, WEDDINGS } from './life-data.ts';
 import { answer, childFor, EVENTS_A, EVENT_KEYS as EK, EVENT_RULES as ER, EVENT_TEXT as ET,
@@ -36,7 +36,7 @@ import { EVENTS_H, lateEventEffect, villaLocks } from './events-h.ts';
 import { randInt } from './move.ts';
 import type { Move } from './move.ts';
 import { PLACES, WORLD } from './world.ts';
-import type { Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
+import type { ActionDef, Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
 import { restore as restoreBase } from './restore.ts';
 export { jobOffers } from './jobs.ts';
 export { settlementSummary } from './ending.ts';
@@ -205,6 +205,15 @@ function outcome(state: GameState, effect: Effect, flight = false, prize = false
 
 type Resolved = { kind: OptionKind; place: PlaceId; choice: LifeChoice; flight: boolean; free?: boolean;
   jobLocks?: string[]; home?: EstateOffer; family?: boolean; eventPopup?: boolean; life?: boolean };
+// §13.3: scale positive ability gains once, before study/zone multipliers. Costs and losses stay intact.
+function balanceAction(action: ActionDef): ActionDef {
+  const effect = (row: Effect): Effect => ({ ...row, ...(row.add && { add: Object.fromEntries(
+    entries(row.add).map(([stat, value]) => [stat, value > 0 && LIFE_RULES.actionGainStats.includes(stat)
+      ? Math.floor(value * LIFE_RULES.actionGainPct / LIFE_RULES.percent) : value])) }) });
+  return { ...action, ...(action.effect && { effect: effect(action.effect) }),
+    ...(action.roll && { roll: { ...action.roll, success: effect(action.roll.success), fail: effect(action.roll.fail) } }) };
+}
+const BALANCED_ACTIONS = [...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, CREATOR_VIDEO, ...ACTIONS].map(balanceAction);
 function view(state: GameState, id: string, r: Resolved): OptionView {
   const { kind, place, flight } = r, choice = discountedChoice(state, id, r.choice);
   const { locks, missing } = unmet(state, choice.need);
@@ -311,7 +320,7 @@ function resolve(state: GameState): Map<string, Resolved> {
   } else {
     const tile = state.board.step === 'space';
     // Match v1 SPACE_MENU: tile menus use kind + when; extras use the actual place + when.
-    for (const original of [...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, CREATOR_VIDEO, ...ACTIONS]) {
+    for (const original of BALANCED_ACTIONS) {
       const recording = original.id === S.videoId;
       if (!(recording ? tile && node.kind === 'job'
         : tile ? SPACE_MENU[node.kind]?.includes(original.id) : original.place === node.place)) continue;
@@ -525,7 +534,17 @@ function applyEffect(state: GameState, effect: Effect, add: StatMap): string | u
   if (flag) state.flags.push(flag);
   if (effect.flag === FAMILY_RULES.partner && state.family.partnerAt === null) state.family.partnerAt = state.turn;
   if (effect.status) state.status = effect.status;
-  if (effect.track !== undefined) state.track = effect.track;
+  if (effect.track !== undefined && effect.track !== state.track) {
+    state.track = effect.track;
+    const track = TRACKS.find(row => row.id === state.track);
+    const rank = track ? entryRank(state, track, 'tile') : JOB_RULES.entryRank;
+    state.job = { rank, perf: JOB_RULES.entryPerf, tenure: 0, total: 0, warn: 0, changedAt: state.turn,
+      tracks: track ? [...new Set([...state.job.tracks, track.id])] : [...state.job.tracks] };
+    state.s.rank = Math.min(rank, STAT_MAX.rank!);
+    for (const key of [CAREER_KEYS.retry, CAREER_KEYS.bonus, CAREER_KEYS.idle, CAREER_KEYS.worked,
+      CAREER_KEYS.deferred, CAREER_KEYS.benefitUntil, CAREER_KEYS.pension, JOB_RULES.retirementBase]) delete state.timers[key];
+    state.flags = state.flags.filter(flag => flag !== CAREER_KEYS.rehire);
+  }
   // Imported v1 achievement endings cannot shorten the T03 lifetime either.
   settle(state);
   return flag;

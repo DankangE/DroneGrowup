@@ -24,6 +24,8 @@ export const LIFE_RULES = {
   start: { ...RULES.start, happy: 100, fans: 0, homeIndex: 100, capStamina: 100 },
   startNode: 'A-o0',
   percent: 100,
+  actionGainPct: 85,
+  actionGainStats: ['theory', 'skill', 'xp', 'rep', 'teach', 'biz', 'net', 'support'] as readonly Stat[],
   uintMax: 0xffffffff,
   defaultSeed: 1,
   statMax: 9_000_000,
@@ -62,7 +64,7 @@ export const HOMES = [
   { tier: 1, name: '월세 원룸', price: 0, upkeep: 25, rest: 60, recovery: 20, happy: 0, adults: 1, kids: 0 },
   { tier: 2, name: '전세 빌라', price: 1500, upkeep: 5, rest: 65, recovery: 22, happy: 1, adults: 2, kids: 0 },
   { tier: 3, name: '소형 아파트', price: 6000, upkeep: 10, rest: 70, recovery: 24, happy: 2, adults: 2, kids: 1 },
-  { tier: 4, name: '중형 아파트', price: 15000, upkeep: 20, rest: 75, recovery: 26, happy: 3, adults: 2, kids: 3 },
+  { tier: 4, name: '중형 아파트', price: 8000, upkeep: 20, rest: 75, recovery: 26, happy: 3, adults: 2, kids: 3 },
   { tier: 5, name: '대형 아파트', price: 32000, upkeep: 35, rest: 80, recovery: 28, happy: 5, adults: 2, kids: 3 },
   { tier: 6, name: '펜트하우스', price: 60000, upkeep: 60, rest: 85, recovery: 30, happy: 7, adults: 2, kids: 3 },
 ] as const;

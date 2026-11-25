@@ -212,7 +212,7 @@ test('rank changes reset performance/tenure/warning, preserve total tenure and m
   assert.equal(up.job.rank, 4); assert.equal(up.s.rank, 3); assert.equal(up.job.tenure, 0);
   assert.equal(up.job.total, 32); assert.equal(up.job.perf, 50); assert.equal(up.job.warn, 0);
   const down = demote(up); assert.equal(down.job.rank, 3); assert.equal(down.job.total, 32);
-  assert.equal(rankChange(state, up)!.salaryDelta, 120); assert.equal(rankChange(up, down)!.salaryDelta, -120);
+  assert.equal(rankChange(state, up)!.salaryDelta, 180); assert.equal(rankChange(up, down)!.salaryDelta, -180);
   assert.equal(rankChange(down, saved(down)), null);
   const top = worker('service', 3); assert.deepEqual(special(top), top);
   assert.ok(special(worker('instructor')).flags.includes('examiner'));
@@ -509,8 +509,9 @@ function careerChoice(state: GameState, career: 'instructor' | 'racer'): string 
 }
 
 for (const career of ['instructor', 'racer'] as const) {
-  test(`seed 1 reaches ${career} review and retirement through choose alone and finishes 204 seasons`, t => {
-    let state = newGame(1), picks = 0, promotions = 0, stops = 0, bonuses = 0, years = 0;
+  const seed = career === 'racer' ? 2 : 1; // T15's slower training needs an earlier exam route.
+  test(`seed ${seed} reaches ${career} review and retirement through choose alone and finishes 204 seasons`, t => {
+    let state = newGame(seed), picks = 0, promotions = 0, stops = 0, bonuses = 0, years = 0;
     let retiredAt: number | undefined;
     while (state.phase !== 'ended') {
       assert.ok(picks++ < 204 * 7, 'career run must keep progressing');

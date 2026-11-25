@@ -24,9 +24,9 @@ export const EVENTS_B: LifeEvent[] = [
   { id: 'noise', title: '층간 소음', text: '윗집에서 늦은 밤까지 소리가 이어진다.', place: 'home', when: {}, weight: 4, life: true,
     eligible: s => (s.home?.tier ?? 0) >= 3 && !(s.home?.map === 'F' && s.home.tier === 5), choices: [
       gamble('찾아간다', 55, effect({ net: 5 }), effect({ happy: -6 })), answer('매트', { happy: 2 }, 40), answer('참는다', { stamina: -8 })] },
-  { id: 'car_trouble', title: '차량 고장', text: '차에서 낯선 소리가 나더니 시동이 잘 걸리지 않는다.', place: 'garage', when: { min: { car: 1 } }, weight: 4, life: true,
+  { id: 'car_trouble', title: '차량 고장', text: '차에서 낯선 소리가 나더니 시동이 잘 걸리지 않는다.', place: 'garage', when: { min: { car: 1 } }, weight: 2, life: true,
     choices: [s => answer('수리', {}, 60 * s.s.car, { carRepair: 1 }), answer('방치', {}, 0, { carWait: 4 })] },
-  { id: 'hobby', title: '취미 권유', text: '친구가 주말을 함께 보낼 새로운 취미를 권한다.', place: 'park', when: {}, weight: 5, life: true,
+  { id: 'hobby', title: '취미 권유', text: '친구가 주말을 함께 보낼 새로운 취미를 권한다.', place: 'park', when: {}, weight: 1, life: true,
     choices: [answer('캠핑 장비', { happy: 8, stamina: 10 }, 200), answer('FPV 동호회', { skill: 6, net: 5 }, 120), answer('집에서 쉰다', { stamina: 10 })] },
   { id: 'world_trip', title: '세계 일주 특가', text: '언젠가 가 보고 싶었던 여행 상품이 눈에 들어왔다.', place: 'airport', when: { min: { money: 3000 } }, weight: 2, life: true,
     choices: [answer('떠난다', { happy: 45, stamina: 30 }, 2500, { perf: -15 }), answer('한 달 살기', { happy: 15 }, 700), answer('다음에')] },
@@ -35,7 +35,7 @@ export const EVENTS_B: LifeEvent[] = [
   { id: 'tax_refund', title: '연말정산 환급', text: '연말정산에서 돌려받을 금액이 확정됐다.', place: 'office', when: {}, weight: 4,
     eligible: s => !!careerTrack(s)?.salaried, choices: [s => answer('받는다', { money: Math.floor(careerSalary(s) * 50 / 100) }),
       s => answer('기부금으로 돌린다', { money: Math.floor(careerSalary(s) * 20 / 100), rep: 5 })] },
-  { id: 'health_check', title: '건강 검진 권유', text: '건강검진 안내장을 보고 몸 상태를 돌아본다.', place: 'hospital', when: {}, weight: 5, life: true,
+  { id: 'health_check', title: '건강 검진 권유', text: '건강검진 안내장을 보고 몸 상태를 돌아본다.', place: 'hospital', when: {}, weight: 1, life: true,
     eligible: s => careerAge(s) >= 35, choices: [answer('정밀 검진', { stamina: 5 }, 150, { healthWait: 8 }),
       gamble('기본 검진', 80, effect(), effect({ stamina: -15 }))] },
 ];

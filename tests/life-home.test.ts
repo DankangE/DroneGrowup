@@ -28,10 +28,10 @@ function integers(value: unknown): void {
   else if (value && typeof value === 'object') Object.values(value).forEach(integers);
 }
 
-test('§8.1 HOMES preserves all prices, costs, recovery, happiness and family capacities', () => {
+test('§8.1 HOMES preserves T15 prices, costs, recovery, happiness and family capacities', () => {
   assert.deepEqual(HOMES.map(h => [h.price, h.upkeep, h.rest, h.recovery, h.happy, h.adults, h.kids]), [
     [0, 0, 60, 20, 0, 1, 0], [0, 25, 60, 20, 0, 1, 0], [1500, 5, 65, 22, 1, 2, 0],
-    [6000, 10, 70, 24, 2, 2, 1], [15000, 20, 75, 26, 3, 2, 3],
+    [6000, 10, 70, 24, 2, 2, 1], [8000, 20, 75, 26, 3, 2, 3],
     [32000, 35, 80, 28, 5, 2, 3], [60000, 60, 85, 30, 7, 2, 3],
   ]);
   assert.equal(newGame(1).s.homeIndex, 100);
@@ -42,7 +42,7 @@ for (const map of ['A', 'B', 'C', 'E', 'F'] as const) {
     for (const tier of [3, 4, 5, 6]) for (const index of [60, 99, 100, 137, 200]) {
       if (tier === 6 && map !== 'E') continue;
       const state = at(map); state.s.homeIndex = index;
-      const base = map === 'F' && tier === 5 ? 12000 : [0, 0, 1500, 6000, 15000, 32000, 60000][tier];
+      const base = map === 'F' && tier === 5 ? 12000 : [0, 0, 1500, 6000, 8000, 32000, 60000][tier];
       const expected = Math.floor(base * MAPS[map].homePct * index / 10000);
       assert.equal(homeValue(state, { map, tier }), expected);
       const offer = estateOffers(state).find(o => o.id === `home:buy:${tier}`)!;
@@ -157,14 +157,14 @@ test('moving into an investment swaps the residence; renting out the former home
 test('rent is floor(current value × 12 / 1000) per investment, unscaled by the player map, accrued once', () => {
   const state = at('F'); state.s.homeIndex = 99; state.home = { map: 'F', tier: 5, deposit: 0 };
   state.estates = [{ map: 'A', tier: 3, paid: 1 }, { map: 'B', tier: 4, paid: 2 }, { map: 'E', tier: 3, paid: 3 }];
-  // Independent values: 4158, 14850, 7722; round each stream down before adding.
-  assert.equal(rentalIncome(state), 49 + 178 + 92);
-  assert.equal(lines(state)['임대 수입'], 319);
-  assert.equal(accrue(state).board.ledger['임대 수입'], 319);
+  // Independent values: 4158, 7920, 7722; round each stream down before adding.
+  assert.equal(rentalIncome(state), 49 + 95 + 92);
+  assert.equal(lines(state)['임대 수입'], 236);
+  assert.equal(accrue(state).board.ledger['임대 수입'], 236);
   state.board.step = 'bonus';
-  assert.equal(choose(state, 'end').state.board.ledger['임대 수입'], 319);
-  state.s.homeIndex = 200; assert.equal(rentalIncome(state), 100 + 360 + 187);
-  state.board.pos = 'D-o0'; assert.equal(rentalIncome(state), 647);
+  assert.equal(choose(state, 'end').state.board.ledger['임대 수입'], 236);
+  state.s.homeIndex = 200; assert.equal(rentalIncome(state), 100 + 192 + 187);
+  state.board.pos = 'D-o0'; assert.equal(rentalIncome(state), 479);
   state.s.debt = 900000;
   const cleared = liquidate(state);
   assert.equal(cleared.estates.length, 0); assert.equal(rentalIncome(cleared), 0);
