@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CONTEST_EVENTS, RULES, STAGES } from '../src/game/data.ts';
-import { derived as v1Derived, newGame as v1NewGame } from '../src/game/engine.ts';
+import { creditLimit, netWorth, upkeepLines } from '../src/life/economy.ts';
 import { ACTIONS, EVENTS } from '../src/life/compat.ts';
 import { choose, currentEvent, derived, forecast, HOOKS, lifeEvent, met, newGame, options, restore,
   yearEnd } from '../src/life/engine.ts';
@@ -157,7 +157,7 @@ test('empty movement, jobfair and unimplemented tile kinds always offer a way fo
     const node = WORLD.find(node => node.kind === kind)!;
     const state = at(node.id);
     const exit = kind === 'jobfair' ? 'job:none' : 'skip';
-    if (kind === 'jobfair') {
+    if (kind === 'jobfair' || kind === 'shop' || kind === 'life') {
       assert.ok(options(state).some(option => option.id === exit && option.enabled && !option.cost && !option.tire));
     } else assert.deepEqual(options(state).map(option => option.id), ['skip'], kind);
     const next = choose(state, exit).state;
@@ -283,17 +283,16 @@ test('condition gates retain mixed status/track OR, bounds and flags', () => {
   assert.ok(!met(state, { notFlags: ['licensed'] }));
 });
 
-test('v1 accounting amounts, ceil interest, business close effects and overdue counts are preserved', () => {
+test('v2 accounting replaces compatibility amounts while preserving business close effects', () => {
   for (const track of Object.keys(STAGES).filter(stage => stage !== 'student')) {
     const state = at('A-o1', 'bonus', { money: 100, debt: 101, rank: 1, staff: 2, students: 20, contracts: 3, value: 500 });
     state.status = 'working'; state.track = track as GameState['track']; state.flags = ['examiner'];
-    const old = v1NewGame(1); old.stage = track as typeof old.stage; old.s = { ...state.s }; old.flags = [...state.flags];
-    assert.deepEqual(derived(state).upkeep, v1Derived(old).upkeep, track);
-    assert.equal(derived(state).creditLimit, v1Derived(old).creditLimit);
-    assert.equal(derived(state).netWorth, v1Derived(old).netWorth);
+    assert.deepEqual(derived(state).upkeep.lines, upkeepLines(state), track);
+    assert.equal(derived(state).creditLimit, creditLimit(state));
+    assert.equal(derived(state).netWorth, netWorth(state));
     const next = choose(state, 'end').state;
     assert.deepEqual(next.board.ledger, Object.fromEntries(derived(state).upkeep.lines.map(line => [line.label, line.amount])));
-    assert.equal(next.board.ledger['대출 이자'], -2);
+    assert.equal(next.board.ledger['대출 이자'], -1);
     if (track === 'academy') assert.equal(next.s.students, 18);
     if (track === 'company') assert.equal(next.s.value, 560);
   }
@@ -301,7 +300,7 @@ test('v1 accounting amounts, ceil interest, business close effects and overdue c
   for (let count = 1; count <= RULES.overdueStrikes + 2; count++) {
     state.board.step = 'bonus';
     state = choose(state, 'end').state;
-    assert.equal(state.s.overdue, count); assert.equal(state.phase, 'action'); assert.equal(state.ending, null);
+    assert.equal(state.s.overdue, count % 4); assert.equal(state.phase, 'action'); assert.equal(state.ending, null);
   }
   state.s.debt = 0; state.board.ledger = {}; state.board.step = 'bonus';
   assert.equal(choose(state, 'end').state.s.overdue, 0);
@@ -424,7 +423,7 @@ function randomRun(seed: number, check: boolean): GameState {
     assert.ok(steps < 204 * 5, `seed ${seed}: stuck`);
     const offered = options(state), enabled = offered.filter(option => option.enabled);
     assert.ok(enabled.length > 0);
-    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|skip|end)$/.test(option.id)));
+    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|skip|end)$/.test(option.id)));
     const exits = enabled.filter(option => option.id === 'skip' || option.id === 'end' || option.id === 'job:none'
       || (option.id.startsWith('ev:') && !option.cost && !option.tire));
     if (state.board.step === 'spin' || state.board.step === 'pick') {

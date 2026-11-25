@@ -1,17 +1,18 @@
 // T03: one spin, one tile choice and at most one extra action per season.
 // Public operations are pure; mutation below is confined to their private working copies.
-import { FLAG_LABEL, RULES, STAGES } from '../game/data.ts';
-import { derived as v1Derived } from '../game/engine.ts';
-import type { BranchId, Derived as V1Derived, Forecast as V1Forecast, GameState as V1State,
+import { FLAG_LABEL, RULES } from '../game/data.ts';
+import type { BranchId, Derived as V1Derived, Forecast as V1Forecast,
   OptionKind, OptionView as V1OptionView, OutcomeView as V1OutcomeView,
-  Result as V1Result, Stage } from '../game/types.ts';
+  Result as V1Result } from '../game/types.ts';
 import { CONTEST_EVENTS } from '../game/data.ts';
 import { ACTIONS, EVENTS } from './compat.ts';
 import { CAREER_TEXT } from './career2.ts';
+import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, ECONOMY_TEXT,
+  flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
   jobChoices, performance, review, startingAction } from './jobs.ts';
 import { JOB_RULES } from './tracks.ts';
-import { ACCOUNTING_BOARD, BOARD_CHOICES, CAREER_ACTIONS, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
+import { BOARD_CHOICES, CAREER_ACTIONS, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT } from './life-data.ts';
 import { applyMove, randInt, reachable as reachableMoves, rollDice } from './move.ts';
 import type { Move } from './move.ts';
@@ -49,7 +50,6 @@ const ageAt = (turn: number) => LIFE_RULES.startAge + Math.floor(turn / LIFE_RUL
 const seasonAt = (turn: number) => turn % LIFE_RULES.seasons.length;
 const ageCap = (turn: number) => LIFE_RULES.staminaCaps.find(row => ageAt(turn) >= row.minAge)!.cap;
 const dateLabel = (turn: number) => TEXT.date(ageAt(turn), LIFE_RULES.seasons[seasonAt(turn)]);
-const ledgerSum = (state: GameState) => Object.values(state.board.ledger).reduce((sum, amount) => sum + amount, 0);
 
 /** Engine previews and actual travel use the same career stop predicate. */
 export const reachable = (state: GameState): Move[] => reachableMoves(state, { canPromote });
@@ -61,18 +61,10 @@ export function newGame(seed: number): GameState {
   return state;
 }
 
-// Accounting only: reuse v1 salaries, upkeep, credit and item valuation unchanged.
-// T06 will replace these compatibility amounts with the v2 track/economy tables.
-function accountingState(state: GameState): V1State {
-  const stage: Stage = state.status === 'working' && state.track && Object.hasOwn(STAGES, state.track)
-    ? state.track as Stage : 'student';
-  return { ...state, v: 1, stage, ending: null, board: { ...ACCOUNTING_BOARD, ledger: state.board.ledger } };
-}
-
 export function derived(state: GameState): Derived {
   const age = ageAt(state.turn);
   const period = LIFE_RULES.periods.find(row => age <= row.maxAge) ?? LIFE_RULES.periods.at(-1)!;
-  return { ...v1Derived(accountingState(state)), age, season: seasonAt(state.turn),
+  return { ...economyView(state), age, season: seasonAt(state.turn),
     seasonName: LIFE_RULES.seasons[seasonAt(state.turn)], dateLabel: dateLabel(state.turn), period: period.name,
     remainingSeasons: Math.max(0, LIFE_RULES.maxTurns - state.turn),
     capStamina: Math.min(ageCap(state.turn), state.s.capStamina) };
@@ -130,15 +122,15 @@ function flightOdds(state: GameState, choice: Choice) {
     crashPct: clamp(crash, 0, LIFE_RULES.percent) };
 }
 
-function outcome(state: GameState, effect: Effect, payPct: number): OutcomeView {
+function outcome(state: GameState, effect: Effect, flight = false): OutcomeView {
   const add = { ...effect.add };
-  if (add.money && add.money > 0) add.money = Math.floor(add.money * payPct / LIFE_RULES.percent);
+  if (flight && add.money && add.money > 0) add.money = flightPay(state, add.money);
   return { text: effect.text, add,
     ...(effect.status && effect.status !== state.status && { status: effect.status }),
     ...(effect.track !== undefined && effect.track !== state.track && { track: effect.track }) };
 }
 
-type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean; jobLocks?: string[] };
+type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean; free?: boolean; jobLocks?: string[] };
 function view(state: GameState, id: string, r: Resolved): OptionView {
   const { choice, kind, place, flight } = r;
   const { locks, missing } = unmet(state, choice.need);
@@ -149,7 +141,7 @@ function view(state: GameState, id: string, r: Resolved): OptionView {
     missing.push({ stat: 'money', need: cost });
   }
   if (state.s.stamina < tire) { locks.push(TEXT.tireLock(tire, state.s.stamina)); missing.push({ stat: 'stamina', need: tire }); }
-  const option: OptionView = { id, kind, place, title: choice.title, desc: choice.desc, free: false,
+  const option: OptionView = { id, kind, place, title: choice.title, desc: choice.desc, free: r.free ?? false,
     cost, tire, enabled: !locks.length, locks, missing };
   if (choice.roll) {
     const staminaPct = r.jobLocks ? 0 : staminaBonus(state);
@@ -159,10 +151,10 @@ function view(state: GameState, id: string, r: Resolved): OptionView {
     }
     if (flight) chance += flightOdds(state, choice).bonus;
     option.roll = { chance: clamp(chance, RULES.chanceMin, RULES.chanceMax), staminaPct,
-      success: outcome(state, choice.roll.success, flight ? STAGES[accountingState(state).stage].jobPct : LIFE_RULES.percent),
-      fail: outcome(state, choice.roll.fail, LIFE_RULES.percent),
+      success: outcome(state, choice.roll.success, flight),
+      fail: outcome(state, choice.roll.fail),
       ...(flight && { crashPct: flightOdds(state, choice).crashPct }) };
-  } else if (choice.effect) option.sure = outcome(state, choice.effect, LIFE_RULES.percent);
+  } else if (choice.effect) option.sure = outcome(state, choice.effect);
   return option;
 }
 
@@ -176,6 +168,9 @@ function resolve(state: GameState): Map<string, Resolved> {
     choices.set(id, { kind: 'board', place: node.place, choice, flight: false, jobLocks: locks });
   }
   if (jobs.exclusive) return choices;
+  for (const { id, locks, ...service } of economyChoices(state)) {
+    choices.set(id, { ...service, flight: false, jobLocks: locks });
+  }
   if (state.phase === 'event') {
     currentEvent(state)?.choices.forEach((choice, index) => choices.set(`ev:${index}`,
       { kind: 'event', place: currentEvent(state)!.place, choice, flight: false }));
@@ -206,12 +201,18 @@ function resolve(state: GameState): Map<string, Resolved> {
   return choices;
 }
 
-export function options(state: GameState): OptionView[] {
+export function options(state: GameState, menu: 'board' | 'phone' = 'board'): OptionView[] {
+  if (menu === 'phone') return economyChoices(state, true).map(({ id, locks, ...service }) =>
+    view(state, id, { ...service, flight: false, jobLocks: locks }));
   return [...resolve(state)].map(([id, r]) => view(state, id, r));
 }
 
 function resolveOption(state: GameState, id: string) {
-  const r = resolve(state).get(id);
+  let r = resolve(state).get(id);
+  if (!r) {
+    const service = economyChoices(state, true).find(choice => choice.id === id);
+    if (service) r = { ...service, flight: false, jobLocks: service.locks };
+  }
   if (!r) throw new Error(TEXT.unavailable(id));
   return { r, v: view(state, id, r) };
 }
@@ -223,8 +224,8 @@ function diff(before: GameState['s'], after: GameState['s']): StatMap {
 function payLedger(state: GameState, result: Result) {
   const lines = Object.entries(state.board.ledger).map(([label, amount]) => ({ label, amount }));
   const before = state.s.money - state.s.debt, total = ledgerSum(state);
-  setStat(state, 'money', state.s.money + total);
-  settle(state);
+  const paidState = settleLedger(state);
+  state.s = paidState.s; state.board.ledger = paidState.board.ledger;
   const applied = state.s.money - state.s.debt - before;
   if (applied !== total) lines.push({ label: TEXT.balanceAdjustment, amount: applied - total });
   state.board.ledger = {};
@@ -233,8 +234,8 @@ function payLedger(state: GameState, result: Result) {
 }
 
 function endSeason(state: GameState, result: Result, runHooks: boolean): GameState {
-  const from = dateLabel(state.turn), { upkeep, creditLimit } = derived(state);
-  for (const { label, amount } of upkeep.lines) state.board.ledger[label] = (state.board.ledger[label] ?? 0) + amount;
+  const from = dateLabel(state.turn), { upkeep } = derived(state);
+  state = accrue(state, false);
   if (state.status === 'working' && state.track === 'academy') {
     const a = RULES.academy, seated = Math.min(state.s.students, a.baseSeats + state.s.staff * a.seatsPerStaff);
     setStat(state, 'students', seated - Math.max(1, Math.floor(seated / a.leaveDiv)));
@@ -243,12 +244,14 @@ function endSeason(state: GameState, result: Result, runHooks: boolean): GameSta
     const c = RULES.company;
     setStat(state, 'value', state.s.value + Math.min(state.s.contracts, state.s.staff * c.perStaff) * c.valuePerContract);
   }
-  const over = (state.s.debt + Math.max(0, -ledgerSum(state))) * LIFE_RULES.percent > creditLimit * RULES.overduePct;
-  state.s.overdue = over ? state.s.overdue + 1 : 0;
-  if (over) result.notes.push(TEXT.overdue(state.s.overdue));
   state.turn++;
   // Career close includes yearEndReview at spring and age-based retirement, before stamina refill.
   state = advanceCareer(advanceStudies(state));
+  const beforeCredit = state.s.overdue;
+  state = checkCredit(state);
+  if (state.s.overdue) result.notes.push(ECONOMY_TEXT.overdue(state.s.overdue));
+  else if (beforeCredit && state.log.at(-1)?.turn === state.turn
+    && state.log.at(-1)?.text === ECONOMY_TEXT.liquidation) result.notes.push(ECONOMY_TEXT.liquidation);
   if (runHooks && seasonAt(state.turn) === LIFE_RULES.spring) {
     state = HOOKS.yearEnd(state);
     if (ageAt(state.turn) % LIFE_RULES.lifeEventYears === 0) state = HOOKS.lifeEvent(state);
@@ -314,8 +317,15 @@ function travel(state: GameState, destination: string, result: Result): GameStat
   for (const kind of SETTLEMENT_KINDS) {
     for (const _node of applied.move.passed[kind as 'pay' | 'start']) payLedger(state, result);
   }
-  // The start allowance remains T06; offers overlay the completed landing and resume it afterwards.
-  for (const id of applied.move.passed.start) state.board.lapAt[BY_ID.get(id)!.map] = state.turn;
+  for (const id of applied.move.passed.start) {
+    const before = state.s.money;
+    state = passStart(state, BY_ID.get(id)!.map);
+    const amount = state.s.money - before;
+    if (amount) {
+      const paid = result.upkeep ??= { lines: [], total: 0 };
+      paid.lines.push({ label: ECONOMY_TEXT.lap, amount }); paid.total += amount;
+    }
+  }
   land(state, result);
   if (applied.move.passed.start.length) state = afterStartPass(state);
   return state;
@@ -363,12 +373,13 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
       state = performance(state, 'extra');
     }
   }
+  if (v.id.startsWith('lifestyle:')) state = applyEconomyChoice(state, v.id);
   if (flag) result.flag = flag;
-  if (r.kind !== 'board' || v.id === 'skip') state.s.acts++;
+  if (!v.free && (r.kind !== 'board' || v.id === 'skip')) state.s.acts++;
   result.deltas = diff(before, state.s);
   const afterOption = { ...state.s };
   state.log.push({ turn: state.turn, text: TEXT.log(v.title, result.text), tone: branch === 'sure' ? 'info' : success ? 'good' : 'bad' });
-  if (job) {
+  if (job || v.free) {
     // jobs.ts owns popup continuation; entry never consumes the extra action or a season.
   } else if (v.id === 'spin') {
     rollDice(state); state.board.step = 'pick';
