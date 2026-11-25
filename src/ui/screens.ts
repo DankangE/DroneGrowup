@@ -133,14 +133,14 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   const number = el('b');
   countNumber(number,0,rank.total,num);
   score.append(icon('star'),el('span','','최종 점수'),number,el('span','','점'));
-  const { forks, contests, rankups, points } = rank.achievements;
+  const { routes, contests, rankups, points } = rank.achievements;
   const breakdown = el('dl', 'score-breakdown');
   function line(label: string, value: string) {
     breakdown.append(el('dt', '', label), el('dd', '', value));
   }
   line('순자산', num(rank.netWorth) + '만원');
   line('엔딩 보너스', num(rank.endingBonus) + '점');
-  line('업적', `갈림길 ${forks} · 대회 우승 ${contests} · 승급 ${rankups} = ${num(points)}점`);
+  line('업적', `완주한 길 ${routes} · 대회 우승 ${contests} · 승급 ${rankups} = ${num(points)}점`);
   if (rank.early > 0) line('조기 달성 보너스', num(rank.early) + '점');
   if (rank.bonus < rank.endingBonus + points) line('보너스 상한', num(rank.bonus) + '점 적용');
   summary.append(heading, score, breakdown);

@@ -184,6 +184,8 @@ the player plate spans the top and the tabs sit in the plate's row or under the 
      stop. A secondary 그냥 지나간다 button (`data-option="skip"`) passes the landing action.
    - **Bonus.** The single heading `추가 행동 하나 · <place> · 체력 N` (`data-bonus`) introduces the landed place’s actions at the displayed
      stamina costs. 계절 마치기 (`data-option="end"`, E or R) shows the next season’s refill from `RULES.seasonRefill`.
+     When the cards leave at least 96 px of the panel empty, a place scene with the stamina meter
+     (`data-bonus-aside`) fills it. With nothing affordable the engine ends the season without the step.
    - **Space and bonus choices.**
      - Compare option cards in two columns, with a full-width card where that fits more choices. Pages use the
        measured room above the skip or end button. Multiple pages have arrows beside that button. When enough choices
@@ -231,12 +233,15 @@ outline, coloured header band) over the dimmed table. Each fits inside the viewp
   buttons. Each button carries the
   choice title, cost, for a roll the preview wheel with "성공 66%", and the same up-front and branch lines as the action detail.
   A nonzero stamina modifier appears on the same reason line as in the action detail. Disabled choices show their locks.
-- **Result** (`data-phase="result"`). Actions and event choices show the result sheet. After board movement,
-  a paid ledger opens 월급날 정산 (`data-pay`). A board option with a season change or notes opens 계절 마감
-  when there is no payment. These sheets give `주사위 <roll> · <path length>칸 이동` when `result.move` is present,
-  followed by the applicable settlement details, notes and 계속. Other board
-  choices go directly to the next prompt. A rest gain alone appears for two seconds over the board
-  (`data-toast`, `aria-live="polite"`). A pending sheet includes the gain instead.
+- **Result** (`data-phase="result"`). A roll, a crash, a flag or a career-stage change shows the result sheet
+  with 계속 focused, so Enter or Space confirms. After board movement a paid ledger is 월급날 정산 (`data-pay`), and a
+  board option with a season change or notes is 계절 마감 when there is no payment. A sure outcome and these board
+  settlements appear as a settlement notice (`data-settle`, `role="status"`) at the bottom of the board for 4.5 s
+  while the next prompt is already playable: title, 정산 합계, the date and recovery line (`data-season-change`),
+  the same delta chips and markers as the sheet, the ledger lines and notes. When an event, a rank card or the
+  ending follows, the full sheet opens instead so the change is read before the popup. Other board choices go
+  directly to the next prompt. A rest gain alone appears for two seconds over the board (`data-toast`,
+  `aria-live="polite"`). Reduced motion keeps the notice still.
   - For a roll, the **wheel** (`data-wheel`, with `data-chance`, `data-value` and, once it has stopped,
     `data-outcome="success | fail"`): a disc of 100 equal ticks whose success wedge spans exactly
     `chance` ticks from the top clockwise (mint, “성공”) and whose fail wedge is the rest (coral, “실패”).
@@ -273,8 +278,8 @@ outline, coloured header band) over the dimmed table. Each fits inside the viewp
 The 인생 결산 card keeps the ending portrait and chibi, ending title and story, new-ending and best-score
 stamps, and 다시 하기, 엔딩 도감 and 타이틀 controls. The 최종 성적 tab (`data-final-rank`,
 `data-grade`, `data-score`) shows the grade badge, grade title and counting score from `finalRank(state)`.
-The breakdown uses 12 px text on phones and 14 px on desktop. It shows net worth, ending bonus, completed forks,
-contest wins, promotions and their points. A positive early-achievement bonus adds a 조기 달성 보너스 row.
+The breakdown uses 12 px text on phones and 14 px on desktop. It shows net worth, ending bonus, distinct named routes
+completed (완주한 길: each stage's four routes count once, so passing the same fork again adds nothing), contest wins, promotions and their points. A positive early-achievement bonus adds a 조기 달성 보너스 row.
 When the cap applies, its applied amount is printed. 비행 기록 shows
 the career rank, run facts and final stat grades. The platform status and nickname controls share this screen.
 
@@ -311,7 +316,7 @@ fills any discovered portrait frame whose art is unavailable. A "타이틀" butt
     `data-space` / `data-kind`, and `data-token` / `data-pos`;
   - movement: `data-roulette` / `data-face` / `data-spin`, `data-phase="move"`;
   - steps: `data-fork`, `data-space-card`, `data-bonus`, `data-option="spin|route:N|skip|end"`;
-  - settlement: `data-pay`, `data-toast`, `data-season-change`;
+  - settlement: `data-settle`, `data-pay`, `data-toast`, `data-season-change`;
   - ending: `data-final-rank` / `data-grade` / `data-score`;
   - grades: `data-grades="letters | numbers"` on the strip, `data-action="grades"` to flip it, and
     `data-stat` + `data-grade` on every badge;

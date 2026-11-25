@@ -29,7 +29,30 @@ const randInt = (state: GameState, n: number) => Math.floor((nextRandom(state) /
 // ---------------------------------------------------------------- state
 
 function initialBoard(): BoardState {
-  return { pos: BOARD.start, step: 'spin', left: 0, route: -1, roll: 0, contest: false, ledger: {}, forks: 0, contests: 0, rankups: 0 };
+  return { pos: BOARD.start, step: 'spin', left: 0, route: -1, roll: 0, contest: false, ledger: {}, forks: 0, routes: 0, contests: 0, rankups: 0 };
+}
+
+// Each named route (stage x fork x lane) is one bit of `board.routes`; finishing it sets the bit at the join.
+const ROUTE_STAGES = Object.keys(STAGES) as Stage[];
+const LANE_ENDS = new Map<number, number>();
+BOARD.forks.forEach((fork, f) => fork.routes.forEach((first, lane) => {
+  let at = first;
+  while (BOARD.nodes[at].next[0] !== fork.join) at = BOARD.nodes[at].next[0];
+  LANE_ENDS.set(at, f * 2 + lane);
+}));
+const ROUTE_BITS = ROUTE_STAGES.length * BOARD.forks.length * 2;
+const ROUTE_MASK = 2 ** ROUTE_BITS - 1;
+/** Distinct named routes completed. */
+export function routeCount(routes: number) {
+  let count = 0;
+  for (let rest = routes; rest > 0; rest = Math.floor(rest / 2)) count += rest % 2;
+  return count;
+}
+function completeRoute(state: GameState, lastLaneNode: number) {
+  const lane = LANE_ENDS.get(lastLaneNode);
+  if (lane === undefined) return;
+  const bit = 2 ** (ROUTE_STAGES.indexOf(state.stage) * BOARD.forks.length * 2 + lane);
+  if (Math.floor(state.board.routes / bit) % 2 === 0) state.board.routes += bit;
 }
 
 export function newGame(seed: number): GameState {
@@ -351,15 +374,16 @@ export function options(state: GameState): OptionView[] {
 
 export function finalRank(state: GameState) {
   const { forks, contests, rankups } = state.board;
+  const routes = routeCount(state.board.routes);
   const weights = RULES.board.achievement;
-  const points = forks * weights.fork + contests * weights.contest + rankups * weights.rankup;
+  const points = routes * weights.route + contests * weights.contest + rankups * weights.rankup;
   const worth = netWorth(state);
   const endingBonus = state.ending ? endingInfo(state.ending).bonus : 0;
   const bonus = Math.min(RULES.board.bonusCap, endingBonus + points);
   const early = state.ending && state.ending !== 'debtor' ? (RULES.maxTurns - state.turn) * RULES.score.turnBonus : 0;
   const total = state.ending === 'debtor' ? 0 : clamp(Math.max(0, worth) + bonus + early, 0, RULES.score.max);
   const { grade, title: gradeTitle } = FINAL_GRADES.find(g => total >= g.from)!;
-  return { netWorth: worth, endingBonus, achievements: { forks, contests, rankups, points }, bonus, early, total, grade, gradeTitle };
+  return { netWorth: worth, endingBonus, achievements: { forks, routes, contests, rankups, points }, bonus, early, total, grade, gradeTitle };
 }
 
 function payLedger(state: GameState, result: Result) {
@@ -477,7 +501,10 @@ function move(state: GameState, result: Result, steps: number) {
     movement.path.push(b.pos);
     movement.landed = b.pos;
     if (nodeAt(state).kind === 'pay') payLedger(state, result);
-    if (BOARD.forks.some(f => f.join === b.pos)) b.forks++;
+    if (BOARD.forks.some(f => f.join === b.pos)) {
+      b.forks++;
+      completeRoute(state, node.id);
+    }
     if (steps && rankStopAt(state, b.pos)) {
       movement.stop = 'rankup';
       result.notes.push('승급에 도전할 수 있어 이곳에 멈췄다.');
@@ -650,6 +677,7 @@ function restoreBoard(raw: unknown): BoardState {
   for (const key of ['forks', 'contests', 'rankups'] as const) {
     if (inRange(data[key], 0, RULES.maxTurns * 2)) board[key] = data[key];
   }
+  if (inRange(data.routes, 0, ROUTE_MASK)) board.routes = data.routes;
   if (data.ledger && typeof data.ledger === 'object') {
     for (const [label, amount] of Object.entries(data.ledger)) {
       if (ledgerLabels.has(label) && Number.isSafeInteger(amount) && Math.abs(amount) <= 9_000_000 * RULES.maxTurns) board.ledger[label] = amount;
@@ -686,7 +714,7 @@ function unpackInt(seen: Record<string, unknown>, name: string): number | undefi
 /** The board as `seen` entries that survive the server's progress cleaning. Board keys come first so MAX_SEEN never drops them. */
 export function packBoard(board: BoardState): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const key of ['pos', 'left', 'route', 'roll', 'forks', 'contests', 'rankups'] as const) packInt(out, key, board[key]);
+  for (const key of ['pos', 'left', 'route', 'roll', 'forks', 'routes', 'contests', 'rankups'] as const) packInt(out, key, board[key]);
   packInt(out, 'step', STEPS.indexOf(board.step));
   packInt(out, 'contest', board.contest ? 1 : 0);
   UPKEEP_LABELS.forEach((label, i) => { if (board.ledger[label] !== undefined) packInt(out, 'l' + i, board.ledger[label]); });
@@ -704,7 +732,7 @@ function unpackBoard(seen: unknown): Partial<BoardState> | undefined {
   const get = (name: string) => unpackInt(d, name);
   const ledger: Record<string, number> = {};
   UPKEEP_LABELS.forEach((label, i) => { const amount = get('l' + i); if (amount !== undefined) ledger[label] = amount; });
-  return { pos, left: get('left'), route: get('route'), roll: get('roll'), forks: get('forks'), contests: get('contests'),
+  return { pos, left: get('left'), route: get('route'), roll: get('roll'), forks: get('forks'), routes: get('routes'), contests: get('contests'),
     rankups: get('rankups'), step: STEPS[get('step') ?? 0], contest: get('contest') === 1, ledger };
 }
 

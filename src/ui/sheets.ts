@@ -167,6 +167,37 @@ export function showResult(root: HTMLElement, result: Result, previous: GameStat
   }
 }
 
+/**
+ * A result that needs no answer, as a notice over the board instead of a sheet: payday and season-end settlement
+ * after a board move or 계절 마치기, and a sure (unrolled) action whose outcome the card already forecast.
+ */
+export function settleNotice(result: Result, previous: GameState, boardOption: boolean) {
+  const note = el('div', 'settle-notice');
+  note.dataset.settle = '';
+  if (boardOption && result.upkeep) note.dataset.pay = '';
+  note.setAttribute('role', 'status');
+  if (boardOption) note.append(el('b', '', result.upkeep ? '월급날 정산' : '계절 마감'));
+  else note.append(el('b', '', result.title), el('p', 'result-text', result.text));
+  if (result.upkeep) note.append(el('b', '', `정산 합계 ${signed(result.upkeep.total)}만원`));
+  const settlement = settlementText(result);
+  if (settlement && (result.season || settlement.recovery)) {
+    const line = el('p', '', [settlement.date, settlement.recovery].filter(Boolean).join(' · '));
+    if (result.season) line.dataset.seasonChange = '';
+    note.append(line);
+  }
+  const chips = el('div', 'delta-chips');
+  for (const chip of resultChips(result, previous)) chips.append(el('span', `delta-chip ${chip.positive ? 'positive' : 'negative'}`, chip.text));
+  for (const text of resultMarkers(result)) chips.append(el('span', 'delta-chip', text));
+  if (chips.childElementCount) note.append(chips);
+  if (settlement?.ledger.length) note.append(el('small', '', settlement.ledger.join(' · ')));
+  if (result.season?.accrual.length) {
+    note.append(el('small', '', '장부에 기록 · ' + result.season.accrual.map(line => line.label + ' ' + signed(line.amount) + '만원').join(' · ')));
+  }
+  if (settlement?.other.length) note.append(el('small', '', settlement.other.join(' · ')));
+  for (const text of result.notes) note.append(el('p', 'result-note', text));
+  return note;
+}
+
 export function confirmNewRun(root: HTMLElement, onConfirm: () => void) {
   const sheet = createSheet(root, '새로운 비행을 시작할까요?');
   sheet.body.append(el('p', 'sheet-intro', '진행 중인 비행은 새 이야기로 바뀝니다. 발견한 엔딩과 최고 기록은 간직할 수 있어요.'));
@@ -276,6 +307,9 @@ export function showRankCard(root: HTMLElement, change: RankChange, onContinue: 
     return target;
   });
   else sheet.body.append(el('p', '', to.ending ? '커리어 완성 · 인생 결산으로' : '50세 은퇴까지 이 자리를 지킨다'));
-  sheet.body.append(button('계속', 'primary', () => { sheet.close(); onContinue(); }, 'continue'));
+  const go = button('계속', 'primary', () => { sheet.close(); onContinue(); }, 'continue');
+  sheet.body.append(go);
   sheet.open();
+  // The dialog is labelled by its heading; Enter or Space on the obvious next step continues.
+  go.focus({ preventScroll: true });
 }

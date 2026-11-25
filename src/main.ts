@@ -12,7 +12,7 @@ import { button, el, focusHeading, paginateRows } from './ui/dom.ts';
 import { hud } from './ui/hud.ts';
 import { endingScreen, galleryScreen, titleScreen } from './ui/screens.ts';
 import type { EndingRecord } from './ui/screens.ts';
-import { closeSheet, confirmNewRun, createSheet, refreshModalBackground, showEvent, showLadder, showRankCard, showResult } from './ui/sheets.ts';
+import { closeSheet, confirmNewRun, createSheet, refreshModalBackground, settleNotice, showEvent, showLadder, showRankCard, showResult } from './ui/sheets.ts';
 
 declare global {
   interface Window {
@@ -172,6 +172,8 @@ async function takeOption(id: string) {
   if (!option?.enabled) return;
   choosing = true;
   closeSheet();
+  // The next choice retires the previous settlement notice; each notice belongs to one choice.
+  root.querySelector('[data-settle]')?.remove();
   const previous = state;
   const nav = activePanel?.currentNav() ?? 'home';
   const next = choose(state, id);
@@ -198,12 +200,20 @@ async function takeOption(id: string) {
       } else showEnding();
     } else renderPlay(option.free ? nav : 'home', previous, change);
   };
-  if (option.kind !== 'board' || result.upkeep || result.season || result.notes.length) {
+  const boardOption = option.kind === 'board';
+  const shown = !boardOption || !!(result.upkeep || result.season || result.notes.length);
+  // Settlements and sure outcomes need no answer, so they ride over the next prompt as a notice. A luck roll,
+  // a crash, a new stage or flag keeps the sheet, and so does a next screen that is itself a popup (event,
+  // rank card) or the ending, which would hide the notice.
+  const quiet = boardOption || (!result.roll && !result.crashed && !result.flag && result.stageTo === result.stageFrom);
+  const popupNext = state.phase !== 'action' || !!rankChange(previous, state);
+  if (shown && (!quiet || popupNext)) {
     root.dataset.phase = 'result';
-    showResult(root, result, previous, resume, option.kind === 'board');
+    showResult(root, result, previous, resume, boardOption);
   } else {
     resume();
-    if (result.restGain !== undefined) activeBoard?.toast(result.restGain);
+    if (shown) activeBoard?.notice(settleNotice(result, previous, boardOption));
+    else if (result.restGain !== undefined) activeBoard?.toast(result.restGain);
   }
 }
 

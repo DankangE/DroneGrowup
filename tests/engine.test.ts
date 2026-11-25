@@ -531,6 +531,8 @@ test('passing a join counts a fork, stopping for an eligible rank ignores cash a
   const next = choose(state, 'spin');
   assert.deepEqual(next.result.move, { roll: 6, path: [7], landed: 7, stop: 'rankup' });
   assert.equal(next.state.board.forks, 1);
+  // Node 18 ends the student's second lane of the first fork: bit 0 * 4 + 0 * 2 + 1.
+  assert.equal(next.state.board.routes, 2);
   assert.equal(next.state.board.step, 'space');
   assert.deepEqual(option(next.state, 'st_exam').missing, [{ stat: 'money', need: 600 }]);
   assert.ok(option(next.state, 'loan:500').enabled);
@@ -636,10 +638,11 @@ test('a cross-device save without board resumes the same career and calendar at 
 test('finalRank includes the final accrual, caps combined bonuses and awards a display grade', () => {
   const state = bonus(at('employee', { money: 600 }));
   state.turn = 119;
-  Object.assign(state.board, { forks: 100, contests: 35, rankups: 12, ledger: { '생활비': -200 } });
+  // 100 fork passes over 4 distinct routes credit the 4 routes only.
+  Object.assign(state.board, { forks: 100, routes: 0b10111, contests: 35, rankups: 12, ledger: { '생활비': -200 } });
   const next = choose(state, 'end').state;
   const r = finalRank(next);
-  assert.deepEqual(r.achievements, { forks: 100, contests: 35, rankups: 12, points: 11850 });
+  assert.deepEqual(r.achievements, { forks: 100, routes: 4, contests: 35, rankups: 12, points: 9250 });
   assert.deepEqual([r.netWorth, r.endingBonus, r.bonus, r.early, r.total], [470, 1200, 10000, 0, 10470]);
   assert.equal(next.score, r.total);
   assert.ok(r.gradeTitle && /^[SABCD]$/.test(r.grade));
@@ -662,7 +665,7 @@ test('restore migrates a stripped board and sanitizes malformed board fields', (
   raw.s.acts = 6;
   assert.deepEqual(restore(raw)!.board, newGame(3).board);
   assert.equal(restore(raw)!.s.acts, 0);
-  raw.board = { pos: 77, step: 'fork', left: -4, roll: 9, route: 2, contest: 'true', forks: -2, rankups: 2.5,
+  raw.board = { pos: 77, step: 'fork', left: -4, roll: 9, route: 2, contest: 'true', forks: -2, rankups: 2.5, routes: 2 ** 32,
     contests: 3, ledger: { '급여': 10, '생활비': -1.5, '가짜': 200 } };
   assert.deepEqual(restore(raw)!.board, { ...newGame(1).board, contests: 3, ledger: { '급여': 10 } });
 });
@@ -691,7 +694,7 @@ test('a cross-device load keeps the board, its unpaid ledger and achievements th
     }
   }
   const state = newGame(4);
-  Object.assign(state.board, { pos: 3, step: 'fork', left: 4, roll: 5, forks: 237, contests: 101, rankups: 9,
+  Object.assign(state.board, { pos: 3, step: 'fork', left: 4, roll: 5, forks: 237, routes: 2 ** 32 - 1, contests: 101, rankups: 9,
     ledger: { '직원 급여': -123456, '급여': 9_999_999, '생활비': -40 } });
   const back = restore(serverClean(serverRun(state)))!;
   assert.deepEqual(back.board, state.board);

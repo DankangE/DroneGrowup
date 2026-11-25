@@ -6,7 +6,7 @@ export const RULES = {
   maxTurns: 120, // 30 years, four seasons per year
   startAge: 20,
   seasons: ['봄', '여름', '가을', '겨울'],
-  board: { die: 6, restGain: 60, achievement: { fork: 30, contest: 150, rankup: 300 }, bonusCap: 10000 },
+  board: { die: 6, restGain: 60, achievement: { route: 100, contest: 150, rankup: 300 }, bonusCap: 10000 },
   seasonRefill: 20,
   start: { money: 60, cond: 100, stamina: 100 } as Partial<Record<Stat, number>>,
   /** 체력 0..100. Every roll (actions and events) reads it; the card shows the chance after it. */

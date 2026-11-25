@@ -42,7 +42,7 @@ export function resultWheel(roll: NonNullable<Result['roll']>) {
       finish();
       return;
     }
-    const turning = disc.animate([{ transform: 'rotate(0deg)' }, { transform: stop }], { duration: 700, easing: 'cubic-bezier(.16,.69,.18,1)' });
+    const turning = disc.animate([{ transform: 'rotate(0deg)' }, { transform: stop }], { duration: 520, easing: 'cubic-bezier(.16,.69,.18,1)' });
     turning.onfinish = finish;
     return turning;
   }

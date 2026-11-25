@@ -1,5 +1,6 @@
-// Play real choices. Time in seconds: spin/move 3, fork pause 3, landed space decision 5,
-// automatic landing 2, event answer 8, bonus 4.5, explicit end 1, pay settlement 2, free service 4.
+// Play real choices. Time in seconds (SECONDS), measured with `npm run check:board -- timed`: a spin with its walk,
+// a fork pick, a landed-space and a bonus decision, an event answer, an explicit end and a free service each cost
+// one prompt; a result sheet (roll, crash, flag or stage change) costs a read. Settlements are notices: no wait.
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as data from '../src/game/data.ts';
@@ -34,6 +35,7 @@ const counts = () => ({
 });
 const activity = names.map(counts);
 const all = counts();
+const SECONDS = { spin: 2.5, fork: 2.5, space: 4, event: 6, bonus: 3.5, end: 1, free: 3, sheet: 2.4 };
 const maxima = { turns: 0, rollsOver: -Infinity, flightsOver: -Infinity, acts: 0, score: 0, scoreOver: -Infinity };
 
 function run(name: string, seed: number, forced?: number) {
@@ -60,30 +62,29 @@ function run(name: string, seed: number, forced?: number) {
       c.offeredBonus++;
       if (opts.some(o => o.enabled && (o.kind === 'action' || o.kind === 'job'))) c.playableBonus++;
     }
-    if (o.free) seconds += 4;
-    else if (id === 'spin') { spins++; c.spins++; seconds += 3; }
-    else if (state.phase === 'event') { space++; c.space++; c.events++; seconds += 8; }
+    if (o.free) seconds += SECONDS.free;
+    else if (id === 'spin') { spins++; c.spins++; seconds += SECONDS.spin; }
+    else if (state.phase === 'event') { space++; c.space++; c.events++; seconds += SECONDS.event; }
     else if (id.startsWith('route:')) {
       c.routes[BOARD.forks.findIndex(f => f.at === state.board.pos)][Number(id.slice(6))]++;
-      seconds += step === 'fork' ? 3 : 5;
+      seconds += step === 'fork' ? SECONDS.fork : SECONDS.space;
     } else if (step === 'space') {
       if (id !== 'skip') { space++; c.space++; }
-      seconds += 5;
-    } else if (id === 'end') seconds++;
-    else { bonus++; c.bonus++; seconds += 4.5; }
+      seconds += SECONDS.space;
+    } else if (id === 'end') seconds += SECONDS.end;
+    else { bonus++; c.bonus++; seconds += SECONDS.bonus; }
+    if (!o.free && o.kind !== 'board' && (result.roll || result.crashed || result.flag || result.stageTo !== result.stageFrom)) seconds += SECONDS.sheet;
     if (result.move) {
       if (forced === undefined && result.move.stop !== 'fork') {
         const kind = BOARD.nodes[result.move.landed].kind;
         landings.set(kind, (landings.get(kind) ?? 0) + 1);
       }
-      if (result.move.stop !== 'fork' && next.phase !== 'event' && next.board.step !== 'space') seconds += 2;
     }
     if (result.upkeep) {
       const paySpaces = result.move?.path.filter(at => BOARD.nodes[at].kind === 'pay').length ?? 0;
       // A final cash-out also settles the ledger. A final spin can both cross payday and close a season.
       const settlements = paySpaces + Number(!!result.ended && (!!result.season || paySpaces === 0));
       c.pays += settlements;
-      seconds += settlements * 2;
     }
     maxima.acts = Math.max(maxima.acts, space + bonus, next.s.acts);
     if (space > 1 || bonus > 1 || spins > 1) throw new Error(`season limit: ${name} seed ${seed} turn ${state.turn}`);
@@ -167,8 +168,8 @@ for (const [kind, count] of [...landings].sort()) row(kind, count, pct(count, al
 row('\nspace taken/offered', 'bonus offered/spin', 'bonus playable on arrival/spin', 'bonus taken/spin', 'bonus taken/offered');
 row(pct(all.space, all.offeredSpace), pct(all.offeredBonus, all.spins), pct(all.playableBonus, all.spins),
   pct(all.bonus, all.spins), pct(all.bonus, all.offeredBonus));
-row('\nmean forks', 'mean contests', 'mean rankups', 'mean achievement points', 'credited share of score');
-row(...(['forks','contests','rankups','points'] as const).map(k => mean(results.map(r => r[k])).toFixed(2)),
+row('\nmean forks', 'mean routes', 'mean contests', 'mean rankups', 'mean achievement points', 'credited share of score');
+row(...(['forks','routes','contests','rankups','points'] as const).map(k => mean(results.map(r => r[k])).toFixed(2)),
   pct(mean(results.map(r => r.credited)), mean(results.map(r => r.score))));
 
 const forcedRuns = Number(process.env.SIM_FORCED_RUNS ?? 300);

@@ -44,6 +44,7 @@ let maxBonus = 0;
 let event = null; // event phase with the most choices
 let stageUp = null; // a luck roll whose result changes the career stage (the fullest result sheet)
 let crashStep = null;
+let sparseBonus = null; // a bonus step with one or two cards, where the stamina aside fills the panel
 let lastStep = null; // the choice that ends a run
 for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['instructor', 7], ['ceo', 1], ['chairman', 4], ['pilot', 4]]) {
   let state = newGame(seed);
@@ -56,6 +57,7 @@ for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['i
       maxBonus = cards;
       bonus = state;
     }
+    if (state.phase === 'action' && state.board.step === 'bonus' && cards >= 1 && cards <= 2) sparseBonus ??= state;
     if (state.board.step === 'fork') fork ??= state;
     if (state.board.step === 'space' && offered.some(o => o.id === 'route:0')) landedFork ??= state;
     if (state.phase === 'event' && state.board.contest) contest ??= state;
@@ -64,8 +66,8 @@ for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['i
     const option = offered.find((o) => o.id === id);
     const next = choose(state, id);
     if (next.result.season && next.result.crashed) crashStep ??= { state, option };
-    if (option.kind === 'board' && next.result.upkeep?.lines.length) payStep ??= { state, option };
-    if (next.result.move && next.result.season && !next.result.upkeep) autoSeason ??= { state, option };
+    if (option.kind === 'board' && next.result.upkeep?.lines.length && next.state.phase === 'action') payStep ??= { state, option };
+    if (next.result.move && next.result.season && !next.result.upkeep && next.state.phase === 'action') autoSeason ??= { state, option };
     if (option.roll && state.phase === 'action') {
       if (!stageUp && next.result.stageTo !== next.result.stageFrom && next.state.phase !== 'ended') stageUp = { state, option };
     }
@@ -74,7 +76,7 @@ for (const [policy, seed] of [['pilot', 3], ['employee', 5], ['gambler', 2], ['i
   }
 }
 const rollStep = stageUp;
-assert.ok(event && contest && rollStep && lastStep && crashStep && fork && landedFork && bonus && payStep && autoSeason,
+assert.ok(event && contest && rollStep && lastStep && crashStep && fork && landedFork && bonus && sparseBonus && payStep && autoSeason,
   'the bot runs supply every board step, a paid ledger, a season-ending crash, a promotion, events and an ending');
 
 await build({ root, configFile: join(root, 'vite.config.ts'), logLevel: 'warn' });
@@ -249,11 +251,13 @@ for (const [width, height] of SIZES) {
     await page.locator('[data-bonus]').waitFor();
     await check('play-bonus');
     await page.keyboard.press('e');
-    await stoppedResult(page).locator('[data-season-change]').waitFor();
+    await page.locator('[data-settle] [data-season-change]').waitFor();
+    await resume(sparseBonus);
+    await page.locator('[data-bonus-aside]').waitFor();
+    await check('play-bonus-sparse');
     await resume(payStep.state);
     await tap(payStep);
-    await stoppedResult(page).locator('[data-action="continue"]').waitFor();
-    assert.ok(await page.locator('dialog[data-pay]').isVisible());
+    await page.locator('[data-settle][data-pay]').waitFor();
     await check('play-pay');
     await playViews('play-space', busiest);
     await resume(busiest);
@@ -317,7 +321,7 @@ for (const [width, height] of SIZES) {
 
     await resume(autoSeason.state);
     await tap(autoSeason);
-    await stoppedResult(page).locator('[data-season-change]').waitFor();
+    await page.locator('[data-settle] [data-season-change]').waitFor();
     await check('play-board-season-change');
     await resume(lastStep.state);
     await tap(lastStep);

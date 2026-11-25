@@ -1,7 +1,7 @@
 import { careerRank, GRADED_STATS, grade } from '../game/career.ts';
 import { gradeBadge, rankLine } from './pieces.ts';
 import { previewWheel } from './wheel.ts';
-import { GRADE_STEPS, GRADES, PLACES, RULES, STAT_LABEL } from '../game/data.ts';
+import { GRADE_STEPS, GRADES, PLACES, RULES, STAT_LABEL, STAT_MAX } from '../game/data.ts';
 import { boardView, dateLabel, derived, forecast, num } from '../game/engine.ts';
 import type { Forecast, GameState, OptionView, PlaceId, Stat } from '../game/types.ts';
 import { button, el, meter, paginateRows } from './dom.ts';
@@ -324,6 +324,20 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
         const items = pages[page];
         items.slice(0, 9).forEach((card, index) => card.setAttribute('aria-keyshortcuts', String(index + 1)));
         grid.replaceChildren(...items);
+        // A short bonus menu leaves room: fill it with the place, the stamina the extra action spends and what ending the season gives.
+        if (bonus && !picked && room - grid.offsetHeight - gap >= 96) {
+          const aside = el('div', 'bonus-aside');
+          aside.dataset.bonusAside = '';
+          const scene = fieldScene(node.place, state);
+          scene.classList.add('bonus-scene');
+          scene.append(el('b', 'place-label', PLACES[node.place].name));
+          const gauge = el('div', 'bonus-stamina');
+          gauge.append(el('b', '', `체력 ${state.s.stamina} / ${STAT_MAX.stamina!}`),
+            meter(state.s.stamina, STAT_MAX.stamina!, '체력'),
+            el('small', '', `추가 행동은 체력을 쓴다 · 계절을 마치면 체력 +${RULES.seasonRefill}`));
+          aside.append(scene, gauge);
+          grid.after(aside);
+        }
         for (const card of items) {
           if (card.dataset.option && [...card.querySelectorAll('.outcomes > span')].some(line => line.scrollWidth > line.clientWidth)) {
             requireDetail(card, card.dataset.option);

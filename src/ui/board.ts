@@ -6,6 +6,7 @@ import { chibi } from './pieces.ts';
 import { shortNames } from './scene.ts';
 
 type Board = ReturnType<typeof boardView>;
+export const NOTICE_MS = 4500;
 type Node = Board['nodes'][number];
 
 /** Each branch carries its route name up to (but excluding) the common join. */
@@ -51,7 +52,7 @@ function roulette(face: number, spin?: () => void) {
     control.dataset.spin = 'spinning';
     const animation = disc.animate([
       { transform: `rotate(${start}deg)` }, { transform: `rotate(${1440 + rotation(value)}deg)` },
-    ], { duration: 700, easing: 'cubic-bezier(.18,.67,.18,1)' });
+    ], { duration: 520, easing: 'cubic-bezier(.18,.67,.18,1)' });
     return animation;
   }
   return { control, stop, turn };
@@ -161,7 +162,7 @@ export function flightBoard(state: GameState, view: Board, face: number, spin?: 
           { transform: `translate(${dx}px,${dy}px)` },
           { transform: `translate(${dx / 2}px,${dy / 2 - 10}px)` },
           { transform: 'none' },
-        ], { duration: 160, easing: 'ease-in-out' });
+        ], { duration: 110, easing: 'ease-in-out' });
         await animation.finished;
       }
       stand(movement.landed);
@@ -181,5 +182,11 @@ export function flightBoard(state: GameState, view: Board, face: number, spin?: 
     note.textContent = '체력 +' + gain;
     setTimeout(() => note.remove(), 2000);
   }
-  return { board, move, highlight, toast };
+  /** A settlement that needs no answer: shown over the board while the next prompt is already live. */
+  function notice(note: HTMLElement) {
+    board.querySelector('[data-settle]')?.remove();
+    board.append(note);
+    setTimeout(() => note.remove(), NOTICE_MS);
+  }
+  return { board, move, highlight, toast, notice };
 }

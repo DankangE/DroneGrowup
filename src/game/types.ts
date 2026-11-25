@@ -7,6 +7,8 @@ export type BoardNode = { id: number; kind: SpaceKind; x: number; y: number; nex
 export type BoardState = {
   pos: number; step: 'spin' | 'fork' | 'space' | 'bonus'; left: number; route: number; roll: number;
   contest: boolean; ledger: Record<string, number>; forks: number; contests: number; rankups: number;
+  /** Bit per completed named route: stage index x 4 + fork x 2 + lane. */
+  routes: number;
 };
 
 export type EndingId =

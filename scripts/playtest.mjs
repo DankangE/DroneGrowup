@@ -163,9 +163,24 @@ async function playRun(page, policy, seed, { shotsAt = {}, reloadAt = -1 } = {})
       });
       assert.deepEqual(reading, [String(next.result.move.roll), next.result.move.roll, 'done']);
     }
-    const sheetExpected = option.kind !== 'board' || !!next.result.upkeep || !!next.result.season || next.result.notes.length > 0;
+    // Mirrors main.ts: a settlement or a sure outcome is a notice over the board unless a popup or the ending follows.
+    const r = next.result;
+    const boardOption = option.kind === 'board';
+    const announced = !boardOption || !!r.upkeep || !!r.season || r.notes.length > 0;
+    const quiet = boardOption || (!r.roll && !r.crashed && !r.flag && r.stageTo === r.stageFrom);
+    const popupNext = next.state.phase !== 'action' || !!rankChange(state, next.state);
+    const sheetExpected = announced && (!quiet || popupNext);
     assert.equal(await phase(page) === 'result', sheetExpected, id);
-    if (!sheetExpected && next.result.restGain !== undefined) {
+    assert.equal(await page.locator('[data-settle]').count(), Number(announced && !sheetExpected), `notice for ${id}`);
+    if (announced && !sheetExpected) {
+      const note = page.locator('[data-settle]');
+      assert.equal(await note.evaluate(n => n.hasAttribute('data-pay')), boardOption && !!r.upkeep);
+      assert.equal(await note.locator('[data-season-change]').count(), Number(!!r.season));
+      if (r.upkeep) assert.equal(await note.locator('b', { hasText: '정산 합계' }).textContent(), '정산 합계 ' + signed(r.upkeep.total) + '만원');
+      const chips = [...resultChips(r, state).map(chip => chip.text), ...resultMarkers(r)];
+      assert.deepEqual(await note.locator('.delta-chip').allTextContents(), chips);
+    }
+    if (!announced && next.result.restGain !== undefined) {
       assert.equal(await page.locator('[data-toast]').textContent(), '체력 +' + next.result.restGain);
     }
     if (option.roll) {
