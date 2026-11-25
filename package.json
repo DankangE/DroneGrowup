@@ -18,7 +18,7 @@
     "layout": "node scripts/layout-check.mjs",
     "simulate:life": "echo 'TODO: scripts/simulate-life.ts (T14)'",
     "cashflow:life": "node scripts/life-cashflow.ts",
-    "dominance:life": "echo 'TODO: scripts/dominance-life.ts (T15)'",
+    "dominance:life": "node scripts/dominance-life.ts",
     "outcomes:life": "echo 'TODO: scripts/outcome-check-life.ts (T15)'",
     "playtest:life": "node scripts/playtest-life.mjs",
     "layout:life": "node scripts/layout-check-life.mjs",

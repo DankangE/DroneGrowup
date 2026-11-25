@@ -38,7 +38,8 @@ function worker(track: TrackId, map: MapId = 'D', rank = 0, seed = 7): GameState
 }
 function close(prev: GameState): GameState {
   let state = structuredClone(prev);
-  while (options(state).some(row => row.id === 'job:none')) state = choose(state, 'job:none').state;
+  while (state.phase === 'event' || options(state).some(row => row.id === 'job:none'))
+    state = choose(state, options(state).some(o => o.id === 'job:none') ? 'job:none' : 'skip').state;
   state.board.step = 'bonus'; state.board.dice = [1, 1];
   return choose(state, 'end').state;
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { accrue, creditLimit, homeValue, liquidate, netWorth, upkeepLines } from '../src/life/economy.ts';
-import { choose, estateOffers, forecast, newGame, options, restore } from '../src/life/engine.ts';
+import { choose, lifeEvent, estateOffers, forecast, newGame, options, restore } from '../src/life/engine.ts';
 import { homeRecovery, rentalIncome, yearEndHome } from '../src/life/home.ts';
 import { HOMES, HOME_RULES } from '../src/life/life-data.ts';
 import { randInt } from '../src/life/move.ts';
@@ -247,7 +247,8 @@ test('engine accrues winter rent before index change; spring and terminal winter
     state.estates = [{ map: 'B', tier: 3, paid: 6000 }];
     const expected = yearEndHome({ ...state, turn: turn + 1 });
     const next = choose(state, 'end');
-    assert.equal(next.state.s.homeIndex, expected.s.homeIndex); assert.equal(next.state.rng, expected.rng);
+    assert.equal(next.state.s.homeIndex, expected.s.homeIndex);
+    assert.equal(next.state.rng, lifeEvent({ ...expected, phase: 'action', board: { ...expected.board, step: 'spin', dice: [] } }).rng);
     assert.equal(next.result.season!.accrual.find(l => l.label === '임대 수입')!.amount, 72);
     assert.equal(rentalIncome(next.state), Math.floor(6000 * expected.s.homeIndex / 100 * 12 / 1000));
     if (turn === 203) assert.equal(next.state.phase, 'ended');

@@ -80,7 +80,8 @@ for (const track of TRACKS) {
       let state = worker(track.id, seed);
       const start = state.turn;
       for (let season = 0; season < 24; season++) {
-        while (options(state).some(option => option.id === 'job:none')) state = choose(state, 'job:none').state;
+        while (state.phase === 'event' || options(state).some(option => option.id === 'job:none'))
+          state = choose(state, options(state).some(o => o.id === 'job:none') ? 'job:none' : 'skip').state;
         tile(state, 'job');
         const before = state.job.perf, id = `act:work_${track.id}`, option = options(state).find(o => o.id === id)!;
         const next = choose(state, id);
@@ -156,7 +157,8 @@ for (const track of TRACKS.filter(track => track.salaried)) {
     assert.equal(rehired.s.money, state.s.money);
     // Keep working through all twenty contract seasons, including the annual reviews.
     for (let season = 0; season < 20; season++) {
-      while (options(rehired).some(option => option.id === 'job:none')) rehired = choose(rehired, 'job:none').state;
+      while (rehired.phase === 'event' || options(rehired).some(option => option.id === 'job:none'))
+        rehired = choose(rehired, options(rehired).some(o => o.id === 'job:none') ? 'job:none' : 'skip').state;
       tile(rehired, 'job'); rehired = choose(rehired, `act:work_${track.id}`).state;
       const before = rehired.s.money;
       rehired = choose(saved(rehired), 'end').state;

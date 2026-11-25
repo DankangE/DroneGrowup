@@ -297,6 +297,7 @@ test('school grants the degree after eight seasons; its village learning boost i
   const normal = options(plain).find(row => row.id === 'act:st_theory')!.sure!.add.theory!;
   assert.equal(boosted, Math.floor(normal * 150 / 100));
   for (let turn = 1; turn <= 8; turn++) {
+    if (state.phase === 'event') state = choose(state, 'skip').state;
     state.board.step = 'bonus'; state = choose(state, 'end').state;
     assert.equal(state.flags.includes('degree'), turn === 8);
   }

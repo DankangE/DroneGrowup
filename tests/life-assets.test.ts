@@ -181,7 +181,7 @@ test('fund returns happen only after winter, including the terminal winter; empt
     if (turn === 203) { state.s.capStamina = 80; state.s.stamina = 50; }
     const next = action(state, 'end').state;
     assert.equal(next.fund.amount, turn === 3 || turn === 203 ? 1041 : 1001);
-    assert.equal(next.phase, turn === 203 ? 'ended' : 'action');
+    assert.equal(next.phase, turn === 203 ? 'ended' : turn === 3 ? 'event' : 'action');
   }
   const state = at(); state.turn = 4; state.fund.kind = 2;
   assert.equal(fundYearEnd(state).rng, state.rng);
