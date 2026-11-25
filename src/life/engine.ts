@@ -7,11 +7,13 @@ import type { BranchId, Derived as V1Derived, Forecast as V1Forecast, GameState 
   Result as V1Result, Stage } from '../game/types.ts';
 import { CONTEST_EVENTS } from '../game/data.ts';
 import { ACTIONS, EVENTS } from './compat.ts';
-import { advanceStudies, afterStartPass, applyJobChoice, isJobChoice, jobChoices, startingAction } from './jobs.ts';
+import { CAREER_TEXT } from './career2.ts';
+import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
+  jobChoices, performance, review, startingAction } from './jobs.ts';
 import { JOB_RULES } from './tracks.ts';
-import { ACCOUNTING_BOARD, BOARD_CHOICES, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
+import { ACCOUNTING_BOARD, BOARD_CHOICES, CAREER_ACTIONS, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT } from './life-data.ts';
-import { applyMove, randInt, reachable, rollDice } from './move.ts';
+import { applyMove, randInt, reachable as reachableMoves, rollDice } from './move.ts';
 import type { Move } from './move.ts';
 import { PLACES, WORLD } from './world.ts';
 import type { Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
@@ -29,6 +31,7 @@ export type OptionView = Omit<V1OptionView, 'place' | 'missing' | 'roll' | 'sure
 };
 export type Result = Omit<V1Result, 'place' | 'move' | 'deltas' | 'settle' | 'stageFrom' | 'stageTo' | 'ended'> & {
   place: PlaceId; move?: Move; deltas: StatMap; settle?: { deltas: StatMap };
+  review?: ReturnType<typeof review>;
   statusFrom: Status; statusTo: Status; trackFrom: TrackId | null; trackTo: TrackId | null; ended?: EndingId;
 };
 export type Forecast = Omit<V1Forecast, 'branches'> & {
@@ -47,6 +50,9 @@ const seasonAt = (turn: number) => turn % LIFE_RULES.seasons.length;
 const ageCap = (turn: number) => LIFE_RULES.staminaCaps.find(row => ageAt(turn) >= row.minAge)!.cap;
 const dateLabel = (turn: number) => TEXT.date(ageAt(turn), LIFE_RULES.seasons[seasonAt(turn)]);
 const ledgerSum = (state: GameState) => Object.values(state.board.ledger).reduce((sum, amount) => sum + amount, 0);
+
+/** Engine previews and actual travel use the same career stop predicate. */
+export const reachable = (state: GameState): Move[] => reachableMoves(state, { canPromote });
 
 export function newGame(seed: number): GameState {
   const state = structuredClone(INITIAL_STATE);
@@ -241,7 +247,8 @@ function endSeason(state: GameState, result: Result, runHooks: boolean): GameSta
   state.s.overdue = over ? state.s.overdue + 1 : 0;
   if (over) result.notes.push(TEXT.overdue(state.s.overdue));
   state.turn++;
-  state = advanceStudies(state);
+  // Career close includes yearEndReview at spring and age-based retirement, before stamina refill.
+  state = advanceCareer(advanceStudies(state));
   if (runHooks && seasonAt(state.turn) === LIFE_RULES.spring) {
     state = HOOKS.yearEnd(state);
     if (ageAt(state.turn) % LIFE_RULES.lifeEventYears === 0) state = HOOKS.lifeEvent(state);
@@ -280,7 +287,10 @@ function pickEvent(state: GameState, contest: boolean) {
 function land(state: GameState, result: Result) {
   const node = nodeAt(state);
   state.board.step = 'space';
-  if (SETTLEMENT_KINDS.includes(node.kind)) {
+  if (node.kind === 'rankup' && state.status === 'working') {
+    result.review = review(state);
+    result.notes.push(CAREER_TEXT.review[result.review.outcome], ...result.review.locks);
+  } else if (SETTLEMENT_KINDS.includes(node.kind)) {
     payLedger(state, result);
     result.notes.push(TEXT.settled); state.board.step = 'bonus';
   } else if (node.kind === 'rest') {
@@ -298,7 +308,7 @@ function land(state: GameState, result: Result) {
 }
 
 function travel(state: GameState, destination: string, result: Result): GameState {
-  const applied = applyMove(state, destination);
+  const applied = applyMove(state, destination, { canPromote });
   state = applied.state; result.move = applied.move;
   // applyMove includes arrivals in passed; ledger clearing makes arrival settlement idempotent.
   for (const kind of SETTLEMENT_KINDS) {
@@ -346,6 +356,13 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   const job = isJobChoice(v.id);
   const flag = applyEffect(state, job ? { ...effect, status: undefined, track: undefined } : effect, outcome.add);
   if (job) state = applyJobChoice(state, v.id, branch === 'sure' || success);
+  else if (v.id.startsWith('act:')) {
+    if (state.board.step === 'space' && nodeAt(state).kind === 'job') {
+      state = performance(state, branch === 'sure' || success ? 'workSuccess' : 'workFailure');
+    } else if (state.board.step === 'bonus' && CAREER_ACTIONS.includes(v.id.slice('act:'.length))) {
+      state = performance(state, 'extra');
+    }
+  }
   if (flag) result.flag = flag;
   if (r.kind !== 'board' || v.id === 'skip') state.s.acts++;
   result.deltas = diff(before, state.s);
@@ -360,7 +377,10 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     else if (!moves.length) land(state, result);
   } else if (v.id.startsWith('go:')) state = travel(state, v.id.slice('go:'.length), result);
   else if (state.phase === 'event') {
-    if (nodeAt(state).kind === 'contest' && success) state.board.contests++;
+    if (nodeAt(state).kind === 'contest' && success) {
+      state.board.contests++;
+      state = performance(state, 'contest');
+    }
     state.phase = 'action'; state.eventId = null; state.board.step = 'bonus';
   } else if (state.board.step === 'bonus') state = endSeason(state, result, runHooks);
   else state.board.step = 'bonus';
