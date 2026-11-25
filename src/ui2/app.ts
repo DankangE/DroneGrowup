@@ -1,14 +1,20 @@
 import { choose, derived, forecast, newGame, options, restore } from '../life/engine.ts';
 import type { OptionView } from '../life/engine.ts';
+import { reachable } from '../life/move.ts';
 import type { GameState } from '../life/types.ts';
 import { PLACES, WORLD } from '../life/world.ts';
-import { button, el } from '../ui/dom.ts';
+import { button, el, reducedMotion } from '../ui/dom.ts';
 import { board } from './board.ts';
 import { hud } from './hud.ts';
+import { wheel, WHEEL_STYLE } from './wheel.ts';
+import { destinationDetails, destinationName, pick, PICK_STYLE } from './pick.ts';
+import { movementFrames, playback, MOVE_STYLE } from './move.ts';
+import type { Frame } from './move.ts';
+import { transfer, TRANSFER_STYLE } from './transfer.ts';
 
 const PAGE_SIZE = 2;
 const PHASE_LABEL = { spin: '이번 계절', pick: '갈 곳 고르기', space: '이곳에서 할 일',
-  bonus: '추가 행동', event: '사건', chapter: '인생 결산' } as const;
+  bonus: '추가 행동', event: '사건', chapter: '인생 결산', move: '이동 중', transfer: '지도 환승' } as const;
 
 declare global {
   interface Window {
@@ -18,22 +24,56 @@ declare global {
 
 export function mountLife(root: HTMLElement, seed: number, debug = false): void {
   let state = newGame(seed), page = 0;
+  let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
   root.classList.add('life2');
+  const skip = () => frame?.phase === 'spin' ? sequence?.next() : sequence?.finish();
+  root.addEventListener('keydown', event => {
+    if (sequence && event.key === 'Escape') { event.preventDefault(); skip(); }
+  });
+  root.addEventListener('click', event => {
+    const target = event.target as Element;
+    // A destination click may have just replaced its board; do not skip that new animation.
+    if (sequence && root.contains(target) && target.closest('.life2-board-frame')) skip();
+  });
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => {
+    if (event.matches) sequence?.finish();
+  });
   function takeOption(id: string) {
-    if (!options(state).some(option => option.id === id && option.enabled)) return;
-    state = choose(state, id).state;
+    if (sequence || !options(state).some(option => option.id === id && option.enabled)) return;
+    before = state;
+    const outcome = choose(state, id);
+    state = outcome.state;
     page = 0;
-    render(true);
+    const frames = movementFrames(before.board.pos, outcome.result, id === 'spin');
+    const done = () => { frame = undefined; before = undefined; sequence = undefined; render(true); };
+    if (!frames.length || reducedMotion()) { done(); return; }
+    sequence = playback(frames, next => { frame = next; render(true); }, done);
+    sequence.next();
   }
   function render(focus = false) {
-    const offered = options(state), view = derived(state);
-    const phase = state.phase === 'action' ? state.board.step : state.phase === 'ended' ? 'chapter' : 'event';
+    const shown = frame && before ? { ...before, board: { ...before.board, pos: frame.pos } } : state;
+    const offered = frame ? [] : options(state), view = derived(shown);
+    const phase = frame?.phase ?? (state.phase === 'action' ? state.board.step : state.phase === 'ended' ? 'chapter' : 'event');
     root.dataset.screen = state.phase === 'ended' ? 'ending' : 'play';
     root.dataset.phase = phase;
-    const shell = el('main', 'life2-shell'), bands = hud(state, view, offered, takeOption);
+    const shell = el('main', 'life2-shell'), bands = hud(shown, view, offered, takeOption);
+    const mode = frame?.phase ?? (offered.some(option => option.id === 'spin') ? 'ready' : 'idle');
+    const center = wheel(state.board.dice, mode, () => sequence ? skip() : takeOption('spin'));
+    bands.bottom.querySelector('.life2-spin, .life2-dice')!.replaceWith(center);
+    const map = board(state, shown.board.pos);
+    if (frame?.phase === 'transfer') {
+      map.querySelector<HTMLElement>('[data-map]')!.inert = true;
+      map.append(transfer(frame.from!, frame.to!));
+    }
+    if (frame?.payment !== undefined) {
+      const payment = el('output', 'life2-payment', `정산 ${frame.payment > 0 ? '+' : ''}${frame.payment}만`);
+      payment.dataset.payment = String(frame.payment); map.append(payment);
+    }
     const panel = el('section', 'life2-options');
     const heading = el('h2', '', PHASE_LABEL[phase]);
     heading.tabIndex = -1;
+    const moves = !frame && phase === 'pick' ? reachable(state) : [];
+    const decorate = moves.length ? pick(map, state.board.pos, moves, heading, takeOption) : undefined;
     panel.setAttribute('aria-label', PHASE_LABEL[phase]);
     const list = el('div', 'life2-option-list');
     const choices = offered.filter(option => option.id !== 'spin');
@@ -41,18 +81,24 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     page = Math.min(page, pages - 1);
     for (const option of choices.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
       const preview = forecast(state, option.id);
+      const move = moves.find(move => option.id === `go:${move.node}`);
       const control = button('', 'life2-option', () => takeOption(option.id));
       control.dataset.option = option.id;
-      if (option.id.startsWith('go:')) control.dataset.dest = option.id.slice(3);
       control.disabled = !option.enabled;
       control.title = [option.desc, ...option.locks].join(' ');
       control.setAttribute('aria-label', `${option.title}. ${control.title}`);
-      control.append(el('strong', '', option.title), el('small', '',
-        `비용 ${preview.cost}만 · 체력 ${preview.tire}${preview.chance === undefined ? '' : ` · 성공 ${preview.chance}%`}`));
+      control.append(el('strong', '', move ? destinationName(move, state.board.pos) : option.title), el('small', '',
+        move ? destinationDetails(move) : `비용 ${preview.cost}만 · 체력 ${preview.tire}${preview.chance === undefined ? '' : ` · 성공 ${preview.chance}%`}`));
+      if (move) {
+        decorate!(control, move);
+        if (WORLD.find(node => node.id === move.node)!.map !== WORLD.find(node => node.id === state.board.pos)!.map) {
+          control.classList.add('life2-transfer-badge');
+        }
+      }
       list.append(control);
     }
     if (!choices.length) {
-      const node = WORLD.find(node => node.id === state.board.pos)!;
+      const node = WORLD.find(node => node.id === shown.board.pos)!;
       list.append(el('strong', '', PLACES[node.place].name),
         el('p', '', offered[0]?.desc ?? state.log.at(-1)?.text ?? PHASE_LABEL[phase]));
     }
@@ -62,15 +108,17 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     previous.disabled = page === 0; next.disabled = page === pages - 1;
     pager.append(previous, el('span', '', `${page + 1} / ${pages}`), next);
     panel.append(heading, list, pager);
-    shell.append(bands.top, board(state), panel, bands.bottom);
-    root.replaceChildren(shell);
-    if (focus) heading.focus({ preventScroll: true });
+    shell.append(bands.top, map, panel, bands.bottom);
+    const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE);
+    root.replaceChildren(style, shell);
+    if (focus) (frame ? center : heading).focus({ preventScroll: true });
   }
   if (debug) window.__life = {
     state: () => structuredClone(state), options: () => options(state),
     load(raw) {
       const loaded = restore(raw);
       if (!loaded) throw new Error('Invalid life layout fixture');
+      sequence?.cancel(); sequence = undefined; frame = undefined; before = undefined;
       state = loaded; page = 0; render();
     },
   };

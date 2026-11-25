@@ -17,8 +17,8 @@ export function gridCell(node: Pick<WorldNode, 'x' | 'y'>): { column: number; ro
     row: Math.floor(node.y * GRID.rows / 100) + 1 };
 }
 
-export function board(state: GameState): HTMLElement {
-  const current = WORLD.find(node => node.id === state.board.pos)!;
+export function board(state: GameState, position = state.board.pos): HTMLElement {
+  const current = WORLD.find(node => node.id === position)!;
   const nodes = WORLD.filter(node => node.map === current.map);
   const frame = el('section', 'life2-board-frame');
   frame.setAttribute('aria-label', `${MAPS[current.map].name} 지도`);

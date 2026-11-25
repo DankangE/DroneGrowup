@@ -1,4 +1,4 @@
-// T16 shell: six maps at the same four sizes as layout-check.mjs, plus engine-driven choices.
+// T16/T17: six maps, engine choices, keyboard seasons and deterministic motion checks.
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -8,12 +8,14 @@ import { chromium } from 'playwright-core';
 import { choose, derived, newGame, options } from '../src/life/engine.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
+import { reachable } from '../src/life/move.ts';
+import { destinationDetails } from '../src/ui2/pick.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SIZES = [[390, 844], [360, 740], [1280, 800], [1366, 768]];
 
 // Importable without building or opening a port so Node can regress the traversal.
-export function pagingChecks(page, check) {
+export function pagingChecks(page, check, activate = control => control.click()) {
   const previous = page.locator('.life2-pager [data-action="page-prev"]');
   const next = page.locator('.life2-pager [data-action="page-next"]');
   const choices = page.locator('.life2-option-list [data-option]');
@@ -23,7 +25,7 @@ export function pagingChecks(page, check) {
     const panel = await page.locator('.life2-options').elementHandle();
     assert.ok(panel, 'the life option panel is mounted');
     try {
-      await control.click();
+      await activate(control);
       // Both paging and choosing replace the panel. Wait for that render, even
       // when the new page has the same phase or number of options as the old one.
       await page.waitForFunction(oldPanel => !oldPanel.isConnected, panel);
@@ -77,6 +79,120 @@ export function pagingChecks(page, check) {
   };
 }
 
+// Real Tab navigation only: no locator.focus(), DOM focus(), or mouse fallback.
+export async function keyboardActivate(page, control, key = 'Enter') {
+  assert.equal(await control.isEnabled(), true, 'keyboard target is enabled');
+  let tabs = 0;
+  while (!(await control.evaluate(node => node === document.activeElement))) {
+    assert.ok(tabs++ < 250, 'keyboard target is reachable by Tab');
+    await page.keyboard.press('Tab');
+  }
+  await page.keyboard.press(key);
+}
+
+async function movementChecks(page, load, check) {
+  const phase = () => page.locator('#app').getAttribute('data-phase');
+  const pawn = () => page.locator('[data-pawn]').getAttribute('data-pawn');
+  const actual = () => page.evaluate(() => window.__life.state());
+  const press = (selector, key) => keyboardActivate(page, page.locator(selector), key);
+  const keys = pagingChecks(page, check, control => keyboardActivate(page, control));
+  const fixture = (pos, dice) => {
+    const run = newGame(1); run.board.pos = pos; run.board.dice = dice; run.board.step = 'pick'; return run;
+  };
+  // This entire season, including the destination tile and paged actions, uses only keys.
+  let expected = newGame(1); await load(expected);
+  assert.equal(await page.locator('[data-die]').count(), 2);
+  await keys.clickChoice('spin'); expected = choose(expected, 'spin').state;
+  assert.equal(await phase(), 'pick');
+  assert.deepEqual(await page.locator('[data-die]').allTextContents(), expected.board.dice.map(String));
+  const moves = reachable(expected);
+  for (const move of moves) {
+    const tile = page.locator(`[data-space="${move.node}"][data-dest="${move.node}"]`);
+    assert.equal(await tile.count(), 1, 'each local reachable tile is selectable');
+    assert.ok((await tile.getAttribute('aria-label')).includes(destinationDetails(move)));
+  }
+  assert.equal(await page.locator('[data-path-preview] line').count(), moves[0].steps);
+  await press(`[data-space="${moves[0].node}"][data-dest]`, 'Space');
+  expected = choose(expected, `go:${moves[0].node}`).state;
+  for (let step = 0; expected.turn === 0 && step < 8; step++) {
+    await keys.checkPages('keyboard season');
+    const offered = options(expected).filter(option => option.enabled);
+    const id = (offered.find(option => option.id === 'end' || option.id === 'skip') ?? offered.at(-1)).id;
+    await keys.clickChoice(id); expected = choose(expected, id).state;
+    assert.deepEqual(await actual(), expected, 'keyboard choice matches engine');
+  }
+  assert.equal(expected.turn, 1, 'keyboard alone completes a season');
+  await check('keyboard next season');
+  await load(newGame(11)); await keys.clickChoice('spin');
+  assert.deepEqual(await actual(), choose(newGame(11), 'spin').state);
+  assert.equal(await phase(), 'space', 'reduced motion is instant; one destination never shows pick');
+  assert.equal(await page.locator('[data-dest]').count(), 0);
+
+  // Freeze browser timers so exact boundaries are reliable even on slow CI workers.
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.clock.install({ time: 0 }); await page.clock.pauseAt(1000);
+  await load(newGame(1)); await press('[data-option="spin"]');
+  assert.equal(await phase(), 'spin'); await check('rolling wheels');
+  await page.clock.runFor(699); assert.equal(await phase(), 'spin');
+  await page.clock.runFor(1); assert.equal(await phase(), 'pick'); await check('pick after 700ms');
+  const target = page.locator('[data-space="A-o4"][data-dest]');
+  await target.hover();
+  assert.equal(await page.locator('[data-path-preview]').getAttribute('data-path-preview'), 'A-o4');
+  assert.equal(await page.locator('[data-path-preview] line').count(), 4);
+
+  await load(newGame(11));
+  await page.evaluate(() => {
+    window.__lifePhases = [];
+    window.__lifePhaseObserver = new MutationObserver(records => window.__lifePhases.push(...records.map(record => record.oldValue)));
+    window.__lifePhaseObserver.observe(document.querySelector('#app'), { attributes: true, attributeFilter: ['data-phase'], attributeOldValue: true });
+  });
+  await press('[data-option="spin"]'); await page.keyboard.press('Enter'); // stop wheels early
+  assert.equal(await phase(), 'move'); assert.equal(await pawn(), 'A-o1');
+  await page.keyboard.press('Escape'); assert.equal(await phase(), 'space');
+  assert.equal(await pawn(), 'A-o4');
+  assert.equal(await page.evaluate(() => { window.__lifePhaseObserver.disconnect(); return window.__lifePhases.includes('pick'); }), false);
+  await page.clock.runFor(2000);
+  assert.deepEqual(await actual(), choose(newGame(11), 'spin').state, 'skip never rolls or applies movement twice');
+
+  const paid = fixture('A-o10', [2, 2]); paid.board.ledger = { wage: 125, expense: -20 };
+  await load(paid); await press('[data-space="A-o12"][data-dest]');
+  assert.equal(await phase(), 'move'); assert.equal(await pawn(), 'A-o11');
+  assert.equal(await page.locator('[data-payment]').getAttribute('data-payment'), '105'); await check('salary while moving');
+  await page.clock.runFor(249); assert.equal(await pawn(), 'A-o11');
+  await page.clock.runFor(1); assert.equal(await pawn(), 'A-o12');
+  await page.clock.runFor(250);
+  assert.deepEqual(await actual(), choose(paid, 'go:A-o12').state);
+
+  const crossing = fixture('A-o11', [4, 4]);
+  await load(crossing); await keys.checkPages('transfer destinations');
+  assert.equal(await page.locator('.life2-transfer-badge[data-dest="B-o2"]').count(), 1);
+  await keys.clickChoice('go:B-o2'); await page.clock.runFor(500);
+  assert.equal(await phase(), 'transfer');
+  assert.equal(await page.locator('[data-map]').getAttribute('data-map'), 'A');
+  assert.equal(await page.locator('.life2-map-overview span').count(), 6); await check('transfer overview');
+  await page.clock.runFor(599); assert.equal(await phase(), 'transfer');
+  await page.clock.runFor(1); assert.equal(await phase(), 'move'); assert.equal(await pawn(), 'B-o1');
+  assert.equal(await page.locator('[data-map]').getAttribute('data-map'), 'B'); await check('arrival map');
+  await page.clock.runFor(500); assert.equal(await pawn(), 'B-o2');
+  assert.deepEqual(await actual(), choose(crossing, 'go:B-o2').state);
+
+  const immediate = fixture('A-o13', [1, 1]);
+  for (const reduce of [false, true]) {
+    await load(immediate); await keys.clickChoice('go:B-o1'); assert.equal(await phase(), 'transfer');
+    if (reduce) await page.emulateMedia({ reducedMotion: 'reduce' });
+    else await page.keyboard.press('Space');
+    await page.waitForFunction(() => document.querySelector('#app').dataset.phase !== 'transfer');
+    await page.clock.runFor(2000);
+    assert.deepEqual(await actual(), choose(immediate, 'go:B-o1').state);
+    assert.equal(await pawn(), 'B-o1', 'skip and reduced-motion changes finish immediately');
+  }
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await load(newGame(1)); await press('[data-option="spin"]');
+  await load(newGame(42)); await page.clock.runFor(2000);
+  assert.deepEqual(await actual(), newGame(42), 'loading cancels stale animation callbacks');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+}
+
 // Runs in Chromium. Check actual boxes and clipping, not merely overflow:hidden on the root.
 function audit() {
   const issues = [], vw = innerWidth, vh = innerHeight;
@@ -93,7 +209,7 @@ function audit() {
     if (node.tagName.toLowerCase() !== 'svg' &&
       ((node.scrollWidth > node.clientWidth + 1 && ['hidden', 'clip'].includes(style.overflowX)) ||
        (node.scrollHeight > node.clientHeight + 1 && ['hidden', 'clip'].includes(style.overflowY)))) issues.push(`${label}: content clipped`);
-    if (node.matches('button, [data-space]') && (rect.width < 43.99 || rect.height < 43.99)) issues.push(`${label}: smaller than 44px`);
+    if (!node.closest('[inert]') && node.matches('button, [data-space]') && (rect.width < 43.99 || rect.height < 43.99)) issues.push(`${label}: smaller than 44px`);
     if (node.matches('[data-space]') && Math.abs(rect.width - rect.height) > .1) issues.push(`${label}: tile is not square`);
     if ([...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim()) && parseFloat(style.fontSize) < 11) issues.push(`${label}: text below 11px`);
     for (let parent = node.parentElement; parent; parent = parent.parentElement) {
@@ -190,6 +306,7 @@ async function main() {
             await load(fixture); await checkPages(`${map} ${step} menu`);
           }
         }
+        await movementChecks(page, load, check); seasons++;
         const event = newGame(11); event.phase = 'event'; event.eventId = EVENTS[0].id;
         event.board.step = 'space'; event.board.dice = [1, 1];
         await load(event); await checkPages('event');
@@ -200,7 +317,7 @@ async function main() {
         await page.locator('[data-screen=title]').waitFor();
         assert.equal(await page.locator('.life2').count(), 0, 'default stays v1');
         assert.equal(await page.evaluate(() => window.__game.state().v), 1);
-        console.log(`  ${size}: six maps, all options paged, six seasons completed`);
+        console.log(`  ${size}: six maps, seven seasons (one keyboard-only), spin/pick/move/transfer timing and skips checked`);
       } finally { await context.close(); }
     }
   } finally {
