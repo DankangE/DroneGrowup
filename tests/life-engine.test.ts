@@ -3,10 +3,10 @@ import { test } from 'node:test';
 import { CONTEST_EVENTS, RULES, STAGES } from '../src/game/data.ts';
 import { creditLimit, netWorth, upkeepLines } from '../src/life/economy.ts';
 import { ACTIONS, EVENTS } from '../src/life/compat.ts';
-import { choose, currentEvent, derived, forecast, HOOKS, lifeEvent, met, newGame, options, restore,
+import { choose, currentEvent, derived, forecast, HOOKS, lifeEvent, met, newGame, options, reachable, restore,
   yearEnd } from '../src/life/engine.ts';
 import { LIFE_RULES, SPACE_MENU, STATS } from '../src/life/life-data.ts';
-import { randInt, reachable, rollDice } from '../src/life/move.ts';
+import { randInt, rollDice } from '../src/life/move.ts';
 import { JOB_RULES } from '../src/life/tracks.ts';
 import { WORLD } from '../src/life/world.ts';
 import type { GameState, StatMap, WorldNode } from '../src/life/types.ts';
@@ -157,7 +157,7 @@ test('empty movement, jobfair and unimplemented tile kinds always offer a way fo
     const node = WORLD.find(node => node.kind === kind)!;
     const state = at(node.id);
     const exit = kind === 'jobfair' ? 'job:none' : 'skip';
-    if (kind === 'jobfair' || kind === 'shop' || kind === 'life') {
+    if (['jobfair', 'shop', 'life', 'biz', 'invest'].includes(kind)) {
       assert.ok(options(state).some(option => option.id === exit && option.enabled && !option.cost && !option.tire));
     } else assert.deepEqual(options(state).map(option => option.id), ['skip'], kind);
     const next = choose(state, exit).state;
@@ -176,7 +176,7 @@ test('pay/start settlement on passing or arrival clears the ledger exactly once 
     assert.equal(result.upkeep?.total, 70); assert.equal(result.upkeep?.lines.length, 2);
     assert.equal(result.settle?.deltas.money, 70);
     assert.equal(next.board.lapAt.A, origin === 'A-o27' ? state.turn : -1);
-    assert.equal(next.board.step, destination === 'A-o11' || destination === 'A-o0' ? 'bonus' : 'space');
+    assert.equal(next.board.step, ['A-o11', 'A-o0', 'A-o12'].includes(destination) ? 'bonus' : 'space');
     assert.deepEqual(state.board.ledger, { 급여: 95, 생활비: -25 });
   }
   const shortfall = at('A-o10', 'pick', { money: 3, debt: 4 });
@@ -418,12 +418,12 @@ const finalStates: GameState[] = [];
 function randomRun(seed: number, check: boolean): GameState {
   const pick = chooser(seed), midpoint = 20 + pick(100);
   let state = newGame(seed), steps = 0;
-  const turns = Array.from({ length: 204 }, () => ({ spin: 0, tile: 0, extra: 0 }));
+  const turns = Array.from({ length: 204 }, () => ({ spin: 0, again: 0, tile: 0, extra: 0 }));
   while (state.phase !== 'ended') {
-    assert.ok(steps < 204 * 5, `seed ${seed}: stuck`);
+    assert.ok(steps < 204 * 7, `seed ${seed}: stuck`);
     const offered = options(state), enabled = offered.filter(option => option.enabled);
     assert.ok(enabled.length > 0);
-    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|skip|end)$/.test(option.id)));
+    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|biz:(buy|up|sell|check):[a-z_]+|fund:(in|out|kind):\d+|luck:(promote|wait|shortcut:[a-z]+)|skip|end)$/.test(option.id)));
     const exits = enabled.filter(option => option.id === 'skip' || option.id === 'end' || option.id === 'job:none'
       || (option.id.startsWith('ev:') && !option.cost && !option.tire));
     if (state.board.step === 'spin' || state.board.step === 'pick') {
@@ -435,9 +435,10 @@ function randomRun(seed: number, check: boolean): GameState {
     if (option.id === 'spin') count.spin++;
     else if ((state.phase === 'event' || state.board.step === 'space') && /^(act:|ev:|skip)/.test(option.id)) count.tile++;
     else if (state.board.step === 'bonus' && option.id.startsWith('act:')) count.extra++;
-    assert.ok(count.spin <= 1 && count.tile <= 1 && count.extra <= 1);
+    assert.ok(count.spin <= 1 + count.again && count.tile <= 1 && count.extra <= 1);
     const before = check && seed <= 20 ? structuredClone(state) : null;
     const next = choose(state, option.id);
+    if (next.result.luck?.id === 'again') count.again++;
     if (before) { assert.deepEqual(state, before); allIntegers(next.state); }
     if (check && seed <= 60 && steps >= midpoint && (steps - midpoint) % 23 === 0) {
       const restored = restore(JSON.parse(JSON.stringify(state)));
@@ -448,15 +449,15 @@ function randomRun(seed: number, check: boolean): GameState {
     state = next.state; steps++;
   }
   assert.equal(state.turn, 204); assert.equal(state.phase, 'ended');
-  assert.ok(turns.every(count => count.spin === 1 && count.tile <= 1 && count.extra <= 1));
-  assert.equal(turns.reduce((sum, count) => sum + count.spin, 0), 204);
+  assert.ok(turns.every(count => count.spin === 1 + count.again && count.tile <= 1 && count.extra <= 1));
+  assert.equal(turns.reduce((sum, count) => sum + count.spin - count.again, 0), 204);
   assert.deepEqual(options(state), []); allIntegers(state);
   return state;
 }
 
-test('200 seeded random runs end at exactly 204 seasons with 204 spins, bounded action slots and integer states', t => {
+test('200 seeded random runs end at 204 seasons with only luck-granted extra spins, bounded slots and integer states', t => {
   for (let seed = 1; seed <= 200; seed++) finalStates.push(randomRun(seed, true));
-  t.diagnostic('200/200 runs: 204 seasons, 204 spins; tile <= 1, extra <= 1; integers each step for 20 seeds and finals for 200; restore replay for 60 seeds');
+  t.diagnostic('200/200 runs: 204 seasons, 204 spins + luck rerolls; tile <= 1, extra <= 1; integers each step for 20 seeds and finals for 200; restore replay for 60 seeds');
 });
 
 test('same game seed and same chooser reproduce identical complete runs', () => {

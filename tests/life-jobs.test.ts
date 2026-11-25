@@ -420,11 +420,12 @@ test('failed paid entry preserves the existing job and cannot roll again on the 
   assert.ok(failure);
 });
 
-test('200 seeded T04 runs finish 204 seasons with one spin each, integer states and replayable job choices', t => {
+test('200 seeded T04 runs finish 204 seasons with luck-only extra spins, integer states and replayable job choices', t => {
   const ids = new Set<string>();
   for (let seed = 1; seed <= 200; seed++) {
     let random = seed, state = newGame(seed), steps = 0;
     const spins = Array<number>(204).fill(0);
+    const extraSpins = Array<number>(204).fill(0);
     while (state.phase !== 'ended') {
       assert.ok(steps++ < 204 * 6 + 2, `seed ${seed}: stuck`);
       const enabled = options(state).filter(row => row.enabled);
@@ -436,6 +437,7 @@ test('200 seeded T04 runs finish 204 seasons with one spin each, integer states 
       if (isJob) ids.add(picked.id);
       const before = seed <= 20 ? structuredClone(state) : null;
       const next = choose(state, picked.id);
+      if (next.result.luck?.id === 'again') extraSpins[state.turn]++;
       if (before) { assert.deepEqual(state, before); integers(next.state); }
       if (isJob) {
         assert.equal(next.state.turn, state.turn);
@@ -445,9 +447,9 @@ test('200 seeded T04 runs finish 204 seasons with one spin each, integer states 
       }
       state = next.state;
     }
-    assert.equal(state.turn, 204); assert.ok(spins.every(count => count === 1));
+    assert.equal(state.turn, 204); assert.ok(spins.every((count, turn) => count === 1 + extraSpins[turn]));
     integers(state); assert.deepEqual(restore(JSON.parse(JSON.stringify(state))), state);
   }
   for (const id of ['start:school', 'start:work', 'start:self', 'job:none', 'job:service', 'quit']) assert.ok(ids.has(id), id);
-  t.diagnostic('200/200 T04 runs: 204 seasons, 204 spins; integer states; job/start/quit save replay');
+  t.diagnostic('200/200 T04 runs: 204 seasons, 204 spins + luck rerolls; integer states; job/start/quit save replay');
 });
