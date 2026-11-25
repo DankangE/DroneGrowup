@@ -1,6 +1,6 @@
 // T15: §13.2 gates fail closed. Human-speed timing remains an estimate until T24.
 import { writeFileSync } from 'node:fs';
-import { GRADE_STEPS } from '../src/game/data.ts';
+import { GRADE_STEPS } from '../src/life/data.ts';
 import { availableParallelism } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';

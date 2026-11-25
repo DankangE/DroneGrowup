@@ -1,5 +1,5 @@
 // T05 read-only career rules and cards. Tables live here to keep this ticket's three-file boundary.
-import { FLAG_LABEL } from '../game/data.ts';
+import { FLAG_LABEL } from './data.ts';
 import { LIFE_RULES, STAT_LABEL, TEXT } from './life-data.ts';
 import { JOB_RULES, JOB_TEXT, TRACKS } from './tracks.ts';
 import { WORLD } from './world.ts';

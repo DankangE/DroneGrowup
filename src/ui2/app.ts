@@ -218,6 +218,6 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     notice = migrateLifeSave(); meta = loadLifeMeta(); state = loadLifeRun() ?? newGame(seed); ready = true;
     if (notice) showTitle(); else render();
   };
-  if (PLATFORM) { runStatus.onChange = refreshStatus; bootPlatform(root, start, 2); }
+  if (PLATFORM) { runStatus.onChange = refreshStatus; bootPlatform(root, start); }
   else start();
 }

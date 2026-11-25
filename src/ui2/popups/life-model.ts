@@ -1,6 +1,6 @@
 import { SHOPS, STAT_LABEL } from '../../life/life-data.ts';
 import { derived } from '../../life/engine.ts';
-import { grade } from '../../game/career.ts';
+import { grade } from '../../life/grades.ts';
 import { TRACKS } from '../../life/tracks.ts';
 import type { GameState } from '../../life/types.ts';
 import { childLabel, featLabels, graduateLine, humanCopy } from './polish-model.ts';

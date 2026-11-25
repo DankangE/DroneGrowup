@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { grade, GRADED_STATS } from '../src/game/career.ts';
+import { grade, GRADED_STATS } from '../src/life/grades.ts';
 import { choose, currentEvent, forecast, newGame, options, reachable } from '../src/life/engine.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';

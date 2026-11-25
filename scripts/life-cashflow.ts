@@ -1,6 +1,6 @@
 // Fixed careers and spending, not a board-policy simulation (T14). All amounts are 만원.
 import { pathToFileURL } from 'node:url';
-import { ACTIONS, RULES } from '../src/game/data.ts';
+import { ACTIONS, RULES } from '../src/life/data.ts';
 import { careerAge } from '../src/life/career2.ts';
 import { accrue, ECONOMY_KEYS as K, flightPay, homeValue, netWorth, settle } from '../src/life/economy.ts';
 import { newGame } from '../src/life/engine.ts';

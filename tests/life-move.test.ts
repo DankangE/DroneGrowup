@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GRADE_STEPS } from '../src/game/data.ts';
+import { GRADE_STEPS } from '../src/life/data.ts';
 import { applyMove, carLevel, reachable, rollDice, stepsFor } from '../src/life/move.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
 import type { Cond, GameState, MapId, StatMap, WorldNode } from '../src/life/types.ts';

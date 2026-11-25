@@ -1,6 +1,6 @@
-import type { Stat as GradedStat } from '../../game/types.ts';
-import { grade } from '../../game/career.ts';
-import { FLAG_LABEL } from '../../game/data.ts';
+import type { Stat as GradedStat } from '../../life/base-types.ts';
+import { grade } from '../../life/grades.ts';
+import { FLAG_LABEL } from '../../life/data.ts';
 import { careerIncome, careerSalary, careerTrack, promotionView, rankChange } from '../../life/career2.ts';
 import { retirementView } from '../../life/jobs.ts';
 import { achievementScore } from '../../life/ending.ts';

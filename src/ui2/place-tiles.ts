@@ -1,5 +1,5 @@
 // T21: original small dioramas. Shared parts keep the new districts in one drawing style.
-import type { PlaceId as V1PlaceId } from '../game/types.ts';
+import type { PlaceId as V1PlaceId } from '../life/base-types.ts';
 import type { PlaceId } from '../life/types.ts';
 import { path as p } from './art-svg.ts';
 import type { ArtPath, VectorArt } from './art-svg.ts';

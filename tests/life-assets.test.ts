@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ITEMS } from '../src/game/data.ts';
+import { ITEMS } from '../src/life/data.ts';
 import { assetChoices, drawLuck, fundYearEnd, shopIncome, shortcutMoves } from '../src/life/assets.ts';
 import { CAREER_KEYS } from '../src/life/career2.ts';
 import { choose, derived, forecast, newGame, options, reachable, restore } from '../src/life/engine.ts';

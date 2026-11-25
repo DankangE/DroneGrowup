@@ -1,10 +1,10 @@
 // T03: one spin, one tile choice and at most one extra action per season.
 // Public operations are pure; mutation below is confined to their private working copies.
-import { FLAG_LABEL, RULES } from '../game/data.ts';
+import { FLAG_LABEL, RULES } from './data.ts';
 import type { BranchId, Derived as V1Derived, Forecast as V1Forecast,
   OptionKind, OptionView as V1OptionView, OutcomeView as V1OutcomeView,
-  Result as V1Result } from '../game/types.ts';
-import { CONTEST_EVENTS } from '../game/data.ts';
+  Result as V1Result } from './base-types.ts';
+import { CONTEST_EVENTS } from './data.ts';
 import { ACTIONS, EVENTS } from './compat.ts';
 import { CAREER_KEYS, CAREER_TEXT, promotionView, retirementView } from './career2.ts';
 import { applyAssetChoice, applyAssetMove, assetPopup, assetReachable, consumeLuck,

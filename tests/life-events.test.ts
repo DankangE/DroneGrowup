@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { GRADE_STEPS } from '../src/game/data.ts';
+import { GRADE_STEPS } from '../src/life/data.ts';
 import { ALL_EVENTS, choose, currentEvent, derived, eventCandidates, forecast, LIFE_EVENTS, lifeEvent,
   newGame, options, reachable, restore, yearEnd } from '../src/life/engine.ts';
 import { answer, effect, EVENTS_A, EVENT_KEYS as K, gamble, materialize } from '../src/life/events-a.ts';

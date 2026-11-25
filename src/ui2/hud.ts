@@ -1,4 +1,4 @@
-import { grade, GRADED_STATS } from '../game/career.ts';
+import { grade, GRADED_STATS } from '../life/grades.ts';
 import { STAT_LABEL } from '../life/life-data.ts';
 import type { Derived, OptionView } from '../life/engine.ts';
 import type { GameState } from '../life/types.ts';

@@ -1,7 +1,7 @@
 // T11–T12: nominal expectations AND worst outcomes, including costs and persistent event effects.
 // Like v1, distinct qualifications/popups/relocations are incomparable rather than assigned invented prices.
 import { pathToFileURL } from 'node:url';
-import { RULES } from '../src/game/data.ts';
+import { RULES } from '../src/life/data.ts';
 import { ALL_EVENTS, LIFE_EVENTS, newGame } from '../src/life/engine.ts';
 import { materialize, EVENT_RULES } from '../src/life/events-a.ts';
 import type { LifeChoice, LifeEffect } from '../src/life/events-a.ts';

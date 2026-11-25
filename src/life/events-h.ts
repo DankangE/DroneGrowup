@@ -1,5 +1,5 @@
 // §9.2 H. A villa uses the existing owned-home limits; succession reuses economy's valuation.
-import { RULES } from '../game/data.ts';
+import { RULES } from './data.ts';
 import { careerAge } from './career2.ts';
 import { ECONOMY_RULES } from './economy.ts';
 import { quit } from './jobs.ts';

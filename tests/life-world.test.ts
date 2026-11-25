@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { GRADE_STEPS } from '../src/game/data.ts';
+import { GRADE_STEPS } from '../src/life/data.ts';
 import { MAPS, PLACES, WORLD } from '../src/life/world.ts';
 import type { Cond, MapId, PlaceId, SpaceKind, Stat, StatMap } from '../src/life/types.ts';
 

@@ -573,7 +573,7 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
   .step-bar[data-option=end] { flex-direction: column; justify-content: center; gap: 0; padding: 2px 5px; }
 }
 
-/* T16: every selector is scoped to the opt-in v2 root. */
+/* Life board selectors are scoped to the default game root. */
 #app.life2 { padding: 6px 6px 10px; }
 .life2 .life2-shell {
   width: min(100%,1100px); height: 100%; min-width: 0; min-height: 0;

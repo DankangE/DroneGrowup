@@ -1,5 +1,5 @@
 // Career and F2 action tables: life-board.md §§5–6. Percentages stay integral.
-import { ACTIONS as V1_ACTIONS } from '../game/data.ts';
+import { ACTIONS as V1_ACTIONS } from './data.ts';
 import type { ActionDef, Choice, Cond, PlaceId, Stat, StatMap, TrackDef, TrackId } from './types.ts';
 
 const need = (id: string): Cond => structuredClone(V1_ACTIONS.find(action => action.id === id)!.need!);

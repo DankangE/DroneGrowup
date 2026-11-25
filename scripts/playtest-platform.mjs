@@ -21,7 +21,8 @@ import { chromium } from 'playwright-core';
 import { choose, newGame, restore } from '../src/life/engine.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'node_modules/.cache/dist-platform');
+// node_modules may be shared with another worktree; build artifacts belong to this one.
+const outDir = join(root, 'dist/platform');
 const configFile = join(root, 'vite.config.ts');
 process.env.VITE_NG_PLATFORM = '1';
 process.env.VITE_NG_API = 'http://sdk.invalid';
@@ -30,13 +31,13 @@ await build({ root, configFile, logLevel: 'warn', build: { outDir, emptyOutDir: 
 const server = await preview({ root, configFile, build: { outDir }, preview: { port: 5399, strictPort: false } });
 const base = server.resolvedUrls.local[0];
 
-// The stand-in server: one progress record per account.
-const records = {}, classicRecords = {}, plays = [], namespaces = [];
+// The stand-in server accepts only the separate life-board namespace.
+const records = {}, plays = [], namespaces = [];
 const meta = (extra = {}) => ({ gallery: [], best: 0, runs: 0, feats: [], jobs: [], bestByEnding: {}, ...extra });
-const accountRecords = id => id === 'pilotgrowup-v2' ? records : classicRecords;
+const accountRecords = id => { assert.equal(id, 'pilotgrowup-v2'); return records; };
 let current = 'user-a';
 const api = {
-  init: ({ gameId }) => { assert.ok(['pilotgrowup', 'pilotgrowup-v2'].includes(gameId)); namespaces.push(gameId); },
+  init: ({ gameId }) => { assert.equal(gameId, 'pilotgrowup-v2'); namespaces.push(gameId); },
   submit: ({ gameId, play }) => { plays.push({ gameId, play }); return {}; },
   me: () => ({ id: current, loginId: current, nickname: `닉 ${current}` }),
   get: ({ gameId }) => accountRecords(gameId)[current] ?? { data: null, progressAt: 0 },
@@ -44,11 +45,9 @@ const api = {
     const records = accountRecords(gameId);
     if (progressAt <= (records[current]?.progressAt ?? 0)) return { conflict: true };
     if (data.run) {
-      assert.equal(data.run.v, gameId === 'pilotgrowup-v2' ? 2 : 1);
-      if (data.run.v === 2) {
-        assert.deepEqual(restore(data.run), data.run, 'v2 structured state survives the contract');
-        assert.ok(!Object.keys(data.run.seen).some(key => key.startsWith('_b.')), 'v2 never packs the board');
-      } else delete data.run.board; // The old server cleaner remains supported by v1.
+      assert.equal(data.run.v, 2);
+      assert.deepEqual(restore(data.run), data.run, 'v2 structured state survives the contract');
+      assert.ok(!Object.keys(data.run.seen).some(key => key.startsWith('_b.')), 'v2 never packs the board');
     }
     records[current] = { data, progressAt };
     return { data, progressAt };
@@ -84,7 +83,7 @@ try {
   page.on('request', (r) => { if (!r.url().startsWith(base) && !r.url().startsWith('data:')) errors.push(`outside request: ${r.url()}`); });
 
   const open = async () => {
-    await page.goto(`${base}?life=1&debug=1&seed=21`);
+    await page.goto(`${base}?debug=1&seed=21`);
     await page.waitForFunction(() => window.__life && document.querySelector('[data-screen="play"]'));
   };
   const pageState = () => page.evaluate(() => window.__life.state());
@@ -188,13 +187,15 @@ try {
   assert.equal(records[current].data.meta.bestByEnding[ended.ending], ended.score);
   assert.ok(namespaces.every(id => id === 'pilotgrowup-v2'));
 
-  // ---- classic entry still uses its original namespace and title
-  await page.goto(`${base}?debug=1&seed=21`);
-  await page.locator('[data-screen="title"]').waitFor();
-  assert.equal(namespaces.at(-1), 'pilotgrowup');
-  assert.equal(await page.locator('[data-action="continue-run"]').count(), 0);
+  // ---- old opt-in links mount the same v2 client and namespace
+  await page.goto(`${base}?life=1&debug=1&seed=21`);
+  await page.locator('[data-screen="play"]').waitFor();
+  assert.equal(namespaces.at(-1), 'pilotgrowup-v2');
+  assert.equal(await page.locator('.life2').count(), 1);
+  assert.equal(await page.evaluate(() => window.__life.state().v), 2);
+  assert.ok(namespaces.every(id => id === 'pilotgrowup-v2'));
   assert.deepEqual(errors, [], 'console errors, page errors or outside requests');
-  console.log('platform v2 playtest OK: native board, separate leaderboard, ending submitted once, classic entry, account scoping, newer server run adopted, finished run not resurrected, stale page does not overwrite, unsent choice re-uploaded');
+  console.log('platform v2 playtest OK: native board, separate leaderboard, ending submitted once, legacy query compatibility, account scoping, newer server run adopted, finished run not resurrected, stale page does not overwrite, unsent choice re-uploaded');
 } finally {
   await browser.close();
   await new Promise((done) => server.httpServer.close(done));

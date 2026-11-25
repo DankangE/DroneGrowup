@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ENDINGS } from '../src/game/data.ts';
+import { ENDINGS } from '../src/life/data.ts';
 import { CAREER_KEYS } from '../src/life/career2.ts';
 import { achievementScore, canRetireEarly, endingFor, finalNetWorth, finish, recordAchievements,
   retireEarly, settlementSummary } from '../src/life/ending.ts';

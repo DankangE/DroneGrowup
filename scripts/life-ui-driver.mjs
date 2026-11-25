@@ -83,7 +83,7 @@ export async function withLifeBrowser(run) {
         const url = new URL(request.url());
         if (url.protocol !== 'data:' && url.origin !== new URL(base).origin) failures.push(`outside request: ${url}`);
       });
-      await page.goto(`${base}?life=1&debug=1&seed=${seed}`);
+      await page.goto(`${base}?debug=1&seed=${seed}`);
       await page.waitForFunction(() => window.__life);
       await page.evaluate(() => document.fonts.ready);
       assert.equal(await page.evaluate(() => window.__game === undefined), true, 'v1 is not mounted');

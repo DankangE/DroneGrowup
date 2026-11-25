@@ -1,5 +1,5 @@
 // T09: shops, funds and luck. Public transitions return detached state; tables live in life-data.
-import { RULES } from '../game/data.ts';
+import { RULES } from './data.ts';
 import { careerTrack, specialView } from './career2.ts';
 import { ECONOMY_KEYS } from './economy.ts';
 import type { EconomyChoice } from './economy.ts';

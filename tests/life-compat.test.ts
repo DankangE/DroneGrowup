@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ACTIONS as V1_ACTIONS, EVENTS as V1_EVENTS, STAGES } from '../src/game/data.ts';
-import type { Cond as V1Cond, Stage } from '../src/game/types.ts';
+import { ACTIONS as V1_ACTIONS, EVENTS as V1_EVENTS, STAGE_IDS } from '../src/life/data.ts';
+import type { Cond as V1Cond, Stage } from '../src/life/base-types.ts';
 
 const before = structuredClone({ actions: V1_ACTIONS, events: V1_EVENTS });
 const { ACTIONS, EVENTS, STAGE_TO_TRACKS, condFor } = await import('../src/life/compat.ts');
@@ -11,8 +11,8 @@ test('section 6.7 maps every v1 stage, with student represented only as a status
     student: [], pilot: ['pilot'], employee: ['employee'], instructor: ['instructor'],
     academy: ['academy'], solo: ['solo'], company: ['company'], director: ['director'],
   });
-  assert.deepEqual(Object.keys(STAGE_TO_TRACKS).sort(), Object.keys(STAGES).sort());
-  for (const stage of Object.keys(STAGES) as Stage[]) {
+  assert.deepEqual(Object.keys(STAGE_TO_TRACKS).sort(), [...STAGE_IDS].sort());
+  for (const stage of [...STAGE_IDS] as Stage[]) {
     assert.deepEqual(condFor({ stage: [stage] }),
       stage === 'student' ? { status: ['student'] } : { track: [stage] });
   }

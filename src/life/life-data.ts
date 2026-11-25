@@ -1,7 +1,6 @@
-// T03's calendar, defaults and copy. Unchanged economic/balance values stay in v1 data.
+// Life calendar, defaults and copy; shared catalog values are in data.ts.
 import { ENDINGS, RULES, SPACE_MENU as V1_SPACE_MENU, STAT_LABEL as V1_STAT_LABEL,
-  STAT_MAX as V1_STAT_MAX } from '../game/data.ts';
-import type { BoardState as V1BoardState } from '../game/types.ts';
+  STAT_MAX as V1_STAT_MAX } from './data.ts';
 import { ACTIONS } from './compat.ts';
 import { TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
 import type { Choice, EndingId, GameState, MapId, PlaceId, SpaceKind, Stat, StatMap, TrackId } from './types.ts';
@@ -204,12 +203,6 @@ export const INITIAL_STATE: GameState = {
   family: { partnerAt: null, marriedAt: null, dual: false, kids: [] },
   fund: { kind: 0, amount: 0 }, life: 0, timers: {}, flags: [], feats: [],
   eventId: null, seen: {}, ending: null, score: 0, log: [],
-};
-
-// Only ledger is read by v1 derived(). No v1 turn, movement or ending logic is used.
-export const ACCOUNTING_BOARD: V1BoardState = {
-  pos: 0, step: 'spin', left: 0, route: -1, roll: 0, contest: false,
-  ledger: {}, forks: 0, routes: 0, contests: 0, rankups: 0,
 };
 
 // T09 tables: §§8.5–8.6 and 9.3. Income tuples are spring, summer, autumn, winter.

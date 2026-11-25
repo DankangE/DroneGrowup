@@ -1,6 +1,6 @@
 // T06: accounting and service choices. Local tables avoid edits to parallel tickets' data files.
-import { ITEMS, RULES } from '../game/data.ts';
-import type { ItemKind, OptionKind, UpkeepLine } from '../game/types.ts';
+import { ITEMS, RULES } from './data.ts';
+import type { ItemKind, OptionKind, UpkeepLine } from './base-types.ts';
 import { careerAge, careerIncome, careerSalary, careerTrack, CAREER_TEXT } from './career2.ts';
 import { HOMES, HOME_RULES, LIFE_RULES } from './life-data.ts';
 import { homeValue, rentalIncome } from './home.ts';

@@ -16,7 +16,7 @@ export async function main() {
       } finally { await page.context().close(); }
     }
   });
-  console.log('playtest:life OK: real ?life=1 clicks, paged options/results and engine parity; no browser errors');
+  console.log('playtest:life OK: real default-URL clicks, paged options/results and engine parity; no browser errors');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

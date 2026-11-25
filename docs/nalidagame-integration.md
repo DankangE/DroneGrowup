@@ -9,10 +9,10 @@ storage or NalidaGame repository files; it does not deploy or register a leaderb
 - `VITE_NG_PLATFORM=1 npm run build` enables the SDK. Optional `VITE_NG_API` and `VITE_NG_PORTAL`
   default to `https://api.nalidagame.online` and `https://nalidagame.online`.
 - The default build uses localStorage only: no SDK load or platform request.
-- Until T23, `?life=1` selects v2; the default entry still runs v1.
+- The default entry runs v2; `?life=1` remains a compatible link.
 - **New v2 game/leaderboard id: `pilotgrowup-v2`.** The SDK namespaces progress, plays and rankings by
   `init({ gameId })`, so v2 uses this new id for all three. Register it separately with title
-  `파일럿 키우기`, descending score order and ending ids as `stage`. The v1 client retains `pilotgrowup`.
+  `파일럿 키우기`, descending score order and ending ids as `stage`. The old server namespace `pilotgrowup` remains separate.
   This id is a client contract, not a claim that the server registration already exists.
 - Platform login and nickname are required before v2 loads any account save. SDK loads from
   `${API}/sdk/nalidagame.js`. Server strings are rendered with `textContent`.
@@ -22,7 +22,7 @@ storage or NalidaGame repository files; it does not deploy or register a leaderb
   exceeds this browser's last sync marker, adopt its run, including `null` when another device finished.
   Otherwise keep the local run and upload unsent choices. A stale open tab stops uploading when it
   discovers a newer server stamp. Sync markers are versioned and account-scoped.
-- Run duration is the elapsed time in the current visit, as in v1; it is not accumulated across reloads.
+- Run duration is the elapsed time in the current visit; it is not accumulated across reloads.
 
 ## Local migration (§12.2)
 
@@ -32,7 +32,7 @@ Standalone keys are `pilot-growup:run:v2` and `pilot-growup:meta:v2`. Platform k
 On entering v2, discard the scoped v1 run and show `이전 버전의 판은 이어 할 수 없습니다` on a title
 screen once. The player can start a new life or continue an existing v2 save. No v1 state is converted.
 Copy the 11 known v1 endings and run count into v2; the initial best score is zero, with empty feats,
-jobs and per-ending scores. Retain v1 meta so the classic client remains usable. A scoped
+jobs and per-ending scores. Retain v1 meta as an unchanged migration backup. A scoped
 `pilot-growup:migrated:v2` marker prevents repeated imports. A failed meta write leaves migration retryable.
 
 If v2 meta already exists, preserve its scores, union galleries, and use the larger run count (rather than
@@ -92,8 +92,8 @@ family, property, investments, timers and feats intact. All numbers are integers
 `service, delivery, mechanic, clerk, pilot, employee, instructor, public, rescue, creator, engineer,
 inspector, film, atc, racer, solo, company, academy, director`.
 
-The v2 client sends `board` directly and never encodes `_b.*` entries in `seen`. The v1 client still
-uses `serverRun` and packed board entries until T23. A v1 cleaner must not process the v2 namespace:
+The v2 client sends `board` directly and never encodes `_b.*` entries in `seen`. The classic client
+and its board-packing helper were removed in T23. A legacy cleaner must not process the v2 namespace:
 it would silently drop the new fields. Progress never feeds the leaderboard.
 
 ## Play record (`POST /plays`)
@@ -123,10 +123,10 @@ The source table is `ENDING_IDS` in `src/life/life-data.ts`.
 ## Checks and handoff
 
 `tests/life-save.test.ts` covers local migration, version/account isolation, deterministic restore,
-collections, blocked/corrupt storage, v1 compatibility, v2 payloads and UI save/restore/ending wiring.
+collections, blocked/corrupt storage, legacy migration, v2 payloads and UI save/restore/ending wiring.
 `npm run playtest:platform` builds the platform client against a local stand-in SDK. It checks native
 v2 state upload, account isolation, newer server state/null, stale tabs, unsent choices, one ending
-submission to `pilotgrowup-v2`, and the retained classic entry. It makes no production API requests.
+submission to `pilotgrowup-v2`, and both the default URL and compatible `?life=1` entry. It makes no production API requests.
 
 The PM runs that port-based playtest. Server registration, server migration/validation, a measured
 review threshold, hosting and deployment remain separate work.

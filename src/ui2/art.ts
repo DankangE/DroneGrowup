@@ -1,5 +1,5 @@
 // v2 art entry points. Popup tickets can render these without importing v1 game state.
-import type { PlaceId as V1PlaceId } from '../game/types.ts';
+import type { PlaceId as V1PlaceId } from '../life/base-types.ts';
 import type { PlaceId, TrackId } from '../life/types.ts';
 import { PLACES } from '../life/world.ts';
 import { el } from '../ui/dom.ts';

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ENDINGS } from '../src/game/data.ts';
+import { ENDINGS } from '../src/life/data.ts';
 import { derived, newGame } from '../src/life/engine.ts';
 import { COPY, FULLSCREEN_POPUPS, LIFE_TABS, POPUP_DEFINITIONS, POPUP_GROUPS, POPUPS2 } from '../src/ui2/popups/data.ts';
 import { ENDINGS2 } from '../src/ui2/popups/ending-data.ts';

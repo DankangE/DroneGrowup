@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { GRADE_STEPS } from '../src/game/data.ts';
+import { GRADE_STEPS } from '../src/life/data.ts';
 import { POLICY_IDS } from '../src/life/bots.ts';
 import { ALL_EVENTS, choose, forecast, newGame, options } from '../src/life/engine.ts';
 import { LIFE_RULES } from '../src/life/life-data.ts';

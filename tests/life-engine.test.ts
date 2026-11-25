@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CONTEST_EVENTS, RULES, STAGES } from '../src/game/data.ts';
+import { CONTEST_EVENTS, RULES, STAGE_IDS } from '../src/life/data.ts';
 import { creditLimit, netWorth, upkeepLines } from '../src/life/economy.ts';
 import { ACTIONS, EVENTS } from '../src/life/compat.ts';
 import { ALL_EVENTS, choose, currentEvent, derived, eventCandidates, forecast, HOOKS, lifeEvent, met, newGame, options, reachable, restore,
@@ -284,7 +284,7 @@ test('condition gates retain mixed status/track OR, bounds and flags', () => {
 });
 
 test('v2 accounting replaces compatibility amounts while preserving business close effects', () => {
-  for (const track of Object.keys(STAGES).filter(stage => stage !== 'student')) {
+  for (const track of [...STAGE_IDS].filter(stage => stage !== 'student')) {
     const state = at('A-o1', 'bonus', { money: 100, debt: 101, rank: 1, staff: 2, students: 20, contracts: 3, value: 500 });
     state.status = 'working'; state.track = track as GameState['track']; state.flags = ['examiner'];
     assert.deepEqual(derived(state).upkeep.lines, upkeepLines(state), track);

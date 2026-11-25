@@ -1,5 +1,5 @@
 // Strict JSON boundary, separated from play so neither v1 saves nor partial malformed states leak in.
-import { RULES, STAT_LABEL as V1_STAT_LABEL } from '../game/data.ts';
+import { RULES, STAT_LABEL as V1_STAT_LABEL } from './data.ts';
 import { EVENTS } from './compat.ts';
 import { ENDING_IDS, FUND_KINDS, HOLDING_LEVELS, INITIAL_STATE, KID_STAGES, LIFE_LEVELS, LIFE_RULES,
   LOG_TONES, MAP_IDS, PHASE_IDS, STAT_MAX, STATS, STATUS_IDS, STEP_IDS, TRACK_IDS } from './life-data.ts';

@@ -3,21 +3,16 @@
 // code, nothing here runs, and the game makes no network request.
 //
 // Versioned SDK namespaces and payloads are documented in docs/nalidagame-integration.md.
-import { RULES } from './game/data.ts';
-import { netWorth, serverRun } from './game/engine.ts';
-import type { GameState } from './game/types.ts';
 import { LIFE_RULES } from './life/life-data.ts';
 import { finalNetWorth } from './life/ending.ts';
 import type { GameState as LifeState } from './life/types.ts';
-import { adoptServerProgress, cleanProgress, cleanMeta, localProgress, markSynced, mergeMeta, syncedAt,
-  adoptLifeServerProgress, cleanLifeProgress, localLifeProgress, mergeLifeMeta, type Progress, type LifeProgress } from './save.ts';
-type AnyProgress = Progress | LifeProgress;
+import { adoptLifeServerProgress, cleanLifeProgress, localLifeProgress, markSynced, mergeLifeMeta, syncedAt, type LifeProgress } from './save.ts';
 
 export const PLATFORM = import.meta.env?.VITE_NG_PLATFORM === '1';
-const GAME_IDS = { 1: 'pilotgrowup', 2: 'pilotgrowup-v2' };
-let version: 1 | 2 = 1;
-const clean = (raw: unknown): AnyProgress => version === 2 ? cleanLifeProgress(raw) : cleanProgress(raw);
-const local = (): AnyProgress => version === 2 ? localLifeProgress() : localProgress();
+const GAME_ID = 'pilotgrowup-v2';
+const clean = cleanLifeProgress;
+// Defer the read: save.ts imports this module for uploads during platform boot.
+const local = (): LifeProgress => localLifeProgress();
 const trimSlash = (url: string) => url.replace(/\/+$/, '');
 const API = /* @__PURE__ */ trimSlash(import.meta.env?.VITE_NG_API || 'https://api.nalidagame.online');
 const PORTAL = /* @__PURE__ */ trimSlash(import.meta.env?.VITE_NG_PORTAL || 'https://nalidagame.online');
@@ -37,7 +32,7 @@ type Sdk = {
   me(): Promise<User | null>;
   redirectToLogin(): void;
   redirectToNickname(): void;
-  progress: { get(): Promise<Saved>; put(data: AnyProgress, progressAt: number): Promise<Saved> };
+  progress: { get(): Promise<Saved>; put(data: LifeProgress, progressAt: number): Promise<Saved> };
   plays: { submit(play: Play): Promise<{ newBest?: boolean; best?: unknown; rank?: unknown }> };
   leaderboard(q: { limit: number }): Promise<{ entries: BoardEntry[]; me: BoardEntry | null }>;
   onChange(cb: (u: User | null) => void): void;
@@ -116,16 +111,15 @@ function loadSdk(): Promise<SdkGlobal> {
 async function attempt() {
   showGate('check');
   try {
-    sdk = sdk ?? (await timed(loadSdk())).init({ gameId: GAME_IDS[version], apiBase: API, loginUrl: LOGIN_URL, nicknameUrl: NICKNAME_URL });
+    sdk = sdk ?? (await timed(loadSdk())).init({ gameId: GAME_ID, apiBase: API, loginUrl: LOGIN_URL, nicknameUrl: NICKNAME_URL });
     const me = await timed(sdk.me());
     if (!me) return showGate('login');
     if (!me.nickname) return showGate('nickname');
     const saved = await timed(sdk.progress.get());
     user = me;
     const server = clean(saved.data), stamp = Number(saved.progressAt) || 0;
-    if (version === 2) adoptLifeServerProgress(cleanLifeProgress(saved.data), String(me.id), stamp);
-    else adoptServerProgress(cleanProgress(saved.data), String(me.id), stamp);
-    known = syncedAt(version);
+    adoptLifeServerProgress(cleanLifeProgress(saved.data), String(me.id), stamp);
+    known = syncedAt();
     // Choices or an ending that never reached the server (tab closed before the upload) go up now.
     const progress = local();
     if (JSON.stringify(progress) !== JSON.stringify(server)) pushProgress(progress);
@@ -146,8 +140,7 @@ async function attempt() {
 }
 
 /** Before the title screen: no session (or no nickname), no game. Renders its gate inside `root`, then calls `ready` once. */
-export function bootPlatform(root: HTMLElement, ready: () => void, saveVersion: 1 | 2 = 1) {
-  version = saveVersion;
+export function bootPlatform(root: HTMLElement, ready: () => void) {
   host = root;
   onReady = ready;
   void attempt();
@@ -165,7 +158,7 @@ export const openNicknamePage = goNickname;
 
 // ------------------------------------------------------------ server save
 
-let pending: AnyProgress | null = null;
+let pending: LifeProgress | null = null;
 let saveTimer = 0;
 let saveWait = 0;
 let saving = false;
@@ -173,7 +166,7 @@ let saving = false;
 let known = 0;
 
 /** Queues the latest progress; saves are debounced and run one at a time, newest wins. Never throws. */
-export function pushProgress(progress: AnyProgress) {
+export function pushProgress(progress: LifeProgress) {
   pending = progress;
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => void flush(), SAVE_DELAY);
@@ -193,14 +186,12 @@ async function flush() {
       lost = 'moved';
       return;
     }
-    // v2 sends every structured field directly; only the classic payload needs packed board data.
-    const run = sending.run?.v === 1 ? serverRun(sending.run) : sending.run;
-    const meta = version === 2 ? mergeLifeMeta(sending.meta, clean(cur.data).meta)
-      : mergeMeta(cleanMeta(sending.meta), cleanProgress(cur.data).meta);
-    const body = { run, meta } as AnyProgress;
+    const run = sending.run;
+    const meta = mergeLifeMeta(sending.meta, clean(cur.data).meta);
+    const body = { run, meta } as LifeProgress;
     const stamp = Math.max(Date.now(), (Number(cur.progressAt) || 0) + 1);
     known = stamp;
-    markSynced(stamp, version); // before the request: a reload while it is in flight must not mistake it for another device
+    markSynced(stamp); // before the request: a reload while it is in flight must not mistake it for another device
     const r = await timed(sdk.progress.put(body, stamp));
     if (r.conflict) throw err('conflict');
     if (pending === sending) pending = null;
@@ -240,18 +231,18 @@ function playError(e: ApiError): [string, boolean?] {
 const bound = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.trunc(v)));
 
 /** The play record of a finished run: integers only, every field inside the bounds the server validates. */
-export function playOf(state: GameState | LifeState, durationSec: number): Play {
-  const s = state.s, rules = state.v === 2 ? LIFE_RULES : RULES;
+export function playOf(state: LifeState, durationSec: number): Play {
+  const s = state.s, rules = LIFE_RULES;
   return {
     stage: state.ending ?? 'student',
-    score: bound(state.score, 0, state.v === 2 ? Number.MAX_SAFE_INTEGER : RULES.score.max),
+    score: bound(state.score, 0, Number.MAX_SAFE_INTEGER),
     cleared: state.ending !== 'debtor',
     durationSec: bound(durationSec, 0, 86_400),
     detail: {
       turns: bound(state.turn, 0, rules.maxTurns),
       age: bound(rules.startAge + Math.floor(state.turn / 4), rules.startAge, rules.startAge + rules.maxTurns / 4),
-      netWorth: bound(state.v === 2 ? finalNetWorth(state) : netWorth(state),
-        state.v === 2 ? -Number.MAX_SAFE_INTEGER : -9_999_999, state.v === 2 ? Number.MAX_SAFE_INTEGER : 9_999_999),
+      netWorth: bound(finalNetWorth(state),
+        -Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
       debt: bound(s.debt, 0, 9_999_999),
       wins: bound(s.wins, 0, 9999),
       losses: bound(s.losses, 0, 9999),
@@ -262,7 +253,7 @@ export function playOf(state: GameState | LifeState, durationSec: number): Play 
 }
 
 /** Posts a finished run to the leaderboard. Never throws; the outcome lands in `runStatus`. */
-export function submitRun(state: GameState | LifeState, durationSec: number) {
+export function submitRun(state: LifeState, durationSec: number) {
   if (!sdk || !user || lost) return setStatus('로그인이 끊겨 기록을 올리지 못했습니다.');
   setStatus('기록 저장 중…');
   timed(sdk.plays.submit(playOf(state, durationSec))).then(

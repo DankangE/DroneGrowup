@@ -1,6 +1,6 @@
 # 파일럿 키우기 — art pipeline
 
-The v2 additions use repository-owned inline SVG; the v1 raster pipeline and its prompts are preserved below.
+The life board uses repository-owned inline SVG and the retained raster assets. Historical generation prompts are preserved below.
 V1 status: **full set shipped** (2026-11-24): 1 cover, 18 scenes, 14 speaker portraits,
 11 ending portraits. 26 generations in all (3 in the sample pass, 23 for the full set), no retries needed,
 the subscription's image limit was not reached.
@@ -23,7 +23,7 @@ network service, downloaded pack or new dependency. The historical raster prompt
 
 The ticket does not enumerate the new places or the eleven jobs. Interpretation: cover every added place,
 reuse portraits for the seven v1 careers and the existing mechanic, and draw the remaining eleven jobs.
-This covers all 89 places and all 19 careers without depending on T04's not-yet-present `tracks.ts`.
+This covers all 89 places and all 19 careers alongside the career catalog in `src/life/tracks.ts`.
 
 | New portrait id | Visible cue |
 | --- | --- |
@@ -64,10 +64,10 @@ office → solo). These are art mappings, not career eligibility or game-state c
    new art or an image using the build's `BASE_URL` and the existing `public/art` file. Set display size in
    the consuming view. SVG labels use attributes; no storage/server text is interpolated into markup.
    `data-place-art`, `data-job-portrait` and `data-tile-icon` identify the rendered artwork.
-7. Run `node --test tests/art.test.ts`, `npm test` and `npm run typecheck`. The art suite preserves all v1
-   file/budget checks and checks all new ids, distinct drawings, data budgets, rendering, accessible names,
+7. Run `node --test tests/art.test.ts`, `npm test` and `npm run typecheck`. The art suite preserves every shipped raster
+   file/budget check and checks all new ids, distinct drawings, data budgets, rendering, accessible names,
    local raster paths and all 212 board tiles. It uses a small DOM double, not a browser dependency.
-8. For visual review, run `npm run dev` and open `?life=1&debug=1`: check the icons at 390×844, 360×740,
+8. For visual review, run `npm run dev` and open `?debug=1`: check the icons at 390×844, 360×740,
    1280×800 and 1366×768. In a separate development preview, import `NEW_PLACE_TILES`, `NEW_JOB_PORTRAITS`
    and the renderers to make a contact sheet; inspect at 128px and 64px for clipped outlines, faces and
    recognizable props. Preview code and screenshots are review artifacts, not production game UI.
@@ -92,56 +92,17 @@ Validation: 10 art tests passed. Browser contact-sheet review was attempted, but
 | Batch | `node scripts/art-generate.mjs docs/art-prompts.json <out dir> <name> ...` runs the command above for each named prompt, four at a time, each bounded by `timeout 420`. `FORCE=1` regenerates a name that already has a PNG. |
 | Portrait sheets | To spend a quarter of the generations and keep one drawing hand, portraits are generated four at a time: one 1:1 image that is a strict 2x2 grid of busts. `scripts/art-export.mjs` cuts each sheet into four 384x384 portraits (its `SHEETS` table says which cell is who). |
 | Web export | `node scripts/art-export.mjs <dir with raw PNGs> [name ...]`: `cwebp` at 1344x896 (scenes) or 384x384 (portraits), quality stepped down from 80 until the file fits its budget (scene 300 KB, portrait 60 KB; cover 400 KB). It also writes a q95 WebP of every raw generation to `docs/art-raw/` (the 3 to 4 MB PNGs are not kept in git). |
-| Wiring | `src/ui/art.ts` maps place and career stage to a scene, event to a speaker, ending to a portrait. An `<img>` is created only when its view is shown, so a run downloads just the scenes it visits; an image that fails to load removes itself and the drawn SVG fallback shows. `tests/art.test.ts` checks every named file exists and fits its budget. |
-| In-game check | `npm run build && node scripts/art-shots.mjs docs/screenshots/art-final` opens every scene in the real play screen at 390x844 and 1280x800. |
-| Lettering | Never generated. The title is real text in Bagel Fat One (SIL OFL 1.1, `public/fonts/OFL-BagelFatOne.txt`), subset with `pyftsubset --text=<glyphs> --flavor=woff2` to the banner words of the board UI (the glyph list is in `docs/ui-spec.md`, Look; 19.8 KB). Every prompt ends with a "no text, letters, logos" clause. |
+| Wiring | `src/ui2/art.ts` maps places/jobs to rasters or inline SVG. Ending art is selected in `src/ui2/popups/ending.ts`. `tests/art.test.ts` checks every retained raster and all new drawings against their original budgets. |
+| In-game check | `npm run layout:life` checks the current board, popup and ending views at all four supported sizes. |
+| Lettering | Text is rendered by the UI. The local Bagel Fat One font is distributed with its SIL OFL licence in `public/fonts/`. |
 
-## Files
+## Retained source assets
 
-| Shipped file | Size | Raw generation | Used for |
-| --- | --- | --- | --- |
-| `public/art/cover.webp` | 261 KB | `docs/art-raw/cover-v2.png` | Title screen key visual |
-| `public/art/scene-office.webp` | 271 KB | `docs/art-raw/scene-office-v1.png` | Small company office |
-| `public/art/scene-<id>.webp` x 17 | 214 to 293 KB each | `docs/art-raw/scene-<id>.webp` | Play stage "현장" view, see the scene table below |
-| `public/art/portrait-senior.webp` | 19 KB | `docs/art-raw/portrait-senior-v1.png` | Event popup portrait: senior |
-| `public/art/portrait-<id>.webp` x 13 | under 60 KB each | `docs/art-raw/sheet-speakers1..3.webp`, `sheet-endings3.webp` (examiner) | Event popup portraits |
-| `public/art/ending-<id>.webp` x 11 | under 60 KB each | `docs/art-raw/sheet-endings1..3.webp` | Ending screen and ending gallery |
-| `public/art/chibi-<stage>.webp` x 8 | 12 to 16 KB each | `docs/art-raw/chibi-sheet1..2.webp` (two generations, 2026-11-25, no retries) | The player as a full-body chibi per career stage on flat cream `#fdf5e6`: rank card, board piece, player plate, ending. Prompts `chibi-sheet1`, `chibi-sheet2` in `docs/art-prompts.json`. NPC chibis were not generated. |
-| `public/fonts/bagel-fat-one-display.woff2` | 19.8 KB | Google Fonts repo, `ofl/bagelfatone` | Title, banner words, digits and grade letters |
-
-`public/art` is 5.5 MB in 44 files; the whole build (`dist/`) is 6.3 MB. A first visit loads the cover and
-one scene (about 0.6 MB of art); the rest arrives as places, events and endings come up.
-
-### Scenes
-
-| Scene | Shown for |
-| --- | --- |
-| `home`, `school`, `airfield`, `town`, `shop`, `garage`, `bank`, `farm`, `site`, `bridge`, `windfarm`, `studio`, `coast`, `academy`, `assoc` | The place of the same name (`airfield` also stands for the exam ground) |
-| `solo` | "내 사무실" while the player works alone: a one-desk studio room with a van outside |
-| `office` | The company office once a company exists (fewer than 6 staff, before the second funding round); also the "본사" place while the player still works alone |
-| `hq` | The company at 6 or more staff or from the second round, and the employer's office during the employee career |
-
-The play screen opens on the home place of the career stage (student: school, pilot: airfield, employee: hq,
-instructor: academy, solo: office, company: hq, director: association hall) and follows the place of the
-current event and of the last action taken.
-
-### Portraits
-
-Speakers (one per recurring kind of person; `EVENT_SPEAKER` in `src/ui/art.ts` assigns every event to one):
-senior, mechanic, professor, broker, client, banker, manager, engineer, trainee, inspector, anchor, friend,
-investor, examiner. Endings: ceo, chairman, academy, solo, debtor, smallbiz, director, instructor, employee,
-pilot, student. An ending not yet reached shows an empty frame in the gallery and its image is not requested.
-
-## Screenshots
-
-`docs/screenshots/art-final/` (WebP, 390x844 and 1280x800): `title`, `play-start`, `play-event` (window popup
-with portrait and stat chart), `play-busy-shop`, `play-result`, `ending`, `gallery-full`, and `scene-<id>` for
-all 18 scenes. The first group comes from `LAYOUT_SHOTS=<dir> npm run layout`, the scenes from
-`scripts/art-shots.mjs`. `docs/screenshots/art-samples/` holds the earlier sample pass.
-
-Notes from the visual check of the full set: no stray glyphs, no broken hands or faces, no style drift between
-sheets. The `home`, `solo` and `bank` scenes are dioramas with dark corners rather than edge-to-edge floors;
-they were kept because they read well in the frame.
+`public/art/` and `docs/art-raw/` retain the original cover, scenes, portraits and chibis.
+Active raster mappings are `LEGACY_PLACE_SCENES` and `LEGACY_JOB_PORTRAITS` in `src/ui2/art.ts`;
+the 11 original ending portraits are also used by the ending/gallery renderer. All shipped raster
+file-existence and size checks remain in `tests/art.test.ts`, including art kept for future reuse.
+The old client screenshots and its capture script were removed in T23.
 
 ## What was checked and rejected (2026-11-24)
 

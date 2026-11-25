@@ -576,10 +576,10 @@ async function main() {
           for (const issue of await page.evaluate(audit)) failures.push(`${size} ${name}: ${issue}`);
         };
         const { checkPages, clickChoice } = pagingChecks(page, check);
-        await page.goto(`${base}?life=1&seed=11&debug=1`);
+        await page.goto(`${base}?seed=11&debug=1`);
         await page.waitForFunction(() => window.__life);
         await page.evaluate(() => document.fonts.ready);
-        assert.deepEqual(await page.evaluate(() => window.__life.state()), newGame(11), 'life=1 starts exactly newGame(seed)');
+        assert.deepEqual(await page.evaluate(() => window.__life.state()), newGame(11), 'default entry starts exactly newGame(seed)');
         assert.equal(await page.evaluate(() => window.__game === undefined), true, 'v1 is not mounted');
         assert.equal(await page.locator('#app').getAttribute('data-screen'), 'play');
         await checkPages('start choices');
@@ -634,13 +634,16 @@ async function main() {
         await fix4Checks(page, load, check);
         const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];
         assertPopupCoverage(popupKinds);
+        // Fixture choices autosave. Entry checks need a fresh run, independent of the last fixture.
+        await page.evaluate(() => localStorage.clear());
         await page.goto(`${base}?life=1&seed=11`);
         await page.locator('[data-map=A]').waitFor();
         assert.equal(await page.evaluate(() => window.__life === undefined), true, 'state loader is debug-only');
         await page.goto(`${base}?seed=11&debug=1`);
-        await page.locator('[data-screen=title]').waitFor();
-        assert.equal(await page.locator('.life2').count(), 0, 'default stays v1');
-        assert.equal(await page.evaluate(() => window.__game.state().v), 1);
+        await page.locator('[data-screen=play]').waitFor();
+        assert.equal(await page.locator('.life2').count(), 1, 'default mounts the life board');
+        assert.deepEqual(await page.evaluate(() => window.__life.state()), newGame(11));
+        assert.equal(await page.evaluate(() => window.__game === undefined), true, 'no classic client');
         console.log(`  ${size}: six maps, seven seasons (one keyboard-only), spin/pick/move/transfer timing and skips checked`);
       } finally { await context.close(); }
     }

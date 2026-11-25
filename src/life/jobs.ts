@@ -1,5 +1,5 @@
 // T04–T05: job entry and career transitions own detached copies.
-import { FLAG_LABEL, RULES } from '../game/data.ts';
+import { FLAG_LABEL, RULES } from './data.ts';
 import { LIFE_RULES, STAT_LABEL, STAT_MAX, TEXT } from './life-data.ts';
 import { ECONOMY_KEYS, ECONOMY_RULES } from './economy.ts';
 import { randInt } from './move.ts';

@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, test } from 'node:test';
-import { ENDING_IDS as V1_ENDINGS } from '../src/game/data.ts';
-import { newGame as classicGame } from '../src/game/engine.ts';
+import { ENDING_IDS as V1_ENDINGS } from '../src/life/data.ts';
 import { choose, newGame, options } from '../src/life/engine.ts';
 import { finish, finalNetWorth, retireEarly } from '../src/life/ending.ts';
 import { ENDING_IDS, TRACK_IDS } from '../src/life/life-data.ts';
-import { adoptLifeServerProgress, cleanLifeMeta, cleanLifeProgress, loadLifeMeta, loadLifeRun, loadRun,
-  localLifeProgress, markSynced, mergeLifeMeta, migrateLifeSave, recordLifeEnding, saveLifeRun, saveRun,
+import { adoptLifeServerProgress, cleanLifeMeta, cleanLifeProgress, loadLifeMeta, loadLifeRun,
+  localLifeProgress, markSynced, mergeLifeMeta, migrateLifeSave, recordLifeEnding, saveLifeRun,
   syncedAt, V1_NOTICE } from '../src/save.ts';
 import { PLATFORM, playOf } from '../src/platform.ts';
 import { mountLife } from '../src/ui2/app.ts';
 import { action, TestNode, textOf, withDOM } from './life-popup2-dom-helper.ts';
 
+// Snapshot produced by the removed client's newGame(1), kept only to test save migration.
+const legacyRun = JSON.parse(readFileSync(new URL('./fixtures/legacy-run.json', import.meta.url), 'utf8'));
+const classicGame = (seed: number) => ({ ...structuredClone(legacyRun), seed, rng: seed });
 const RUN = 'pilot-growup:run:v2', META = 'pilot-growup:meta:v2';
 const OLD_RUN = 'pilot-growup:run:v1', OLD_META = 'pilot-growup:meta:v1';
 const storage = new Map<string, string>();
@@ -38,7 +41,7 @@ test('§12.2 discards v1 run with one notice, carries all 11 endings and run cou
   assert.equal(V1_NOTICE, '이전 버전의 판은 이어 할 수 없습니다');
   assert.equal(get(OLD_RUN), null); assert.equal(loadLifeRun(), null);
   assert.deepEqual(loadLifeMeta(), cleanLifeMeta({ gallery: V1_ENDINGS, runs: 42 }));
-  assert.deepEqual(get(OLD_META), old, 'classic meta remains readable');
+  assert.deepEqual(get(OLD_META), old, 'legacy meta remains intact');
   assert.equal(migrateLifeSave(), false);
   assert.equal(loadLifeMeta().runs, 42, 'migration is idempotent');
 });
@@ -60,14 +63,14 @@ test('existing v2 progress survives migration; collections union and counters us
   assert.equal(loadLifeMeta().runs, 12, 'the same legacy store is not imported again');
 });
 
-test('v1 and v2 saves restore only their own version and v2 replay preserves RNG and every structured field', () => {
-  const classic = classicGame(8); saveRun(classic);
+test('v2 rejects legacy saves and replay preserves RNG and every structured field', () => {
+  const classic = classicGame(8); put(OLD_RUN, classic);
   let state = newGame(9);
   for (const id of ['start:school', 'spin']) {
     state = choose(state, id).state; saveLifeRun(state);
     assert.deepEqual(get(RUN), state); assert.deepEqual(loadLifeRun(), state);
   }
-  assert.deepEqual(loadRun(), classic);
+  assert.deepEqual(get(OLD_RUN), classic);
   const next = options(state).find(option => option.enabled)!.id;
   assert.deepEqual(choose(loadLifeRun()!, next), choose(state, next));
   assert.equal(cleanLifeProgress({ run: classic }).run, null);
@@ -91,11 +94,11 @@ test('all 21 endings, job history, feats and per-ending best scores persist acro
 });
 
 test('recording an unfinished run is harmless; saving an ended run clears only v2 run', () => {
-  saveRun(classicGame(1)); saveLifeRun(newGame(2));
+  put(OLD_RUN, classicGame(1)); saveLifeRun(newGame(2));
   assert.deepEqual(recordLifeEnding(newGame(2), 0), cleanLifeMeta(null));
   assert.equal(loadLifeRun()!.seed, 2);
   const state = newGame(2); state.turn = 204; saveLifeRun(finish(state));
-  assert.equal(loadLifeRun(), null); assert.equal(loadRun()!.seed, 1);
+  assert.equal(loadLifeRun(), null); assert.equal(get(OLD_RUN)!.seed, 1);
 });
 
 test('untrusted meta is bounded, deduplicated and copied; v2 scores have no v1 cap', () => {
@@ -121,7 +124,7 @@ test('corrupt or blocked storage cannot interrupt play or erase legacy meta befo
   assert.doesNotThrow(() => { migrateLifeSave(); saveLifeRun(newGame(1)); loadLifeRun(); loadLifeMeta(); });
 });
 
-test('platform play payload uses v2 ages, score and final assets; v1 payload stays compatible', () => {
+test('platform play payload uses v2 ages, score and final assets', () => {
   assert.equal(PLATFORM, false);
   const state = newGame(1); state.turn = 204; state.s.money = 9000000;
   state.home = { map: 'E', tier: 6, deposit: 60000 }; state.fund = { kind: 1, amount: 9000000 };
@@ -133,8 +136,6 @@ test('platform play payload uses v2 ages, score and final assets; v1 payload sta
   assert.equal(playOf(retireEarly(early), 10).detail.turns, 204, 'engine settles early retirement at age 70');
   const debtor = newGame(3); debtor.turn = 204; debtor.s.debt = 4000;
   const debtPlay = playOf(finish(debtor), 2); assert.equal(debtPlay.cleared, false); assert.ok(debtPlay.score > 0);
-  const classic = classicGame(4); classic.turn = 120; classic.score = 100;
-  assert.equal(playOf(classic, 10).detail.age, 50); assert.equal(playOf(classic, 10).score, 100);
 });
 
 test('v2 UI autosaves a choice, restores it on remount, and shows the v1 notice only on its title', () => withDOM(() => {
@@ -174,8 +175,10 @@ test('account scopes isolate migration, metadata and sync stamps; newer server n
   saveLifeRun(newGame(11)); adoptLifeServerProgress(server, 'a', 10);
   assert.equal(loadLifeRun()!.seed, 11, 'unsent local choice survives an unchanged server');
   adoptLifeServerProgress({ ...server, run: null }, 'a', 11); assert.equal(loadLifeRun(), null);
-  markSynced(99); assert.equal(syncedAt(), 99); assert.equal(syncedAt(2), 11);
+  markSynced(99, 1); assert.equal(syncedAt(1), 99); assert.equal(syncedAt(2), 11);
+  assert.equal(syncedAt(), 11, 'the default sync marker now belongs to v2');
+  markSynced(12); assert.equal(syncedAt(2), 12); assert.equal(syncedAt(1), 99);
   adoptLifeServerProgress(cleanLifeProgress(null), 'b', 0); migrateLifeSave();
   assert.deepEqual(localLifeProgress(), cleanLifeProgress(null));
-  assert.equal(syncedAt(2), 0); assert.equal(syncedAt(), 0);
+  assert.equal(syncedAt(2), 0); assert.equal(syncedAt(1), 0); assert.equal(syncedAt(), 0);
 });

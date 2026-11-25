@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GRADE_STEPS } from '../src/game/data.ts';
+import { GRADE_STEPS } from '../src/life/data.ts';
 import { choose, forecast, newGame, options, restore } from '../src/life/engine.ts';
 import { afterStartPass, entryChance, hire, jobOffers, openJobOffers, quit } from '../src/life/jobs.ts';
 import { JOB_RULES, TRACKS } from '../src/life/tracks.ts';
