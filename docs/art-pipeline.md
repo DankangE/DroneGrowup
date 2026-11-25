@@ -1,11 +1,83 @@
 # 파일럿 키우기 — art pipeline
 
-How the raster art is made, what was tried, and the exact prompts, so any image can be regenerated or extended
-in the same style. Status: **full set shipped** (2026-11-24): 1 cover, 18 scenes, 14 speaker portraits,
+The v2 additions use repository-owned inline SVG; the v1 raster pipeline and its prompts are preserved below.
+V1 status: **full set shipped** (2026-11-24): 1 cover, 18 scenes, 14 speaker portraits,
 11 ending portraits. 26 generations in all (3 in the sample pass, 23 for the full set), no retries needed,
 the subscription's image limit was not reached.
 
-## Pipeline in use
+## V2 / T21: inline art (2026-11-25)
+
+T21 follows life-board §11.1: keep the 2D board, existing scenes and pawn, and add small original drawings.
+For this ticket, the explicit implementation constraint is inline SVG/data, with no external image generation,
+network service, downloaded pack or new dependency. The historical raster prompts below do not apply to v2 additions.
+
+### Inventory and naming
+
+| Source | Contents | Use |
+| --- | --- | --- |
+| `src/ui2/icons.ts` | 8 paths in `NEW_TILE_PATHS`: `jobfair`, `shop`, `estate`, `life`, `biz`, `luck`, `station`, `invest` | `tileIcon(kind)`; eight older kinds reuse `src/ui/icons.ts` unchanged |
+| `src/ui2/place-tiles.ts` | 71 `NEW_PLACE_TILES`, keyed by the new `PlaceId`s | One tile per new location in `src/life/world.ts`; shared building parts, distinct compositions |
+| `src/ui2/job-portraits.ts` | 11 `NEW_JOB_PORTRAITS`, keyed by `TrackId`, and Korean `JOB_NAMES` | Original head-and-shoulder drawings with recognizable work clothing and props |
+| `src/ui2/art-svg.ts` | Path data types and `vectorArt` renderer | Creates SVG/path elements with `createElementNS`; no markup parsing or resource ids |
+| `src/ui2/art.ts` | `placeAsset`, `jobAsset`, `placeArt`, `jobPortrait` | Total place/job lookup and ready-to-use SVG or local image elements |
+
+The ticket does not enumerate the new places or the eleven jobs. Interpretation: cover every added place,
+reuse portraits for the seven v1 careers and the existing mechanic, and draw the remaining eleven jobs.
+This covers all 89 places and all 19 careers without depending on T04's not-yet-present `tracks.ts`.
+
+| New portrait id | Visible cue |
+| --- | --- |
+| `service` | Green apron and name badge |
+| `delivery` | Blue cap and parcel |
+| `clerk` | Glasses, blazer and document folder |
+| `public` | Blue uniform, tie and document booklet |
+| `rescue` | Gold helmet, reflective jacket and radio |
+| `creator` | Curly hair, hoodie and phone camera |
+| `engineer` | Lab coat, glasses and circuit board |
+| `inspector` | White hard hat, work vest and clipboard |
+| `film` | Brimmed hat, shoulder strap and camera |
+| `atc` | Headset and uniform shoulder tabs |
+| `racer` | FPV goggles, racing jacket and controller |
+
+`LEGACY_JOB_PORTRAITS` reuses `portrait-mechanic` and the shipped `ending-pilot`, `ending-employee`,
+`ending-instructor`, `ending-solo`, `ending-ceo`, `ending-academy`, `ending-director` busts.
+`LEGACY_PLACE_SCENES` keeps the existing places on local `scene-*.webp` files (exam → airfield,
+office → solo). These are art mappings, not career eligibility or game-state calculations.
+
+### Drawing and extension procedure
+
+1. Use the exact `SpaceKind`, `PlaceId` or `TrackId` from `src/life/types.ts` as the table key.
+   Update the matching exhaustive mapping and coverage assertions when adding an id.
+2. Draw icon paths on `0 0 24 24`, with round joins and strokes in `currentColor`. The board renders them
+   at 22×22, with its visible Korean label and accessible tile name retained. Distinguish shopping bags
+   from an owned storefront, a house/key from living/heart, and job-change arrows from station arrows.
+3. Draw places on `0 0 128 128`: a shallow raised tile, warm cream buildings, dark green outlines and
+   flat shaded props. District grounds are mint (A), lilac (B), sand (C), blue (D), teal (E), warm sand (F).
+   Reuse the small hall/store/home/station components; add a place-specific prop or silhouette.
+4. Draw job busts on `0 0 128 128`, with flat pastel backgrounds, a light circle, clear faces and clothing.
+   Vary hair, complexion and outfit; use job tools rather than lettering or copied logos. These compact
+   vector portraits complement the retained webtoon raster busts; they do not replace the v1 artwork.
+5. Keep editable paths and colors in the tables. Importing the tables deterministically constructs the
+   exact same drawings; there is no generation prompt, random seed, export step or raster asset to fetch.
+   Each icon path is ≤1 KB, each expanded place drawing ≤6 KB, each portrait ≤8 KB (JSON UTF-8 bytes).
+6. Call `placeArt(place)` or `jobPortrait(track)` when the relevant popup needs art. They return an SVG for
+   new art or an image using the build's `BASE_URL` and the existing `public/art` file. Set display size in
+   the consuming view. SVG labels use attributes; no storage/server text is interpolated into markup.
+   `data-place-art`, `data-job-portrait` and `data-tile-icon` identify the rendered artwork.
+7. Run `node --test tests/art.test.ts`, `npm test` and `npm run typecheck`. The art suite preserves all v1
+   file/budget checks and checks all new ids, distinct drawings, data budgets, rendering, accessible names,
+   local raster paths and all 212 board tiles. It uses a small DOM double, not a browser dependency.
+8. For visual review, run `npm run dev` and open `?life=1&debug=1`: check the icons at 390×844, 360×740,
+   1280×800 and 1366×768. In a separate development preview, import `NEW_PLACE_TILES`, `NEW_JOB_PORTRAITS`
+   and the renderers to make a contact sheet; inspect at 128px and 64px for clipped outlines, faces and
+   recognizable props. Preview code and screenshots are review artifacts, not production game UI.
+
+T21 changes only the icon selection hook in `board.ts`; popup placement of the prepared place/job artwork
+belongs to the popup tickets. It leaves the T17 animation/app files and shared styles untouched.
+Validation: 10 art tests passed. Browser contact-sheet review was attempted, but Chrome exited with
+`SIGABRT` and cleanup reported `kill EPERM` in this sandbox; visual/layout review remains unverified.
+
+## V1 raster pipeline (historical)
 
 | | |
 | --- | --- |
