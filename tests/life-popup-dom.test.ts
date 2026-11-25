@@ -56,7 +56,7 @@ function fixture(kind: PopupKind = 'space') {
 }
 
 test('every T18 renderer has data-popup and an unconditional presentation-only exit', () => withDOM(() => {
-  for (const kind of Object.keys(POPUPS) as PopupKind[]) {
+  for (const kind of Object.keys(POPUPS) as (keyof typeof POPUPS)[]) {
     const host = new Node('div'), opener = new Node('button'); opener.focus();
     let dismissed = 0, chosen = 0;
     const control = mountPopup(host as unknown as HTMLElement, fixture(kind), {

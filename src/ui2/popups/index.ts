@@ -1,13 +1,15 @@
 import { button, el } from '../../ui/dom.ts';
 import { jobPortrait, placeArt } from '../art.ts';
 import { COPY, PHONE_TABS } from './data.ts';
-import type { PhoneTab } from './data.ts';
+import type { LifeTab, PhoneTab } from './data.ts';
 import { choicePage, shortTitle, textPages } from './model.ts';
 import type { PopupModel } from './model.ts';
 import { POPUP_STYLE } from './style.ts';
 export { popupModel, popupKind, phoneChoices } from './model.ts';
 export type { PopupContext, PopupModel } from './model.ts';
 export type { PopupKind } from './data.ts';
+export type { LifeSummaryView } from './life-model.ts';
+export { mountEnding, mountEndingCollection, endingModel, collectionModel } from './ending.ts';
 
 export type PopupActions = {
   choose: (id: string) => void; dismiss: () => void;
@@ -23,6 +25,7 @@ export type PopupActions = {
 export function mountPopup(host: HTMLElement, initial: PopupModel, actions: PopupActions) {
   host.classList.add('life2-popup-host');
   let model = initial, page = 0, copyPage = 0, detail: string[] | undefined, tab: PhoneTab = 'all';
+  let lifeTab: LifeTab = 'ability';
   let panel: HTMLElement, closed = false;
   const previousFocus = actions.returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : undefined);
   function close() {
@@ -40,7 +43,8 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     title.tabIndex = -1; title.title = model.title;
     header.append(title, button(COPY.exit, '', close, 'popup-close'));
     const copy = el('div', 'life2-popup-copy');
-    const pages = textPages(detail ?? [model.title, ...model.lines]);
+    const selectedTab = model.tabs?.find(item => item.id === lifeTab) ?? model.tabs?.[0];
+    const pages = textPages(detail ?? (selectedTab ? [selectedTab.title, ...selectedTab.lines] : [model.title, ...model.lines]));
     copyPage = Math.min(copyPage, pages.length - 1);
     if (!detail) {
       if (model.roll) {
@@ -67,15 +71,28 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
           if (!closed && option.enabled) actions.choose(option.id);
         });
         control.dataset.option = option.id; control.disabled = !option.enabled;
+        if (option.destination) control.dataset.dest = option.destination;
         control.setAttribute('aria-label', option.details.join('. '));
         control.append(el('strong', '', shortTitle(option.title)), el('small', '', option.summary));
         const info = button(COPY.details, '', () => { detail = option.details; copyPage = 0; render(); }, 'popup-details');
         info.setAttribute('aria-label', `${option.title} · ${COPY.details}`);
         row.append(control, info); list.append(row);
       }
-      if (!choices.items.length) list.append(el('p', '', COPY.empty));
+      if (!choices.items.length && !selectedTab) list.append(el('p', '', COPY.empty));
       panel.append(list);
-      if (model.kind === 'phone' && actions.phoneTab) {
+      if (selectedTab) {
+        copy.dataset.tabPanel = selectedTab.id; copy.setAttribute('role', 'tabpanel');
+        copy.setAttribute('aria-label', selectedTab.title);
+        footer.classList.add('life2-popup-tabs'); footer.setAttribute('role', 'tablist');
+        for (const item of model.tabs!) {
+          const control = button(item.title, '', () => { lifeTab = item.id; copyPage = 0; render(); });
+          control.dataset.tab = item.id; control.setAttribute('role', 'tab');
+          control.setAttribute('aria-selected', String(item.id === selectedTab.id)); footer.append(control);
+        }
+        if (choices.count > 1) header.insertBefore(button(COPY.pages(page, choices.count), '', () => {
+          page = (page + 1) % choices.count; render();
+        }, 'popup-page-next'), header.lastChild);
+      } else if (model.kind === 'phone' && actions.phoneTab) {
         footer.classList.add('life2-popup-tabs'); footer.setAttribute('role', 'tablist');
         for (const [id, label] of Object.entries(PHONE_TABS)) {
           const control = button(label, '', () => {

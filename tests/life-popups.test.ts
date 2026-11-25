@@ -4,7 +4,6 @@ import { choose, currentEvent, forecast, newGame, options } from '../src/life/en
 import type { Forecast, OptionView, Result } from '../src/life/engine.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { COPY, POPUPS, POPUP_RULES } from '../src/ui2/popups/data.ts';
-import type { PopupKind } from '../src/ui2/popups/data.ts';
 import { choicePage, phoneChoices, popupKind, popupModel, shortTitle, textPages } from '../src/ui2/popups/model.ts';
 import { POPUP_STYLE } from '../src/ui2/popups/style.ts';
 
@@ -87,7 +86,7 @@ test('spin, pick and ending remain outside T18 auto-routing', () => {
   state.phase = 'ended'; assert.equal(popupKind(state, []), undefined);
 });
 
-for (const kind of Object.keys(POPUPS) as PopupKind[]) test(`${kind} has a named model and generic future option support`, () => {
+for (const kind of Object.keys(POPUPS) as (keyof typeof POPUPS)[]) test(`${kind} has a named model and generic future option support`, () => {
   const state = frozen(started()), offered = frozen([option(kind === 'phone' ? 'phone:future' : 'future:ack')]);
   const model = popupModel(state, { kind, offered, lines: ['엔진이 제공한 내용'] })!;
   assert.equal(model.kind, kind); assert.equal(model.phase, POPUPS[kind].phase);
