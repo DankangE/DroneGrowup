@@ -15,6 +15,8 @@ import type { PopupModel } from './popups/index.ts';
 import { resultPopups } from './popups/presentation.ts';
 import { COPY } from './popups/data.ts';
 import { mountEnding, mountEndingCollection } from './popups/ending.ts';
+import { loadLifeRun, loadLifeMeta, mergeLifeMeta, saveLifeRun, recordLifeEnding, migrateLifeSave, V1_NOTICE } from '../save.ts';
+import { PLATFORM, bootPlatform, sessionOk, runStatus } from '../platform.ts';
 
 const DESTINATION_PAGE_SIZE = 2;
 const PHASE_LABEL = { spin: '이번 계절', pick: '갈 곳 고르기', space: '이곳에서 할 일',
@@ -29,7 +31,9 @@ declare global {
 
 export function mountLife(root: HTMLElement, seed: number, debug = false): void {
   let state = newGame(seed), page = 0;
-  const gallery = new Set<string>(), bestByEnding: Record<string, number> = {};
+  let meta: ReturnType<typeof loadLifeMeta>;
+  const collection = () => mergeLifeMeta(meta, loadLifeMeta());
+  let ready = false, atTitle = false, notice = false, startedAt = performance.now();
   let pending: PendingPopup[] = [], menu: 'my-life' | 'phone' | undefined, dismissed = false;
   let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
   root.classList.add('life2');
@@ -47,12 +51,16 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
   });
   window.addEventListener?.('resize', () => render());
   function takeOption(id: string) {
+    if (PLATFORM) { if (!sessionOk()) return; }
     const source = menu === 'phone' ? 'phone' : 'board';
     if (sequence || (pending.length && source !== 'phone') || !options(state, source)
       .some(option => option.id === id && option.enabled)) return;
     before = state;
     const outcome = choose(state, id, source);
     state = outcome.state;
+    if (state.phase === 'ended') meta = mergeLifeMeta(meta,
+      recordLifeEnding(state, Math.max(1, Math.round((performance.now() - startedAt) / 1000))));
+    else saveLifeRun(state);
     page = 0; dismissed = false;
     const cards: PendingPopup[] = resultPopups(before, state, outcome.result).map(model => ({ model }));
     if (source === 'phone' && cards.length) cards[cards.length - 1].resume = 'phone';
@@ -65,16 +73,15 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     sequence.next();
   }
   function render(focus = false) {
+    if (!ready) return;
+    if (atTitle) { showTitle(); return; }
     if (!frame && state.phase === 'ended') {
       pending = []; menu = undefined;
-      if (state.ending) {
-        gallery.add(state.ending); bestByEnding[state.ending] = Math.max(bestByEnding[state.ending] ?? 0, state.score);
-      }
       mountEnding(root, state, {
-        title: () => window.location.assign(import.meta.env?.BASE_URL ?? '/'),
-        restart: () => { state = newGame(seed); page = 0; dismissed = false; render(true); },
-        collection: () => mountEndingCollection(root, { gallery: [...gallery], bestByEnding }, () => render(true)),
+        title: showTitle, restart,
+        collection: () => mountEndingCollection(root, collection(), () => render(true)),
       });
+      if (PLATFORM) refreshStatus();
       return;
     }
     const shown = frame && before ? { ...before, board: { ...before.board, pos: frame.pos } } : state;
@@ -161,14 +168,44 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     return popupModel(state, { kind: 'phone', offered,
       previews: Object.fromEntries(offered.map(option => [option.id, forecast(state, option.id, 'phone')])) })!;
   }
+  function restart() {
+    if (PLATFORM) { if (!sessionOk()) return; }
+    state = newGame(seed); page = 0; dismissed = false; atTitle = false; notice = false;
+    startedAt = performance.now(); saveLifeRun(state); render(true);
+  }
+  function showTitle() {
+    atTitle = true; root.dataset.screen = 'title'; delete root.dataset.phase;
+    const card = el('main', 'ng-gate'), title = el('h1', '', '파일럿 키우기'); title.tabIndex = -1;
+    card.append(title);
+    if (notice) card.append(el('p', '', V1_NOTICE));
+    if (loadLifeRun()) card.append(button('이어서 하기', '', () => {
+      if (PLATFORM) { if (!sessionOk()) return; }
+      state = loadLifeRun()!; atTitle = false; notice = false; render(true);
+    }, 'continue-run'));
+    card.append(button('새 인생 시작', '', restart, 'new'), button('엔딩 모음', '', () => {
+      notice = false; mountEndingCollection(root, collection(), showTitle);
+    }, 'gallery'));
+    root.replaceChildren(card); title.focus({ preventScroll: true });
+  }
+  function refreshStatus() {
+    if (root.dataset.screen !== 'ending') return;
+    root.querySelector('.platform-status')?.remove();
+    const status = el('p', 'platform-status', runStatus.text); status.setAttribute('aria-live', 'polite');
+    root.querySelector('.life2-ending-copy')?.append(status);
+  }
   if (debug) window.__life = {
     state: () => structuredClone(state), options: () => options(state),
     load(raw) {
       const loaded = restore(raw);
       if (!loaded) throw new Error('Invalid life layout fixture');
       sequence?.cancel(); sequence = undefined; frame = undefined; before = undefined;
-      state = loaded; page = 0; pending = []; menu = undefined; dismissed = false; render();
+      state = loaded; page = 0; pending = []; menu = undefined; dismissed = false; atTitle = false; render();
     },
   };
-  render();
+  const start = () => {
+    notice = migrateLifeSave(); meta = loadLifeMeta(); state = loadLifeRun() ?? newGame(seed); ready = true;
+    if (notice) showTitle(); else render();
+  };
+  if (PLATFORM) { runStatus.onChange = refreshStatus; bootPlatform(root, start, 2); }
+  else start();
 }

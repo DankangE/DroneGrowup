@@ -3,12 +3,15 @@
 import { ENDING_IDS } from './game/data.ts';
 import { restore } from './game/engine.ts';
 import type { EndingId, GameState } from './game/types.ts';
+import { ENDING_IDS as LIFE_ENDINGS, TRACK_IDS } from './life/life-data.ts';
+import { restore as restoreLife } from './life/engine.ts';
+import type { EndingId as LifeEnding, GameState as LifeState, TrackId } from './life/types.ts';
 import { PLATFORM, pushProgress, submitRun } from './platform.ts';
 
 // On the platform build every key carries the account id, so two accounts on one browser never share a run or
 // a gallery, and nothing is read from the standalone keys. Until the login is known the scope is 'none'.
 let scope = PLATFORM ? ':u:none' : '';
-const key = (name: 'run' | 'meta' | 'synced') => `pilot-growup:${name}:v1${scope}`;
+const key = (name: 'run' | 'meta' | 'synced' | 'migrated', version = 1) => `pilot-growup:${name}:v${version}${scope}`;
 const SCORE_MAX = 9_999_999;
 
 /** What survives a finished run: which endings were seen, the best score, how many runs ended. */
@@ -27,7 +30,8 @@ const write = (key: string, value: unknown) => {
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, JSON.stringify(value));
-  } catch { /* storage full or blocked: the run still plays, it just does not persist */ }
+    return true;
+  } catch { return false; /* blocked storage must not prevent playing */ }
 };
 
 const int = (v: unknown, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, Math.floor(v))) : 0);
@@ -90,8 +94,8 @@ export function recordEnding(state: GameState, durationSec: number): { meta: Met
 }
 
 /** The server's `progressAt` this browser last read or wrote for this account; 0 when it never synced. */
-export const markSynced = (progressAt: number) => write(key('synced'), int(progressAt, Number.MAX_SAFE_INTEGER));
-export const syncedAt = () => int(read(key('synced')), Number.MAX_SAFE_INTEGER);
+export const markSynced = (progressAt: number, version = 1) => write(key('synced', version), int(progressAt, Number.MAX_SAFE_INTEGER));
+export const syncedAt = (version = 1) => int(read(key('synced', version)), Number.MAX_SAFE_INTEGER);
 
 /** The local record as it would be uploaded. */
 export const localProgress = (): Progress => ({ run: loadRun(), meta: loadMeta() });
@@ -109,4 +113,69 @@ export function adoptServerProgress(server: Progress, userId: string, progressAt
     write(key('run'), server.run);
     markSynced(progressAt);
   }
+}
+
+export type LifeMeta = { gallery: LifeEnding[]; best: number; runs: number; feats: string[];
+  jobs: TrackId[]; bestByEnding: Partial<Record<LifeEnding, number>> };
+export type LifeProgress = { run: LifeState | null; meta: LifeMeta };
+export const V1_NOTICE = '이전 버전의 판은 이어 할 수 없습니다';
+const object = (raw: unknown): Record<string, unknown> => raw && typeof raw === 'object' && !Array.isArray(raw)
+  ? raw as Record<string, unknown> : {};
+const strings = (raw: unknown): string[] => Array.isArray(raw)
+  ? [...new Set(raw.filter((id): id is string => typeof id === 'string' && /^[\w:-]{1,80}$/.test(id)))].slice(0, 200) : [];
+
+export function cleanLifeMeta(raw: unknown): LifeMeta {
+  const d = object(raw), bests = object(d.bestByEnding);
+  return { gallery: LIFE_ENDINGS.filter(id => strings(d.gallery).includes(id)), best: int(d.best, Number.MAX_SAFE_INTEGER),
+    runs: int(d.runs, 99_999), feats: strings(d.feats), jobs: TRACK_IDS.filter(id => strings(d.jobs).includes(id)),
+    bestByEnding: Object.fromEntries(LIFE_ENDINGS.filter(id => Object.hasOwn(bests, id))
+      .map(id => [id, int(bests[id], Number.MAX_SAFE_INTEGER)])) };
+}
+export function mergeLifeMeta(left: unknown, right: unknown): LifeMeta {
+  const a = cleanLifeMeta(left), b = cleanLifeMeta(right);
+  return cleanLifeMeta({ gallery: [...a.gallery, ...b.gallery], best: Math.max(a.best, b.best), runs: Math.max(a.runs, b.runs),
+    feats: [...a.feats, ...b.feats], jobs: [...a.jobs, ...b.jobs],
+    bestByEnding: Object.fromEntries([...new Set([...Object.keys(a.bestByEnding), ...Object.keys(b.bestByEnding)])]
+      .map(id => [id, Math.max(a.bestByEnding[id as LifeEnding] ?? 0, b.bestByEnding[id as LifeEnding] ?? 0)])) });
+}
+export function cleanLifeProgress(raw: unknown): LifeProgress {
+  const d = object(raw), run = restoreLife(d.run);
+  return { run: run?.phase !== 'ended' ? run : null, meta: cleanLifeMeta(d.meta) };
+}
+export const loadLifeMeta = () => cleanLifeMeta(read(key('meta', 2)));
+export const loadLifeRun = () => cleanLifeProgress({ run: read(key('run', 2)) }).run;
+export const localLifeProgress = (): LifeProgress => ({ run: loadLifeRun(), meta: loadLifeMeta() });
+
+/** Called at the v2 entry screen, after account selection. Retain v1 meta for the classic client. */
+export function migrateLifeSave(): boolean {
+  const legacy = read(key('meta'));
+  let changed = false;
+  if (legacy !== null && !read(key('migrated', 2))) {
+    const { gallery, runs } = cleanMeta(legacy);
+    changed = write(key('meta', 2), mergeLifeMeta(loadLifeMeta(), { gallery, runs }));
+    if (changed) write(key('migrated', 2), true);
+  }
+  const notice = read(key('run')) !== null;
+  if (notice) write(key('run'), null);
+  if (PLATFORM) { if (changed || notice) pushProgress(localLifeProgress()); }
+  return notice;
+}
+export function saveLifeRun(state: LifeState) {
+  const run = state.phase === 'ended' ? null : state;
+  write(key('run', 2), run);
+  if (PLATFORM) pushProgress({ run, meta: loadLifeMeta() });
+}
+export function recordLifeEnding(state: LifeState, durationSec: number) {
+  const before = loadLifeMeta(), ending = state.ending;
+  if (state.phase !== 'ended' || !ending) return before;
+  const meta = mergeLifeMeta(before, { gallery: [ending], best: state.score, runs: before.runs + 1,
+    feats: state.feats, jobs: state.job.tracks, bestByEnding: { [ending]: state.score } });
+  write(key('meta', 2), meta); write(key('run', 2), null);
+  if (PLATFORM) { pushProgress({ run: null, meta }); submitRun(state, durationSec); }
+  return meta;
+}
+export function adoptLifeServerProgress(server: LifeProgress, userId: string, progressAt: number) {
+  scope = `:u:${encodeURIComponent(userId)}`;
+  write(key('meta', 2), mergeLifeMeta(loadLifeMeta(), server.meta));
+  if (progressAt > syncedAt(2)) { write(key('run', 2), server.run); markSynced(progressAt, 2); }
 }

@@ -402,9 +402,7 @@ test('success on an actual contest increments the 150-point counter; skipping it
 for (const early of [false, true]) test(`${early ? 'phone retirement' : 'last season'} mounts the real ending, all 21 collection cards and restart`, () => {
   withDOM(() => {
     const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
-    let titleVisits = 0;
-    const browser = { matchMedia: () => ({ matches: true, addEventListener() {} }),
-      location: { assign: () => { titleVisits++; } } } as unknown as Window;
+    const browser = { matchMedia: () => ({ matches: true, addEventListener() {} }) } as unknown as Window;
     Object.defineProperty(globalThis, 'window', { configurable: true, value: browser });
     try {
       const state = stateAt(early ? 144 : 203), root = new TestNode('main');
@@ -436,8 +434,8 @@ for (const early of [false, true]) test(`${early ? 'phone retirement' : 'last se
       }
       assert.deepEqual(cards, ENDINGS2.map(row => row.id)); assert.deepEqual(unlocked, [final.ending]);
       root.querySelector('[data-nav=gallery-close]')!.fire('click');
-      root.querySelector('[data-nav=title]')!.fire('click'); assert.equal(titleVisits, 1);
-      root.querySelector('[data-nav=restart]')!.fire('click');
+      root.querySelector('[data-nav=title]')!.fire('click'); assert.equal(root.dataset.screen, 'title');
+      action(root, 'new').fire('click');
       assert.equal(root.dataset.screen, 'play'); assert.deepEqual(browser.__life!.state(), newGame(1));
     } finally {
       if (original) Object.defineProperty(globalThis, 'window', original); else Reflect.deleteProperty(globalThis, 'window');

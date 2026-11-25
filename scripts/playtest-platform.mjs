@@ -12,12 +12,13 @@
 //   npm run playtest:platform
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
-import { finishChoice, revealOption } from './ui-driver.mjs';
+import { pagingChecks } from './layout-check-life.mjs';
+import { pickLifeOption } from './life-ui-driver.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { choose, options, restore } from '../src/game/engine.ts';
+import { choose, newGame, restore } from '../src/life/engine.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'node_modules/.cache/dist-platform');
@@ -30,15 +31,25 @@ const server = await preview({ root, configFile, build: { outDir }, preview: { p
 const base = server.resolvedUrls.local[0];
 
 // The stand-in server: one progress record per account.
-const records = {}; // userId -> { data, progressAt }
+const records = {}, classicRecords = {}, plays = [], namespaces = [];
+const meta = (extra = {}) => ({ gallery: [], best: 0, runs: 0, feats: [], jobs: [], bestByEnding: {}, ...extra });
+const accountRecords = id => id === 'pilotgrowup-v2' ? records : classicRecords;
 let current = 'user-a';
 const api = {
+  init: ({ gameId }) => { assert.ok(['pilotgrowup', 'pilotgrowup-v2'].includes(gameId)); namespaces.push(gameId); },
+  submit: ({ gameId, play }) => { plays.push({ gameId, play }); return {}; },
   me: () => ({ id: current, loginId: current, nickname: `닉 ${current}` }),
-  get: () => records[current] ?? { data: null, progressAt: 0 },
-  put: ({ data, progressAt }) => {
+  get: ({ gameId }) => accountRecords(gameId)[current] ?? { data: null, progressAt: 0 },
+  put: ({ gameId, data, progressAt }) => {
+    const records = accountRecords(gameId);
     if (progressAt <= (records[current]?.progressAt ?? 0)) return { conflict: true };
-    // Like the platform cleaner, keep known run fields and the packed board in seen.
-    if (data.run) delete data.run.board;
+    if (data.run) {
+      assert.equal(data.run.v, gameId === 'pilotgrowup-v2' ? 2 : 1);
+      if (data.run.v === 2) {
+        assert.deepEqual(restore(data.run), data.run, 'v2 structured state survives the contract');
+        assert.ok(!Object.keys(data.run.seen).some(key => key.startsWith('_b.')), 'v2 never packs the board');
+      } else delete data.run.board; // The old server cleaner remains supported by v1.
+    }
     records[current] = { data, progressAt };
     return { data, progressAt };
   },
@@ -54,17 +65,17 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', locale: 'ko-KR' });
   await context.exposeFunction('__srv', (op, arg) => api[op](arg));
   await context.addInitScript(() => {
-    const srv = (op, arg) => window.__srv(op, arg);
     window.NalidaGame = {
-      init: () => ({
-        me: () => srv('me'),
-        redirectToLogin() {},
-        redirectToNickname() {},
-        progress: { get: () => srv('get'), put: (data, progressAt) => srv('put', { data, progressAt }) },
-        plays: { submit: async () => ({}) },
-        leaderboard: async () => ({ entries: [], me: null }),
-        onChange() {},
-      }),
+      init: ({ gameId }) => {
+        const srv = (op, arg = {}) => window.__srv(op, { ...arg, gameId });
+        void srv('init');
+        return {
+          me: () => srv('me'), redirectToLogin() {}, redirectToNickname() {},
+          progress: { get: () => srv('get'), put: (data, progressAt) => srv('put', { data, progressAt }) },
+          plays: { submit: play => srv('submit', { play }) },
+          leaderboard: async () => ({ entries: [], me: null }), onChange() {},
+        };
+      },
     };
   });
   const page = await context.newPage();
@@ -73,17 +84,16 @@ try {
   page.on('request', (r) => { if (!r.url().startsWith(base) && !r.url().startsWith('data:')) errors.push(`outside request: ${r.url()}`); });
 
   const open = async () => {
-    await page.goto(`${base}?debug=1&seed=21`);
-    await page.waitForFunction(() => document.querySelector('[data-screen="title"]'));
+    await page.goto(`${base}?life=1&debug=1&seed=21`);
+    await page.waitForFunction(() => window.__life && document.querySelector('[data-screen="play"]'));
   };
-  const hasContinue = async () => (await page.locator('[data-action="continue-run"]').count()) > 0;
-  const pageState = () => page.evaluate(() => window.__game.state());
-  const nextOption = state => options(state).find(o => !o.free && o.enabled);
-  const step = async () => {
+  const pageState = () => page.evaluate(() => window.__life.state());
+  const nextOption = state => ({ id: pickLifeOption(state) });
+  const controls = pagingChecks(page, async () => {});
+  const step = async (id) => {
     const before = await pageState();
-    const option = nextOption(before);
-    await (await revealOption(page, option)).click();
-    await finishChoice(page);
+    const option = id ? { id } : nextOption(before);
+    await controls.clickChoice(option.id);
     assert.deepEqual(await pageState(), choose(before, option.id).state, 'one click committed exactly one choice');
   };
   const uploaded = async expected => {
@@ -96,9 +106,7 @@ try {
 
   // ---- account A plays three choices; they reach A's server record
   await open();
-  assert.equal(await hasContinue(), false);
-  await page.locator('[data-action="new"]').click();
-  await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
+  assert.deepEqual(await pageState(), newGame(21));
   let expected = await pageState();
   for (let i = 0; i < 3; i++) {
     expected = choose(expected, nextOption(expected).id).state;
@@ -112,15 +120,13 @@ try {
   assert.ok(keys.length > 0 && keys.every((k) => k.includes(':u:user-a')), `every key is scoped to the account: ${keys}`);
 
   // ---- account B on the same browser sees none of it
-  records['user-a'].data.meta = { gallery: ['pilot'], best: 1234, runs: 1 };
+  records['user-a'].data.meta = meta({ gallery: ['pilot'], best: 1234, runs: 1 });
   current = 'user-b';
   await open();
-  assert.equal(await hasContinue(), false, "account B is not offered account A's run");
-  await page.locator('[data-action="new"]').click();
-  await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
+  assert.deepEqual(await pageState(), newGame(21), "account B is not offered account A's run");
   await step();
   await uploaded(await pageState());
-  assert.deepEqual(records['user-b'].data.meta, { gallery: [], best: 0, runs: 0 }, "account B's record has none of A's gallery");
+  assert.deepEqual(records['user-b'].data.meta, meta(), "account B's record has none of A's gallery");
   assert.notDeepEqual(records['user-b'].data.run, records['user-a'].data.run);
 
   // ---- account A again, after another device played one more choice
@@ -130,40 +136,31 @@ try {
   assert.notDeepEqual(ahead, local, 'another device advanced the board');
   records['user-a'] = { data: { run: ahead, meta: records['user-a'].data.meta }, progressAt: records['user-a'].progressAt + 60_000 };
   await open();
-  assert.equal(await hasContinue(), true);
-  await page.locator('[data-action="continue-run"]').click();
-  await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   assert.deepEqual(await pageState(), ahead, 'the newer run from the server replaces the older local one');
-  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pilot-growup:meta:v1:u:user-a'))), { gallery: ['pilot'], best: 1234, runs: 1 });
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pilot-growup:meta:v2:u:user-a'))), meta({ gallery: ['pilot'], best: 1234, runs: 1 }));
 
   // ---- another device finished the run: it is not offered again here
   records['user-a'] = { data: { run: null, meta: records['user-a'].data.meta }, progressAt: records['user-a'].progressAt + 60_000 };
   await open();
-  assert.equal(await hasContinue(), false, 'a run finished elsewhere is not resurrected');
+  assert.deepEqual(await pageState(), newGame(21), 'a run finished elsewhere is not resurrected');
 
   // ---- a local run that is not older than the server copy survives a reload
-  await page.locator('[data-action="new"]').click();
-  await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   await step();
   const mine = await pageState();
   await uploaded(mine);
   await open();
-  await page.locator('[data-action="continue-run"]').click();
-  await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   assert.deepEqual(await pageState(), mine);
 
   // ---- a page left open while another device finishes the run: its next choice does not overwrite the server
-  const theirs = { data: { run: null, meta: { gallery: ['pilot', 'solo'], best: 5000, runs: 2 } }, progressAt: records['user-a'].progressAt + 60_000 };
+  const theirs = { data: { run: null, meta: meta({ gallery: ['pilot', 'solo'], best: 5000, runs: 2 }) }, progressAt: records['user-a'].progressAt + 60_000 };
   records['user-a'] = theirs;
   await step();
   await page.waitForTimeout(3000);
   assert.deepEqual(records['user-a'], theirs, 'a stale page does not overwrite a newer server record');
   await open();
-  assert.equal(await hasContinue(), false);
+  assert.deepEqual(await pageState(), newGame(21));
 
   // ---- a choice whose upload never left (tab closed inside the debounce) is uploaded at the next boot
-  await page.locator('[data-action="new"]').click();
-  await page.waitForFunction(() => document.querySelector('[data-screen="play"]'));
   await step();
   await uploaded(await pageState());
   await step();
@@ -172,8 +169,32 @@ try {
   await uploaded(unsent);
   assert.deepEqual(restore(records['user-a'].data.run), unsent, 'the unsent choice is uploaded after the reload');
 
+  // ---- ending writes the collection and posts exactly once, to the new leaderboard
+  const last = choose(newGame(21), 'start:school').state;
+  last.turn = 203; last.board.step = 'bonus'; last.board.dice = [1, 1];
+  last.s.capStamina = last.s.stamina = 80;
+  await page.evaluate(run => window.__life.load(run), last);
+  await step('end');
+  for (let i = 0; i < 80 && plays.length === 0; i++) await page.waitForTimeout(100);
+  assert.equal(plays.length, 1); assert.equal(plays[0].gameId, 'pilotgrowup-v2');
+  const ended = await pageState();
+  assert.equal(plays[0].play.stage, ended.ending); assert.equal(plays[0].play.score, ended.score);
+  assert.equal(plays[0].play.detail.turns, 204); assert.equal(plays[0].play.detail.age, 70);
+  await page.locator('[data-action="gallery"]').click();
+  await page.locator('[data-action="gallery-close"]').click();
+  assert.equal(plays.length, 1);
+  await uploaded(null);
+  assert.ok(records[current].data.meta.gallery.includes(ended.ending));
+  assert.equal(records[current].data.meta.bestByEnding[ended.ending], ended.score);
+  assert.ok(namespaces.every(id => id === 'pilotgrowup-v2'));
+
+  // ---- classic entry still uses its original namespace and title
+  await page.goto(`${base}?debug=1&seed=21`);
+  await page.locator('[data-screen="title"]').waitFor();
+  assert.equal(namespaces.at(-1), 'pilotgrowup');
+  assert.equal(await page.locator('[data-action="continue-run"]').count(), 0);
   assert.deepEqual(errors, [], 'console errors, page errors or outside requests');
-  console.log('platform playtest OK: account scoping, newer server run adopted, finished run not resurrected, stale page does not overwrite, unsent choice re-uploaded');
+  console.log('platform v2 playtest OK: native board, separate leaderboard, ending submitted once, classic entry, account scoping, newer server run adopted, finished run not resurrected, stale page does not overwrite, unsent choice re-uploaded');
 } finally {
   await browser.close();
   await new Promise((done) => server.httpServer.close(done));
