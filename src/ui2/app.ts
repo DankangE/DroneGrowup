@@ -1,5 +1,5 @@
-import { choose, derived, forecast, newGame, options, reachable, restore } from '../life/engine.ts';
-import type { OptionView } from '../life/engine.ts';
+import { choose, derived, forecast, newGame, options, reachable, restore } from '../life/flow.ts';
+import type { OptionView } from '../life/flow.ts';
 import type { GameState } from '../life/types.ts';
 import { PLACES, WORLD } from '../life/world.ts';
 import { button, el, reducedMotion } from '../ui/dom.ts';
@@ -21,7 +21,7 @@ import { mountEnding, mountEndingCollection } from './popups/ending.ts';
 import { loadLifeRun, loadLifeMeta, mergeLifeMeta, saveLifeRun, recordLifeEnding, migrateLifeSave, V1_NOTICE } from '../save.ts';
 import { PLATFORM, bootPlatform, sessionOk, runStatus } from '../platform.ts';
 
-const DESTINATION_PAGE_SIZE = 2;
+const DESTINATION_PAGE_SIZE = 1;
 const PHASE_LABEL = { spin: '이번 계절', pick: '갈 곳 고르기', space: '이곳에서 할 일',
   bonus: '추가 행동', event: '사건', chapter: '인생 결산', move: '이동 중', transfer: '지도 환승' } as const;
 type PendingPopup = { model: PopupModel; resume?: 'phone' };
@@ -137,7 +137,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
       control.title = [option.desc, ...option.locks].join(' ');
       control.setAttribute('aria-label', `${option.title}. ${control.title}`);
       control.append(el('strong', '', move ? destinationName(move, state.board.pos) : option.title), el('small', '',
-        move ? destinationDetails(move) : `비용 ${preview.cost}만 · 체력 ${preview.tire}${preview.chance === undefined ? '' : ` · 성공 ${preview.chance}%`}`));
+        move ? destinationDetails(move) : option.id.startsWith('family:') ? option.desc : `비용 ${preview.cost}만 · 체력 ${preview.tire}${preview.chance === undefined ? '' : ` · 성공 ${preview.chance}%`}`));
       if (move) {
         decorate!(control, move);
         if (WORLD.find(node => node.id === move.node)!.map !== WORLD.find(node => node.id === state.board.pos)!.map) {
@@ -159,6 +159,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     previous.disabled = page === 0; next.disabled = page === pages - 1;
     pager.append(previous, el('span', '', `${page + 1} / ${pages}`), next);
     panel.append(heading, list, pager);
+    if (pages === 1) { pager.hidden = true; panel.dataset.singlePage = ''; }
     shell.append(bands.top, map, panel, bands.bottom);
     const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE + POLISH_STYLE);
     root.replaceChildren(style, shell);

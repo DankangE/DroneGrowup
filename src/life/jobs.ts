@@ -331,7 +331,7 @@ export function performance(prev: GameState, source: PerformanceSource | number)
   const state = structuredClone(prev);
   if (!careerTrack(state) || state.phase === 'ended') return state;
   state.job.perf = Math.max(C.perfMin, Math.min(C.perfMax, state.job.perf + delta));
-  if (source === 'workSuccess' || source === 'workFailure') {
+  if (source === 'workSuccess' || source === 'workFailure' || source === 'extra') {
     state.timers[K.worked] = state.turn + 1;
     state.timers[K.idle] = 0;
   }

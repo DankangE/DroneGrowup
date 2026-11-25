@@ -1,3 +1,5 @@
+import { josa } from '../../life/text.ts';
+import type { Particle } from '../../life/text.ts';
 import type { Stat as GradedStat } from '../../life/base-types.ts';
 import { grade } from '../../life/grades.ts';
 import { FLAG_LABEL } from '../../life/data.ts';
@@ -9,7 +11,6 @@ import { familyPopup } from '../../life/family.ts';
 import { LIFE_RULES, STAT_LABEL } from '../../life/life-data.ts';
 import { JOB_TEXT, SPECIAL_RULES } from '../../life/tracks.ts';
 import type { Cond, GameState, Stat } from '../../life/types.ts';
-import { WORLD } from '../../life/world.ts';
 import type { OptionView } from '../../life/engine.ts';
 import { POLISH as P } from './polish-data.ts';
 
@@ -24,10 +25,8 @@ export function featLabels(state: GameState): string[] {
 }
 export function humanCopy(text: string): string {
   return Object.entries(P.flagLabels).reduce((line, [id, label]) => line.replace(new RegExp(`\\b${id}\\b`, 'g'), label), text)
-    .replace(/([가-힣]+)으로/g, (_all, word: string) => {
-      const final = (word.charCodeAt(word.length - 1) - 0xac00) % 28;
-      return word + (final === 0 || final === 8 ? '로' : '으로');
-    }).replace(/\.{2,}/g, '.').replace(/\s*·\s*$/, '');
+    .replace(/([가-힣]+)(을\(를\)|은\(는\)|이\(가\)|과\(와\)|으로)/g, (_all, word: string, suffix: string) =>
+      josa(word, ({ '을(를)': '을/를', '은(는)': '은/는', '이(가)': '이/가', '과(와)': '과/와', '으로': '으로/로' } as Record<string, Particle>)[suffix])).replace(/\.{2,}/g, '.').replace(/\s*·\s*$/, '');
 }
 export function educationBody(state: GameState) {
   const popup = familyPopup(state);
@@ -35,11 +34,9 @@ export function educationBody(state: GameState) {
   return { title: popup.kind === 'gift' ? P.independent : P.education,
     body: `${childLabel(state, popup.kid)}. ${popup.kind === 'gift' ? P.independentBody : P.educationBody}` };
 }
-/** Presentation grouping only. The wedding sheet owns wedding choices; the mandatory dual step is shown once. */
-export function visibleOptions(state: GameState, offered: readonly OptionView[], wedding = false) {
-  const hospital = WORLD.find(node => node.id === state.board.pos)?.place === 'hospital';
-  return offered.filter(option => (!hospital || !option.id.startsWith('dual:') || familyPopup(state)?.kind === 'dual')
-    && (!wedding || !option.id.startsWith('lifestyle:')));
+/** Every offered choice stays reachable; compact sheets use pagination rather than filtering. */
+export function visibleOptions(_state: GameState, offered: readonly OptionView[], _wedding = false) {
+  return [...offered];
 }
 export function graduateLine(state: GameState): string | undefined {
   const until = state.timers[ECONOMY_KEYS.graduateUntil];

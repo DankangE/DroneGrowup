@@ -1,3 +1,4 @@
+import { josa } from './text.ts';
 // Career and F2 action tables: life-board.md §§5–6. Percentages stay integral.
 import { ACTIONS as V1_ACTIONS } from './data.ts';
 import type { ActionDef, Choice, Cond, PlaceId, Stat, StatMap, TrackDef, TrackId } from './types.ts';
@@ -228,7 +229,7 @@ export const SPECIAL_TEXT = {
   graduateDone: '대학원 과정을 시작했다.', graduateBusy: '이미 대학원 과정을 이수 중입니다.',
   graduated: '대학원 6계절 과정을 마치고 석사 학위를 받았다.',
   creatorIncome: '구독자 광고 수입',
-  expressTitle: (name: string) => `${name}으로 특급 이동`,
+  expressTitle: (name: string) => `${josa(name, '으로/로')} 특급 이동`,
   expressDesc: '150만원을 내고 출발 칸으로 이동한다. 정산 뒤 추가 행동은 도착한 곳에서 한다.',
   expressDone: (name: string) => `${name} 출발 칸에 도착했다.`,
 } as const;

@@ -1,9 +1,12 @@
+import { ENDING_RULES } from '../../life/life-data.ts';
 export { ENDINGS2 } from '../../life/life-data.ts';
 export type { EndingDef as EndingCopy } from '../../life/life-data.ts';
 
 export const ENDING_COPY = {
   title: '인생 결산', gallery: '엔딩 모음', restart: '새 인생', home: '타이틀',
   discovered: '발견', locked: '미발견', unknown: '아직 엔딩이 없습니다.',
+  composition: (wealth: number, happiness: number, achievements: number) => `점수 구성 · 순자산 ${wealth} + 행복 ${happiness} + 업적 ${achievements}`,
+  scoreRule: `순자산 1만 = 1점 · 행복 1 = ${ENDING_RULES.happyPoints}점 · 업적 최대 ${ENDING_RULES.featCap.toLocaleString('ko-KR')}점. 결산 등급은 직급과 별개예요.`,
   score: (score: number) => `최종 점수 ${score}`,
   grade: (grade: string) => `최종 성적 ${grade}`,
   feats: (score: number) => `업적 점수 ${score}`,

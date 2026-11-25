@@ -1,8 +1,8 @@
 import { POLISH as P } from './polish-data.ts';
 import { careerRows, educationBody, graduateCost, humanCopy, stageView, visibleOptions } from './polish-model.ts';
 import type { DisplayRow, StageView } from './polish-model.ts';
-import { currentEvent, forecast, options } from '../../life/engine.ts';
-import type { Forecast, OptionView, Result } from '../../life/engine.ts';
+import { currentEvent, forecast, options } from '../../life/flow.ts';
+import type { Forecast, OptionView, Result } from '../../life/flow.ts';
 import { STAT_LABEL } from '../../life/life-data.ts';
 import { reviewNotice } from '../../life/career2.ts';
 import type { GameState, PlaceId, Stat, StatMap, Status, TrackId } from '../../life/types.ts';
@@ -55,10 +55,10 @@ export function popupKind(state: GameState, offered: readonly OptionView[]): Pop
   return undefined;
 }
 
-export function choicePage<T>(items: readonly T[], requested = 0) {
-  const count = Math.max(1, Math.ceil(items.length / POPUP_RULES.pageSize));
+export function choicePage<T>(items: readonly T[], requested = 0, size: number = POPUP_RULES.pageSize) {
+  const count = Math.max(1, Math.ceil(items.length / size));
   const page = Number.isFinite(requested) ? Math.max(0, Math.min(count - 1, Math.trunc(requested))) : 0;
-  return { page, count, items: items.slice(page * POPUP_RULES.pageSize, (page + 1) * POPUP_RULES.pageSize) };
+  return { page, count, items: items.slice(page * size, (page + 1) * size) };
 }
 
 /** Prefer sentence/line boundaries, then whitespace. Only an overlong unbroken token is split. */
@@ -116,13 +116,14 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
   const event = kind === 'event' ? currentEvent(state) : null, result = context.result;
   const place = event?.place ?? result?.place ?? WORLD.find(node => node.id === state.board.pos)!.place;
   const education = kind === 'education' ? educationBody(state) : undefined;
-  const title = context.title ?? education?.title ?? result?.luck?.title ?? (kind === 'event' ? event?.title : kind === 'result' ? result?.title : undefined)
+  const title = context.title ?? (offered.some(option => option.id.startsWith('dual:')) ? P.familyMode : undefined) ?? education?.title ?? result?.luck?.title ?? (kind === 'event' ? event?.title : kind === 'result' ? result?.optionId === 'end' ? P.record : result?.title : undefined)
     ?? POPUP_DEFINITIONS[kind].title;
   const notice = kind === 'review' ? reviewNotice(state) : null;
   const lines = [...(context.lines ?? (notice ? [notice.text] : event ? [event.text] : result ? [] : [education?.body ?? PLACES[place].name]))];
   if (kind === 'chapter' || kind === 'retirement') lines.push(...chapterLines(state, context.summary));
   if (kind === 'review' || kind === 'rankup' || kind === 'demotion') {
     lines.push(COPY.review(state.job.perf, state.job.tenure, state.job.warn));
+    if (kind === 'review' && state.job.warn) lines.push(P.reviewRecovery);
   }
   if (result) {
     lines.push(result.luck?.text ?? result.text, ...(!context.rows ? [deltas(result.deltas, result.statusTo),

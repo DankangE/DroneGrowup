@@ -75,7 +75,7 @@ test('happiness starts at 100 and dating is local, costs 30 and uses exact reput
     }
   }
   assert.equal(outcomes.size, 2);
-  assert.ok(!options(at('park')).some(row => row.id === 'date'));
+  assert.ok(options(at('park')).some(row => row.id === 'date'));
   assert.ok(!options(married('culture')).some(row => row.id === 'date'));
   const poor = at(); poor.s.money = 29;
   assert.equal(options(poor).find(row => row.id === 'date')!.enabled, false);

@@ -419,12 +419,12 @@ const finalStates: GameState[] = [];
 function randomRun(seed: number, check: boolean): GameState {
   const pick = chooser(seed), midpoint = 20 + pick(100);
   let state = newGame(seed), steps = 0;
-  const turns = Array.from({ length: 204 }, () => ({ spin: 0, again: 0, tile: 0, extra: 0 }));
+  const turns = Array.from({ length: 204 }, () => ({ spin: 0, again: 0, tile: 0, extra: 0, skipped: 0 }));
   while (state.phase !== 'ended') {
     assert.ok(steps < 204 * 7, `seed ${seed}: stuck`);
     const offered = options(state), enabled = offered.filter(option => option.enabled);
     assert.ok(enabled.length > 0);
-    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|home:(rent|sell|move):[1-6]|home:buy:[3-6](:mortgage)?|biz:(buy|up|sell|check):[a-z_]+(:\d+)?|event:(franchise|retire:[01])|fund:(in|out|kind):\d+|luck:(promote|wait|shortcut:[a-z]+)|graduate:enroll|express:[A-F]-o0|date|wed:[0-2]|dual:[01]|baby|edu:[0-2]|gift:[0-2]|leisure:[a-z]+|skip|end)$/.test(option.id)));
+    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|home:(rent|sell|move):[1-6]|home:buy:[3-6](:mortgage)?|biz:(buy|up|sell|check):[a-z_]+(:\d+)?|event:(franchise|retire:[01])|fund:(in|out|kind):\d+|luck:(promote|wait|shortcut:[a-z]+)|graduate:enroll|express:[A-F]-o0|family:(go:[A-F]-[a-z]\d+|event:(blind_date|proposal|baby_news))|date|wed:[0-2]|dual:[01]|baby|edu:[0-2]|gift:[0-2]|leisure:[a-z]+|skip|end)$/.test(option.id)));
     const exits = enabled.filter(option => option.id === 'skip' || option.id === 'end' || option.id === 'job:none'
       || (option.id.startsWith('ev:') && !option.cost && !option.tire));
     if (state.board.step === 'spin' || state.board.step === 'pick') {
@@ -433,7 +433,7 @@ function randomRun(seed: number, check: boolean): GameState {
       if (state.board.step === 'pick') assert.ok(reachable(state).some(move => move.fare === 0));
     } else assert.ok(exits.length > 0, `seed ${seed}: no free popup exit`);
     const option = enabled[pick(enabled.length)], count = turns[state.turn];
-    if (option.id === 'spin') count.spin++;
+    if (option.id === 'spin' || option.id.startsWith('family:go:')) count.spin++;
     else if (!option.free && (state.phase === 'event' || state.board.step === 'space')
       && /^(act:|ev:|home:|lifestyle:|graduate:|express:|date$|wed:|dual:|baby$|leisure:|skip$)/.test(option.id)) count.tile++;
     else if (state.board.step === 'bonus' && option.id.startsWith('act:')) count.extra++;
@@ -441,6 +441,10 @@ function randomRun(seed: number, check: boolean): GameState {
     const before = check && seed <= 20 ? structuredClone(state) : null;
     const next = choose(state, option.id);
     if (next.result.luck?.id === 'again') count.again++;
+    if (next.state.turn > state.turn + 1) {
+      assert.equal(state.eventId, 'abroad'); assert.equal(next.state.turn - state.turn, 2);
+      for (let turn = state.turn + 1; turn < next.state.turn; turn++) turns[turn].skipped++;
+    }
     if (before) { assert.deepEqual(state, before); allIntegers(next.state); }
     if (check && seed <= 60 && steps >= midpoint && (steps - midpoint) % 23 === 0) {
       const restored = restore(JSON.parse(JSON.stringify(state)));
@@ -451,13 +455,13 @@ function randomRun(seed: number, check: boolean): GameState {
     state = next.state; steps++;
   }
   assert.equal(state.turn, 204); assert.equal(state.phase, 'ended');
-  assert.ok(turns.every(count => count.spin === 1 + count.again && count.tile <= 1 && count.extra <= 1));
-  assert.equal(turns.reduce((sum, count) => sum + count.spin - count.again, 0), 204);
+  assert.ok(turns.every(count => count.spin === 1 + count.again - count.skipped && count.tile <= 1 && count.extra <= 1));
+  assert.equal(turns.reduce((sum, count) => sum + count.spin - count.again + count.skipped, 0), 204);
   assert.deepEqual(options(state), []); allIntegers(state);
   return state;
 }
 
-test('200 seeded random runs end at 204 seasons with only luck-granted extra spins, bounded slots and integer states', t => {
+test('200 seeded random runs end at 204 seasons with luck rerolls, explicit abroad skips, bounded slots and integer states', t => {
   for (let seed = 1; seed <= 200; seed++) finalStates.push(randomRun(seed, true));
   t.diagnostic('200/200 runs: 204 seasons, 204 spins + luck rerolls; tile <= 1, extra <= 1; integers each step for 20 seeds and finals for 200; restore replay for 60 seeds');
 });

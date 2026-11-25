@@ -1,6 +1,7 @@
 import { POLISH as P } from './polish-data.ts';
 export const POLISH_STYLE = `
 .life2 .life2-popup { height:min(407px,55dvh); background:#fff6e0; opacity:1; font-size:14px; line-height:20px; }
+.life2 .life2-popup[data-compact]:not([data-reading]):not([data-details]):not([data-stage]) { grid-template-rows:44px 60px minmax(50px,1fr) 44px; }
 .life2 .life2-popup h2 { font-size:18px; line-height:22px; }
 .life2 .life2-popup-copy p { font-size:14px; line-height:20px; }
 .life2 .life2-popup-choice strong { font-size:14px; line-height:18px; }
@@ -47,8 +48,8 @@ export const POLISH_STYLE = `
 .life2 .life2-tile-callout strong { font-size:20px; line-height:26px; }
 @media(orientation:landscape) and (min-width:900px) { .life2 .life2-popup:not([data-fullscreen]):not([data-notification]) { height:100%; } }
 @media(max-width:899px) {
-  .life2 .life2-shell:has(.life2-popup) { grid-template-rows:78px minmax(412px,1fr) 0 44px; }
-  .life2 .life2-options:has(.life2-popup) { border:0; padding:0; background:transparent; box-shadow:none; }
+  .life2 .life2-shell:has(.life2-popup-host) { grid-template-rows:110px minmax(412px,1fr) 0 44px; }
+  .life2 .life2-options.life2-popup-host { border:0; padding:0; background:transparent; box-shadow:none; }
 }
 @keyframes life2-rank-burst { from { transform:scale(.9); opacity:.2; } 45% { transform:scale(1.03); } to { transform:scale(1); opacity:1; } }
 @keyframes life2-rank-drop { from { transform:translateY(-14px); opacity:.3; } to { transform:translateY(0); opacity:1; } }

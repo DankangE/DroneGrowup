@@ -1,7 +1,8 @@
 import { ECONOMY_KEYS } from './economy.ts';
 import { BOARD_CHOICES, EDU, FAMILY_KEYS as K, FAMILY_RULES as R, FAMILY_TEXT as T, GIFTS,
   HAPPY_YEAR as H, HOMES, INDEPENDENCE, LEISURE, LIFE_RULES, STAT_MAX, WEDDINGS } from './life-data.ts';
-import { WORLD } from './world.ts';
+import { MAPS, PLACES, WORLD } from './world.ts';
+import { SPECIAL_RULES } from './tracks.ts';
 import type { Choice, GameState } from './types.ts';
 
 type Kid = GameState['family']['kids'][number];
@@ -152,4 +153,22 @@ export function advanceFamily(prev: GameState): GameState {
   if (state.s.stamina < R.exhaustedBelow) state.timers[K.exhausted] = (state.timers[K.exhausted] ?? 0) + 1;
   syncEducation(state);
   return yearEndFamily(state);
+}
+
+/** One optional family destination at season start. A visit replaces this season's spin. */
+export function familyVisit(state: GameState): FamilyChoice | null {
+  if (state.phase !== 'action' || state.board.step !== 'spin' || familyPopup(state)) return null;
+  const kind = state.family.marriedAt !== null ? 'baby' : state.family.partnerAt !== null ? 'wedding' : 'date';
+  const target = WORLD.find(node => node.map !== state.board.pos[0] && node.kind === 'life'
+    && (kind === 'baby' ? node.place === R.babyPlace : kind === 'wedding'
+      ? R.weddingPlaces.includes(node.place) : R.datePlaces.includes(node.place)));
+  if (!target) return null;
+  const at = { ...state, board: { ...state.board, step: 'space' as const, pos: target.id } };
+  const activity = familyChoices(at).choices.find(row => row.id === kind || (kind === 'wedding' && row.id === 'wed:0'));
+  if (!activity || activity.locks.length) return null;
+  return { id: `family:go:${target.id}`, locks: [], choice: {
+    title: T.visit(MAPS[target.map].name, PLACES[target.place].name),
+    desc: T.visitDesc(T.visitReasons[kind], SPECIAL_RULES.expressFare), cost: SPECIAL_RULES.expressFare,
+    effect: { text: T.visitReasons[kind] },
+  } };
 }

@@ -5,12 +5,11 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { choose, derived, newGame, options } from '../src/life/engine.ts';
+import { choose, derived, newGame, options } from '../src/life/flow.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
 import { reachable } from '../src/life/move.ts';
 import { destinationDetails } from '../src/ui2/pick.ts';
-import { FAMILY_KEYS } from '../src/life/life-data.ts';
 import { POPUP_GROUPS } from '../src/ui2/popups/data.ts';
 import { SIZES } from './life-check-data.mjs';
 
@@ -52,9 +51,10 @@ export function pagingChecks(page, check, activate = control => control.click())
     } finally { await panel.dispose(); }
   };
   const dismissResults = async name => {
-    let count = 0;
+    let count = 0; const kinds = [];
     while (await popup.count() && (await popup.getAttribute('data-popup') === 'result'
       || await popup.getAttribute('data-presentation') !== null)) {
+      kinds.push(await popup.getAttribute('data-popup'));
       assert.ok(count++ < 100, 'result dismissal terminates');
       await check(`${name} result ${count}`);
       const before = await actual();
@@ -63,6 +63,7 @@ export function pagingChecks(page, check, activate = control => control.click())
       await clickAndRender(close);
       assert.deepEqual(await actual(), before, 'dismissing a result never chooses again');
     }
+    if (kinds.every(kind => ['result', 'luck', 'year-end'].includes(kind))) assert.ok(count <= 1, 'ordinary season has at most one result acknowledgement');
   };
   const prepare = async name => {
     await dismissResults(name);
@@ -91,12 +92,8 @@ export function pagingChecks(page, check, activate = control => control.click())
       // on repeated audits of the same state (e.g. after spin, then season play).
       const { previous, next, choices } = await firstPage();
       const offered = await engineOptions();
-      const state = await actual(), wedding = offered.some(option => option.id.startsWith('wed:'));
-      const hospital = WORLD.find(node => node.id === state.board.pos)?.place === 'hospital';
-      // F4 intentionally reserves this sheet for the wedding, and shows the hospital family-mode prompt once.
-      // Every remaining engine option, including every disabled option, must still occur exactly once.
-      const expected = offered.filter(option => option.id !== 'spin' && !(wedding && option.id.startsWith('lifestyle:'))
-        && !(hospital && state.timers[FAMILY_KEYS.dual] === undefined && option.id.startsWith('dual:')));
+      // Every family mode, including disabled options, must remain reachable through paging.
+      const expected = offered.filter(option => option.id !== 'spin');
       assert.equal(await wheel.count(), 1, 'the bottom bar contains one wheel');
       assert.equal(await wheel.evaluate(node => node.matches('button:not(:disabled)')),
         offered.some(option => option.id === 'spin' && option.enabled), 'spin is available through the wheel exactly when offered');
@@ -308,6 +305,11 @@ export function audit() {
     if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('screen regions overlap');
   }
+  const strip = document.querySelector('.life2-change-strip')?.getBoundingClientRect();
+  if (strip) for (const row of document.querySelectorAll('.life2-stats, .life2-funds, .life2-grades')) {
+    const box = row.getBoundingClientRect();
+    if (strip.top < box.bottom && strip.bottom > box.top) issues.push('money change overlaps HUD rows');
+  }
   const popup = document.querySelector('.life2-popup');
   if (popup) {
     const sheet = popup.getBoundingClientRect();
@@ -324,11 +326,7 @@ export function audit() {
     }
     if (vw < 900 && !popup.hasAttribute('data-fullscreen')) {
       const pawn = document.querySelector('[aria-current=location]').getBoundingClientRect();
-      const hud = document.querySelector('.life2-hud').getBoundingClientRect();
-      const bottom = document.querySelector('.life2-bottom').getBoundingClientRect();
-      const fitsAbove = hud.bottom + 6 + sheet.height + 6 <= pawn.top;
-      const fitsBelow = pawn.bottom + 6 <= bottom.top - 6 - sheet.height;
-      if ((fitsAbove || fitsBelow) && pawn.bottom > sheet.top && pawn.top < sheet.bottom) issues.push('sheet hides a pawn row that could remain visible');
+      if (pawn.bottom > sheet.top && pawn.top < sheet.bottom) issues.push('sheet hides the pawn row');
     }
   }
   return [...new Set(issues)];
@@ -390,8 +388,8 @@ async function fix3Checks(page, load, check) {
     await load(run);
     if (id === 'spin') await page.locator('.life2-wheel').click(); else await page.locator('[data-space="A-o12"][data-dest]').click();
     await expect('luck'); await close();
-    if (choose(run, id).result.upkeep) { await expect('result'); await close(); }
-    await expect('bonus');
+    assert.equal(await popup().count(), 0, 'luck, settlement and automatic close need one acknowledgement');
+    assert.equal((await page.evaluate(() => window.__life.state())).board.step, 'spin');
   }
   // Low pawn rows exercise top docking at each phone size.
   for (const node of WORLD.filter(node => node.map === 'A' && node.y >= 70)) {
@@ -432,6 +430,31 @@ async function fix4Checks(page, load, check) {
   await page.locator('[data-action=popup-close]').click();
   assert.equal(await page.locator('#app').getAttribute('data-screen'), 'ending');
   console.log('  F4: four child milestones, retirement confirmation/card, labelled text pages checked');
+}
+
+// F5 fixtures retain every size/target/overflow check; all navigation uses real clicks.
+async function fix5Checks(page, load, check) {
+  const starter = choose(newGame(1), 'start:self').state;
+  for (const node of WORLD.filter(row => row.map === 'A')) {
+    const s = structuredClone(starter); s.board.pos = node.id;
+    s.s.money = 1017; s.s.debt = 1176;
+    await load(s); await page.locator('[data-nav=phone]').click();
+    await checkTextPages(page, '[data-action=popup-text-next]', () => check(`F5 pawn ${node.id}`));
+    assert.match(await page.locator('.life2-funds').textContent(), /1,017.*1,176/);
+    assert.equal(await page.locator('[data-debt-state=owing]').count(), 1);
+  }
+  const s = structuredClone(starter); s.turn = 16; s.s.money = 5000;
+  s.family.partnerAt = 8; s.family.marriedAt = 12; s.home = { map: 'A', tier: 3, deposit: 0 };
+  await load(s);
+  const route = options(s).find(row => row.id.startsWith('family:go:'));
+  assert.ok(route?.enabled, 'baby invitation is offered from A');
+  await page.locator(`[data-option="${route.id}"]`).click();
+  const expected = choose(s, route.id).state;
+  await page.waitForFunction(() => !document.querySelector('[data-action=skip-move]'));
+  assert.deepEqual(await page.evaluate(() => window.__life.state()), expected);
+  await pagingChecks(page, check).checkPages('F5 all hospital family choices');
+  assert.deepEqual(options(expected).filter(row => row.id.startsWith('dual:')).map(row => row.title), ['가정 중심', '맞벌이']);
+  console.log('  F5: every A pawn row, 55% sheets, debt HUD and one-tap family travel with all dual choices checked');
 }
 
 // T18 isolated popup section: no changes to the existing map/movement fixtures.
@@ -632,6 +655,7 @@ async function main() {
         await load(event); await checkPages('event');
         await fix3Checks(page, load, check);
         await fix4Checks(page, load, check);
+        await fix5Checks(page, load, check);
         const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];
         assertPopupCoverage(popupKinds);
         // Fixture choices autosave. Entry checks need a fresh run, independent of the last fixture.

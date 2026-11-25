@@ -40,6 +40,7 @@ export const EVENT_TEXT = {
   unchanged: '변화 없음.', success: '성공', fail: '실패', divider: ' · ',
   cost: (n: number) => `비용 ${n}만원. `, chance: (n: number) => `기본 확률 ${n}%. `,
   dog: '반려견 생활비', rent: '월세 인상분', salary: '사건 급여 조정', improvedRent: '리모델링 임대 수입',
+  carRepaired: '차량 수리를 마쳐 이동 보너스를 다시 쓸 수 있다.',
   estate: '이번 거래의 주택 가격', retire: ['구직자로 새 출발', '은퇴한다'], franchise: '협상한 조건으로 가맹',
   fullStamina: '체력을 상한까지 회복한다.', partner: '인연이 생겼다.',
   values: { wedding: '결혼식', estate: '부동산', bargain: '주택 매입 5% 할인', headhunter: '같은 직급 인정, 이직 시 급여 2회분',
@@ -54,7 +55,8 @@ export const EVENT_TEXT = {
 } as const;
 export const effect = (add: StatMap = {}, extra: EventExtra = {}): LifeEffect => ({
   add, extra, text: [...Object.entries(add).map(([key, n]) => `${STAT_LABEL[key as keyof StatMap]} ${n! >= 0 ? '+' : ''}${n}`),
-    ...Object.entries(extra).map(([key, n]) => `${EVENT_TEXT.extra[key as keyof EventExtra]} ${typeof n === 'string' ? EVENT_TEXT.values[n] ?? n : n}`)]
+    ...Object.entries(extra).map(([key, n]) => key === 'carRepair' ? EVENT_TEXT.carRepaired
+      : `${EVENT_TEXT.extra[key as keyof EventExtra]} ${typeof n === 'string' ? EVENT_TEXT.values[n] ?? n : n}`)]
     .join(EVENT_TEXT.divider) || EVENT_TEXT.unchanged,
 });
 export function answer(title: string, add: StatMap = {}, cost = 0, extra: EventExtra = {}): LifeChoice {

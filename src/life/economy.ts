@@ -1,3 +1,4 @@
+import { josa } from './text.ts';
 // T06: accounting and service choices. Local tables avoid edits to parallel tickets' data files.
 import { ITEMS, RULES } from './data.ts';
 import type { ItemKind, OptionKind, UpkeepLine } from './base-types.ts';
@@ -32,8 +33,8 @@ export const ECONOMY_TEXT = {
   staff: '직원 급여', office: '사옥 운영비', lessons: '수강료 수입', teachers: '교관 급여', campus: '실습장 운영비',
   lap: '한 바퀴 수당', liquidation: '자산을 정리해 빚을 갚았다.',
   status: { student: '학생', jobless: '구직자', working: '재직 중', retired: '은퇴' },
-  buy: (name: string) => `${name} 구입`, bought: (name: string) => `${name}을(를) 들였다.`,
-  sell: (name: string) => `${name} 판매`, sold: (name: string) => `${name}을(를) 팔았다.`,
+  buy: (name: string) => `${name} 구입`, bought: (name: string) => `${josa(name, '을/를')} 들였다.`,
+  sell: (name: string) => `${name} 판매`, sold: (name: string) => `${josa(name, '을/를')} 팔았다.`,
   price: (amount: number) => `${amount}만원. 계절을 사용하지 않는다.`,
   repair: '기체 정비', repaired: '모터와 프로펠러를 점검했다.',
   repairDesc: (condition: number) => `기체 상태 ${condition}% → 100%.`,

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { grade, GRADED_STATS } from '../src/life/grades.ts';
-import { choose, currentEvent, forecast, newGame, options, reachable } from '../src/life/engine.ts';
+import { choose, currentEvent, forecast, newGame, options, reachable } from '../src/life/flow.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
 import { mountLife } from '../src/ui2/app.ts';
 import { hud } from '../src/ui2/hud.ts';
-import { derived } from '../src/life/engine.ts';
+import { derived } from '../src/life/flow.ts';
 import { destinationDetails, PICK_STYLE } from '../src/ui2/pick.ts';
 import { COPY } from '../src/ui2/popups/data.ts';
 import { popupModel } from '../src/ui2/popups/model.ts';
@@ -96,7 +96,7 @@ test('F1 actual event story, responses and roll result remain readable before co
   assert.equal(root.dataset.phase, 'result'); assert.equal(panelAt(root).dataset.popup, 'result');
   assert.equal(root.querySelector('[data-result-wheel]')!.textContent, String(expected.result.roll!.value));
   assert.ok(readCopy(root).includes(expected.result.text)); assert.deepEqual(api.state(), expected.state);
-  close(root); assert.equal(panelAt(root).dataset.popup, 'bonus');
+  close(root); assert.equal(panelAt(root), undefined); assert.equal(api.state().board.step, 'spin');
 }));
 
 test('F1 deterministic results display choose().result and dismissal never applies it twice', () => app((root, api) => {
