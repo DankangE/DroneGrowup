@@ -133,18 +133,22 @@ export const endingInfo = (id: EndingId): EndingDef => ENDINGS.find((e) => e.id 
 
 // ---------------------------------------------------------------- conditions and views
 
-function unmet(state: GameState, cond: Cond | undefined): { locks: string[]; missing: OptionView['missing'] } {
+function unmet(state: GameState, cond: Cond | undefined, rankStop = false): { locks: string[]; missing: OptionView['missing'] } {
   const locks: string[] = [];
   const missing: OptionView['missing'] = [];
   if (!cond) return { locks, missing };
   if (cond.stage && !cond.stage.includes(state.stage)) locks.push('지금 신분으로는 할 수 없음');
   for (const [k, need] of entries(cond.min)) {
+    if (rankStop && (k === 'money' || k === 'stamina')) continue;
     if (state.s[k] < need) {
       locks.push(`${STAT_LABEL[k]} ${need} 이상 필요 (현재 ${state.s[k]})`);
       missing.push({ stat: k, need });
     }
   }
-  for (const [k, most] of entries(cond.max)) if (state.s[k] > most) locks.push(`${STAT_LABEL[k]} ${most} 이하일 때만 가능`);
+  for (const [k, most] of entries(cond.max)) {
+    if (rankStop && (k === 'money' || k === 'stamina')) continue;
+    if (state.s[k] > most) locks.push(`${STAT_LABEL[k]} ${most} 이하일 때만 가능`);
+  }
   for (const f of cond.flags ?? []) if (!state.flags.includes(f)) locks.push(`${FLAG_LABEL[f] ?? f} 필요`);
   for (const f of cond.notFlags ?? []) if (state.flags.includes(f)) locks.push(`이미 ${FLAG_LABEL[f] ?? f} 보유`);
   return { locks, missing };
@@ -467,7 +471,7 @@ function move(state: GameState, result: Result, steps: number) {
     movement.landed = b.pos;
     if (nodeAt(state).kind === 'pay') payLedger(state, result);
     if (BOARD.forks.some(f => f.join === b.pos)) b.forks++;
-    if (steps && nodeAt(state).kind === 'rankup' && stops.some(a => met(state, a.when) && met(state, a.need))) {
+    if (steps && nodeAt(state).kind === 'rankup' && stops.some(a => met(state, a.when) && !unmet(state, a.need, true).locks.length)) {
       movement.stop = 'rankup';
       result.notes.push('승급에 도전할 수 있어 이곳에 멈췄다.');
       break;

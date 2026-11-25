@@ -259,7 +259,8 @@ test('the tables are consistent and no event can trap the player', () => {
     assert.ok(e.choices.some((c) => !c.cost && !c.need), `${e.id} has a choice that is always open`);
     assert.ok(e.choices.some((c) => c.roll) || e.choices.length >= 2);
   }
-  assert.deepEqual(Object.values(SPACE_MENU).flat().sort(), ids.sort());
+  for (const menu of Object.values(SPACE_MENU)) assert.equal(new Set(menu).size, menu.length);
+  assert.deepEqual([...new Set(Object.values(SPACE_MENU).flat())].sort(), ids.sort());
   for (const stage of Object.keys(STAGES) as Stage[]) {
     const places = BOARD_PLACES[stage];
     assert.equal(places.length, 22);
@@ -471,14 +472,14 @@ test('unpaid seasons keep their individual lines until a pay space is crossed', 
     assert.equal(next.state.s.debt, 100);
     state = next.state;
   }
-  assert.deepEqual(state.board.ledger, { '급여': 260, '생활비': -50, '대출 이자': -4 });
+  assert.deepEqual(state.board.ledger, { '급여': 260, '생활비': -50, '대출 이자': -2 });
   const worth = derived(state).netWorth;
   state.board.pos = 9;
   const next = choose({ ...state, rng: 9 }, 'spin');
   assert.deepEqual(next.result.move?.path, [10, 11]);
   assert.equal(next.result.season, undefined);
-  assert.equal(next.result.upkeep?.total, 206);
-  assert.equal(next.state.s.money, 206);
+  assert.equal(next.result.upkeep?.total, 208);
+  assert.equal(next.state.s.money, 208);
   assert.equal(derived(next.state).netWorth, worth);
   assert.deepEqual(next.state.board.ledger, {});
   state.board.ledger = { '생활비': -55 };
@@ -517,6 +518,77 @@ test('contest wins count only rolled successes from contest spaces', () => {
   assert.equal(choose({ ...state, rng: 7 }, 'ev:0').state.board.contests, 0);
 });
 
+test('a rank stop also ignores cash and stamina written as explicit requirements', () => {
+  const exam = ACTIONS.find(a => a.id === 'st_exam')!;
+  const original = exam.need;
+  try {
+    exam.need = { min: { ...original?.min, money: 500, stamina: 50 }, flags: ['member'] };
+    const state = at('student', { theory: 90, skill: 90, money: 0, stamina: 0 }, [], 4);
+    state.board.pos = 18;
+    assert.notEqual(choose(state, 'spin').result.move?.stop, 'rankup');
+    state.flags.push('member');
+    const landed = choose(state, 'spin');
+    assert.equal(landed.result.move?.stop, 'rankup');
+    assert.equal(option(landed.state, 'st_exam').enabled, false);
+  } finally {
+    exam.need = original;
+  }
+});
+
+test('paydays and final settlement exactly cover all accrued lines over a career', () => {
+  let state = newGame(7919);
+  const rand = botRandom(1);
+  const accrued: Record<string, number> = {}, paid: Record<string, number> = {};
+  let settlements = 0;
+  while (state.phase !== 'ended') {
+    const next = choose(state, pick(POLICIES.employee, state, rand));
+    for (const { label, amount } of next.result.season?.accrual ?? []) accrued[label] = (accrued[label] ?? 0) + amount;
+    if (next.result.upkeep) {
+      const { lines, total } = next.result.upkeep;
+      assert.equal(total, lines.reduce((sum, l) => sum + l.amount, 0));
+      for (const { label, amount } of lines) paid[label] = (paid[label] ?? 0) + amount;
+      settlements++;
+    }
+    state = next.state;
+  }
+  assert.ok(settlements > 1 && accrued['급여'] > 0 && accrued['생활비'] < 0);
+  assert.deepEqual(paid, accrued);
+  assert.deepEqual(state.board.ledger, {});
+});
+
+test('landing opens the bonus menu whenever the stage has an eligible local action', () => {
+  for (const stage of Object.keys(STAGES) as Stage[]) {
+    for (const node of BOARD.nodes) {
+      const state = at(stage, { money: 5000, xp: 500, drone: 3, car: 2, gear: 2 }, [], 7);
+      const previous = BOARD.nodes.find(n => n.next.includes(node.id))!;
+      state.board.pos = previous.id;
+      if (previous.kind === 'fork') state.board.route = previous.next.indexOf(node.id);
+      let landed = choose(state, 'spin').state;
+      if (landed.phase === 'event') {
+        const id = options(landed).find(o => o.enabled && !o.cost)!.id;
+        landed = choose(landed, id).state;
+      } else if (landed.board.step === 'space') {
+        landed = choose(landed, node.kind === 'fork' ? 'route:0' : 'skip').state;
+      }
+      const local = actionViews(landed).filter(o => o.enabled && o.place === BOARD_PLACES[landed.stage][node.id]);
+      if (local.length) {
+        assert.equal(landed.board.step, 'bonus', stage + '/' + node.id);
+        assert.deepEqual(options(landed).filter(o => o.enabled && (o.kind === 'job' || o.kind === 'action')).map(o => o.id),
+          local.map(o => o.id));
+      }
+    }
+  }
+});
+
+test('a cross-device save without board resumes the same career and calendar at node zero', () => {
+  const raw = at('employee', { money: 2300, xp: 600, rank: 1 }, ['licensed']);
+  raw.turn = 43;
+  const { board, ...stripped } = raw;
+  const resumed = restore(stripped)!;
+  assert.deepEqual(resumed, { ...stripped, board });
+  assert.ok(choose(resumed, 'spin').result.move?.path.length);
+});
+
 test('finalRank includes the final accrual, caps combined bonuses and awards a display grade', () => {
   const state = bonus(at('employee', { money: 600 }));
   state.turn = 119;
@@ -545,14 +617,16 @@ test('every step of 300 random runs offers an enabled non-free choice', () => {
   for (let seed = 1; seed <= 300; seed++) assert.equal(botRun('random', seed * 7919).phase, 'ended');
 });
 
-test('auto-advance skips locked spaces and retains a money-only bonus for a bank visit', () => {
+test('a review offers practice, skips a locked bonus and retains a money-only bonus for a bank visit', () => {
   const state = newGame(7); // One step onto rank-up, with no exam prerequisites.
   state.board.pos = 6;
   const next = choose(state, 'spin');
   assert.equal(next.result.move?.landed, 7);
-  assert.equal(next.state.turn, 1);
-  assert.equal(next.state.board.step, 'spin');
-  assert.equal(next.state.s.money, state.s.money);
+  assert.equal(option(next.state, 'st_theory').enabled, true);
+  const skippedReview = choose(next.state, 'skip').state;
+  assert.equal(skippedReview.turn, 1);
+  assert.equal(skippedReview.board.step, 'spin');
+  assert.equal(skippedReview.s.money, state.s.money);
 
   const broke = space(at('student', { theory: 90, skill: 90, money: 0 }), 7);
   const skipped = choose(broke, 'skip');

@@ -38,6 +38,11 @@ NalidaGame server side needs to register the game. Nothing has been changed in t
 
 ## Progress (`PUT /progress`, last write wins on `progressAt`)
 
+Variant C uses the existing progress API. The server's `cleanRun` copies only known keys, so a
+cross-device load drops `run.board`. The client’s `restore()` keeps the saved career, calendar and stats
+and supplies a fresh board at node 0, ready to spin, with an empty ledger and zero board achievements.
+Local saves include the board and can resume mid-move.
+
 ```jsonc
 {
   "run": null | {                    // the unfinished run, or null between runs

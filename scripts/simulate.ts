@@ -5,6 +5,8 @@ import { pathToFileURL } from 'node:url';
 import * as data from '../src/game/data.ts';
 import { POLICIES, pick, botRandom } from '../src/game/bots.ts';
 import { choose, finalRank, netWorth, newGame, options } from '../src/game/engine.ts';
+import type { SpaceKind, Stage } from '../src/game/types.ts';
+import { forkBalance } from './fork-balance.ts';
 
 if (process.env.SIM_TUNE) {
   const tuning = await import(pathToFileURL(resolve(process.env.SIM_TUNE)).href);
@@ -16,6 +18,9 @@ const names = Object.keys(POLICIES);
 const problems = new Set<string>();
 const ages = [25, 30, 35, 40, 45, 50];
 const wealth = ages.map((): number[] => []);
+const plannerWealth = ages.map((): number[] => []);
+const finances = new Map<string, { cash: number[]; debt: number[] }>();
+const landings = new Map<SpaceKind, number>();
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 function median(xs: number[]) {
   const sorted = [...xs].sort((a, b) => a - b);
@@ -23,7 +28,10 @@ function median(xs: number[]) {
 }
 const pct = (n: number, total: number) => (100 * n / total).toFixed(1) + '%';
 const row = (...values: (string | number)[]) => console.log(values.join('\t'));
-const counts = () => ({ seasons: 0, spins: 0, space: 0, bonus: 0, events: 0, pays: 0, routes: [[0, 0], [0, 0]] });
+const counts = () => ({
+  seasons: 0, spins: 0, space: 0, offeredSpace: 0, offeredBonus: 0, playableBonus: 0,
+  bonus: 0, events: 0, pays: 0, routes: [[0, 0], [0, 0]],
+});
 const activity = names.map(counts);
 const all = counts();
 const maxima = { turns: 0, rollsOver: -Infinity, flightsOver: -Infinity, acts: 0, score: 0, scoreOver: -Infinity };
@@ -35,6 +43,7 @@ function run(name: string, seed: number, forced?: number) {
   const rand = botRandom(seed);
   const c = forced === undefined ? activity[index] : counts();
   let seconds = 0, space = 0, bonus = 0, spins = 0, steps = 0;
+  let sawBonus = false;
   while (state.phase !== 'ended') {
     if (++steps > 20000) throw new Error(`no end: ${name} seed ${seed}`);
     const opts = options(state);
@@ -44,6 +53,13 @@ function run(name: string, seed: number, forced?: number) {
     if (!o) throw new Error(`unplayable: ${name} seed ${seed} picked ${id}`);
     const { state: next, result } = choose(state, id);
     const step = state.board.step;
+    if (!o.free && (state.phase === 'event' || (step === 'space' && !id.startsWith('route:')))) c.offeredSpace++;
+    // A money-locked menu can open before a loan makes its first action playable.
+    if (!sawBonus && state.phase === 'action' && step === 'bonus') {
+      sawBonus = true;
+      c.offeredBonus++;
+      if (opts.some(o => o.enabled && (o.kind === 'action' || o.kind === 'job'))) c.playableBonus++;
+    }
     if (o.free) seconds += 4;
     else if (id === 'spin') { spins++; c.spins++; seconds += 3; }
     else if (state.phase === 'event') { space++; c.space++; c.events++; seconds += 8; }
@@ -56,6 +72,10 @@ function run(name: string, seed: number, forced?: number) {
     } else if (id === 'end') seconds++;
     else { bonus++; c.bonus++; seconds += 4.5; }
     if (result.move) {
+      if (forced === undefined && result.move.stop !== 'fork') {
+        const kind = BOARD.nodes[result.move.landed].kind;
+        landings.set(kind, (landings.get(kind) ?? 0) + 1);
+      }
       if (result.move.stop !== 'fork' && next.phase !== 'event' && next.board.step !== 'space') seconds += 2;
     }
     if (result.upkeep) {
@@ -71,8 +91,19 @@ function run(name: string, seed: number, forced?: number) {
       if (spins !== 1 || next.turn !== state.turn + 1) throw new Error('expected one spin per season');
       c.seasons++;
       space = bonus = spins = 0;
+      sawBonus = false;
       const ageIndex = ages.findIndex(age => next.turn === (age - RULES.startAge) * RULES.seasons.length);
-      if (ageIndex >= 0 && forced === undefined) wealth[ageIndex].push(netWorth(next));
+      if (ageIndex >= 0 && forced === undefined) {
+        wealth[ageIndex].push(netWorth(next));
+        if (policy.style === 'planner') plannerWealth[ageIndex].push(netWorth(next));
+        if (ageIndex < 2) {
+          const key = ages[ageIndex] + '/' + next.stage;
+          const sample = finances.get(key) ?? { cash: [], debt: [] };
+          sample.cash.push(next.s.money);
+          sample.debt.push(next.s.debt);
+          finances.set(key, sample);
+        }
+      }
     }
     state = next;
   }
@@ -97,12 +128,16 @@ for (const { id } of ENDINGS) {
     group.length ? Math.max(...group.map(r => r.score)) : '—', group.length ? median(group.map(r => 20 + Math.floor(r.turn / 4))) : '—');
   if (share < 0.02 || share > 0.30) problems.add(`ending share ${id} ${pct(group.length, results.length)} (range 2..30%)`);
 }
-row('\npolicy (%)', ...ENDINGS.map(e => e.id));
-for (const name of names) row(name, ...ENDINGS.map(e => (100 * results.filter(r => r.name === name && r.ending === e.id).length / runs).toFixed(1)));
+row('\npolicy (%)', ...ENDINGS.map(e => e.id), 'goal share');
+for (const name of names) {
+  const shares = ENDINGS.map(e => results.filter(r => r.name === name && r.ending === e.id).length);
+  row(name, ...shares.map(n => (100 * n / runs).toFixed(1)), POLICIES[name].style === 'planner'
+    ? pct(shares[ENDINGS.findIndex(e => e.id === name)], runs) : '—');
+}
 
-row('\npolicy', 'spins/s', 'acts/s', 'bonus/s', 'events/s', 'pay/s', 'fork 1 A/B %', 'fork 2 A/B %');
+row('\npolicy', 'spins/s', 'acts/s', 'bonus/s', 'events/s', 'pay/s', 'fork 1 A/B %', 'fork 2 A/B %', 'mean seasons', 'mean minutes');
 for (const [i, c] of activity.entries()) {
-  for (const key of ['spins','seasons','space','bonus','events','pays'] as const) all[key] += c[key];
+  for (const key of ['spins','seasons','space','offeredSpace','offeredBonus','playableBonus','bonus','events','pays'] as const) all[key] += c[key];
   for (const [j, pair] of c.routes.entries()) pair.forEach((n, k) => all.routes[j][k] += n);
   // Full rest is gone. Gate each planner on the fraction of seasons in which it takes a bonus action.
   if (POLICIES[names[i]].style === 'planner' && (c.bonus / c.seasons < 0.30 || c.bonus / c.seasons > 0.95)) {
@@ -110,30 +145,45 @@ for (const [i, c] of activity.entries()) {
   }
 }
 for (const [i, c] of [...activity, all].entries()) {
+  const group = names[i] ? results.filter(r => r.name === names[i]) : results;
   row(names[i] ?? 'overall', ...[c.spins, c.space + c.bonus, c.bonus, c.events, c.pays].map(n => (n / c.seasons).toFixed(3)),
-    ...c.routes.map(pair => pair.map(n => pct(n, pair[0] + pair[1])).join('/')));
+    ...c.routes.map(pair => pair.map(n => pct(n, pair[0] + pair[1])).join('/')),
+    mean(group.map(r => r.turn)).toFixed(1), mean(group.map(r => r.minutes)).toFixed(2));
 }
 const actions = (all.space + all.bonus) / all.seasons;
 if (actions < 1 || actions > 2) problems.add(`mean actions/season ${actions.toFixed(3)} (range 1..2)`);
 const minutes = results.map(r => r.minutes);
+if (mean(minutes) < 18 || mean(minutes) > 27) problems.add('mean minutes outside 18..27');
 row('\nminutes/run (mean, median)', mean(minutes).toFixed(2), median(minutes).toFixed(2));
-row('age', 'runs reaching age', 'mean net worth', 'median net worth');
-ages.forEach((age, i) => row(age, wealth[i].length, mean(wealth[i]).toFixed(1), median(wealth[i])));
+row('age', 'runs reaching age', 'mean net worth', 'median net worth', 'planner runs', 'planner median');
+ages.forEach((age, i) => row(age, wealth[i].length, mean(wealth[i]).toFixed(1), median(wealth[i]), plannerWealth[i].length, median(plannerWealth[i])));
+row('\nage', 'stage', 'runs', 'median cash', 'median debt');
+for (const age of ages.slice(0, 2)) for (const stage of Object.keys(data.STAGES) as Stage[]) {
+  const sample = finances.get(age + '/' + stage);
+  row(age, stage, sample?.cash.length ?? 0, sample ? median(sample.cash) : '—', sample ? median(sample.debt) : '—');
+}
+row('\nlanding', 'count', 'share');
+for (const [kind, count] of [...landings].sort()) row(kind, count, pct(count, all.spins));
+row('\nspace taken/offered', 'bonus offered/spin', 'bonus playable on arrival/spin', 'bonus taken/spin', 'bonus taken/offered');
+row(pct(all.space, all.offeredSpace), pct(all.offeredBonus, all.spins), pct(all.playableBonus, all.spins),
+  pct(all.bonus, all.spins), pct(all.bonus, all.offeredBonus));
 row('\nmean forks', 'mean contests', 'mean rankups', 'mean achievement points', 'credited share of score');
 row(...(['forks','contests','rankups','points'] as const).map(k => mean(results.map(r => r[k])).toFixed(2)),
   pct(mean(results.map(r => r.credited)), mean(results.map(r => r.score))));
 
 row('\nforced route (100 seeds per route)', 'A mean score', 'A goal share', 'B mean score', 'B goal share');
-const winners: number[] = [];
+const routeScores: { a: number; b: number }[] = [];
 for (const name of names.filter(n => POLICIES[n].style === 'planner')) {
   const [a,b] = [0,1].map(route => {
     const group = Array.from({ length: 100 }, (_, i) => run(name, i + 1, route));
     return { score: mean(group.map(r => r.score)), goals: group.filter(r => r.ending === name).length };
   });
   row(name, a.score.toFixed(1), pct(a.goals, 100), b.score.toFixed(1), pct(b.goals, 100));
-  winners.push(a.score > b.score && a.goals > b.goals ? 1 : b.score > a.score && b.goals > a.goals ? -1 : 0);
+  routeScores.push({ a: a.score, b: b.score });
 }
-if (Math.abs(winners.reduce((a,b) => a+b, 0)) === winners.length) console.log('WARNING: one route wins both metrics for every planner');
+const balance = forkBalance(routeScores);
+row('planners with higher mean score', balance.aWins, '—', balance.bWins, '—');
+if (!balance.passed) problems.add('each route needs a higher mean score for at least two planners');
 row('\nAPI maxima (including forced runs)', ...Object.keys(maxima));
 row('observed', ...Object.values(maxima));
 row('limit', 120, 0, 0, 2, 340000, 0);
