@@ -1,6 +1,6 @@
-// T04 data: life-board.md §§6.1–6.2. Percentages stay integral.
+// Career and F2 action tables: life-board.md §§5–6. Percentages stay integral.
 import { ACTIONS as V1_ACTIONS } from '../game/data.ts';
-import type { Choice, Cond, Stat, TrackDef, TrackId } from './types.ts';
+import type { ActionDef, Choice, Cond, PlaceId, Stat, StatMap, TrackDef, TrackId } from './types.ts';
 
 const need = (id: string): Cond => structuredClone(V1_ACTIONS.find(action => action.id === id)!.need!);
 const rank = (title: string, salary: number, condition: Cond = {}, tenure = 0, jobPct?: number): TrackDef['ranks'][number] =>
@@ -128,6 +128,45 @@ export const TRACKS: TrackDef[] = [
     ] },
 ];
 
+// Basic duties never require personal equipment or cash. Salary is paid by seasonal accounting.
+// Training/preparation gains are comparable to the imported study actions, without their fees.
+const PRACTICE: Record<TrackId, { place: PlaceId; title: string; add: StatMap }> = {
+  service: { place: 'town', title: '매장 운영 연습', add: { xp: 8, net: 2, biz: 2 } },
+  delivery: { place: 'logistics', title: '배송 동선 연습', add: { xp: 8, biz: 3, net: 1 } },
+  mechanic: { place: 'garage', title: '정비 실습', add: { skill: 5, theory: 5, xp: 2 } },
+  clerk: { place: 'office', title: '사무 실무 연습', add: { xp: 8, net: 2, biz: 2 } },
+  pilot: { place: 'airfield', title: '비행 절차 연습', add: { skill: 6, theory: 4, rep: 2 } },
+  employee: { place: 'hq', title: '업무 보고 연습', add: { xp: 8, biz: 2, rep: 2 } },
+  instructor: { place: 'academy', title: '수업 진행 연습', add: { teach: 6, theory: 4, rep: 2 } },
+  public: { place: 'city_hall', title: '항공안전 행정 연습', add: { xp: 6, theory: 4, net: 2 } },
+  rescue: { place: 'fire_base', title: '구조 절차 연습', add: { skill: 6, xp: 4, rep: 2 } },
+  creator: { place: 'studio', title: '영상 구성 연습', add: { skill: 4, biz: 4, rep: 4 } },
+  engineer: { place: 'lab', title: '기체 설계 연습', add: { theory: 6, xp: 4, biz: 2 } },
+  inspector: { place: 'bridge', title: '시설 점검 연습', add: { skill: 6, xp: 4, rep: 2 } },
+  film: { place: 'studio', title: '촬영 동선 연습', add: { skill: 6, rep: 4, net: 2 } },
+  atc: { place: 'airport', title: '관제 상황 연습', add: { theory: 6, xp: 4, net: 2 } },
+  racer: { place: 'raceway', title: '코너 주행 연습', add: { skill: 8, rep: 4 } },
+  solo: { place: 'office', title: '견적과 계약 연습', add: { biz: 6, rep: 4, net: 2 } },
+  company: { place: 'hq', title: '조직 운영 연습', add: { biz: 6, net: 4, rep: 2 } },
+  academy: { place: 'academy', title: '교육과정 설계 연습', add: { teach: 6, rep: 4, biz: 2 } },
+  director: { place: 'assoc', title: '회의 진행 연습', add: { net: 6, rep: 4, support: 2 } },
+};
+export const TRACK_WORK: ActionDef[] = TRACKS.map(track => ({
+  id: `work_${track.id}`, place: PRACTICE[track.id].place, when: { status: ['working'], track: [track.id] },
+  title: '근무', desc: `${track.name}의 기본 업무. 일감 칸은 성공하면 성과 +8, 실패하면 −4. 추가 행동은 성과 +5.`, tire: 20,
+  roll: { base: 80, success: { text: '맡은 업무를 마쳤다.', add: { xp: 5, rep: 1 } },
+    fail: { text: '업무를 마치지 못해 보완할 점을 정리했다.', add: { xp: 2 } } },
+}));
+export const TRACK_TRAIN: ActionDef[] = TRACKS.map(track => ({
+  id: `train_${track.id}`, place: PRACTICE[track.id].place, when: { status: ['working'], track: [track.id] },
+  title: PRACTICE[track.id].title, desc: `${track.name}의 직무 능력을 익힌다.`, tire: 20,
+  effect: { text: '직무 연습을 마치고 배운 내용을 정리했다.', add: PRACTICE[track.id].add },
+}));
+export const TRACK_PREP: ActionDef[] = TRACK_TRAIN.map(action => ({
+  ...action, id: action.id.replace('train_', 'prep_'), title: '다음 직급 준비',
+  desc: '승급 심사를 받을 수 없어 직무 능력을 연습한다.',
+}));
+
 export const JOB_RULES = {
   candidates: 6, locked: 2, wait: 4, entryRank: 0, careerRank: 1, entryPerf: 50,
   specialistTier: 3, guidanceTier: 4, startMoney: 500, studySeasons: 8, studyPct: 150, selfPct: 120,
@@ -138,7 +177,7 @@ export const JOB_RULES = {
   partTimeActions: ['st_parttime', 'st_assist'],
   started: 'life_started', schoolUntil: 'school_until', selfUntil: 'self_until',
   popup: 'job_offer', popupStart: 1, popupPassed: 2, popupEvent: 3, popupHeadhunter: 4,
-  degree: 'degree',
+  degree: 'degree', retirementBase: 'career_retirement_base', retirementDeferralSeasons: 1,
 } as const;
 
 export const START_CHOICES: Record<'school' | 'work' | 'self', Choice> = {
@@ -156,6 +195,7 @@ export const JOB_CHOICES = {
     effect: { text: '퇴사하고 구직자가 되었다.', status: 'jobless', track: null } },
 } satisfies Record<string, Choice>;
 export const JOB_TEXT = {
+  deferRetirement: '한 계절만 정년 결정을 미룬다. 다음 계절에는 자동으로 은퇴하고 연금을 받는다.',
   age: (max: number) => `${max}세 이하일 때 입사할 수 있습니다.`,
   wait: (seasons: number) => `이직까지 ${seasons}계절을 기다려야 합니다.`,
   retired: '은퇴 신분으로는 입사할 수 없습니다.',

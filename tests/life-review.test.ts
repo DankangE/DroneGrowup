@@ -374,13 +374,14 @@ test('review popups report missing maintenance and have a free exit that preserv
   assert.equal(closed.board.step, next.board.step); assert.equal(closed.rng, next.rng); saved(closed);
 });
 
-test('retirement popup can be dismissed for the season without losing the job or trapping the run', () => {
+test('retirement popup permits one season of deferral then automatically grants a pension', () => {
   const state = worker(); age(state, 60);
   const next = choose(frozen(state), 'job:none').state;
   assert.equal(next.track, state.track); assert.equal(next.s.money, state.s.money);
   assert.equal(next.turn, state.turn); assert.ok(options(next).some(row => row.id === 'skip' && row.enabled));
   const later = close(next);
-  assert.ok(options(later).some(row => row.id === 'retire:pension')); saved(next);
+  assert.equal(later.status, 'retired'); assert.equal(careerIncome(later).pension, 21);
+  assert.ok(options(later).every(row => !row.id.startsWith('retire:'))); saved(next);
 });
 
 test('severance uses base salary times total seasons divided by eight, floored; pension uses track percentage', () => {
@@ -406,8 +407,8 @@ test('rehire pays 60%, prevents both promotion paths, defers severance and ends 
   age(next, 64, 3); next.board.step = 'bonus';
   const ended = choose(next, 'end').state;
   assert.equal(ended.status, 'retired'); assert.equal(ended.turn, (65 - 19) * 4);
-  assert.equal(ended.s.money, next.s.money + Math.floor(66 * 14 / 8));
-  assert.equal(careerIncome(ended).pension, 19); saved(ended);
+  assert.equal(ended.s.money, next.s.money + Math.floor(110 * 14 / 8));
+  assert.equal(careerIncome(ended).pension, 33); saved(ended);
   const old = worker(); age(old, 65); assert.throws(() => retire(old, 'rehire'), /not available/);
 });
 

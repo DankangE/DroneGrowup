@@ -3,6 +3,7 @@ import { ENDINGS, RULES, SPACE_MENU as V1_SPACE_MENU, STAT_LABEL as V1_STAT_LABE
   STAT_MAX as V1_STAT_MAX } from '../game/data.ts';
 import type { BoardState as V1BoardState } from '../game/types.ts';
 import { ACTIONS } from './compat.ts';
+import { TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
 import type { Choice, GameState, MapId, SpaceKind, Stat, TrackId } from './types.ts';
 
 export const LIFE_RULES = {
@@ -60,11 +61,12 @@ export const HOLDING_LEVELS = [1, 2, 3];
 
 const actionIds = new Set(ACTIONS.map(action => action.id));
 export const SPACE_MENU: Partial<Record<SpaceKind, string[]>> = {
-  train: V1_SPACE_MENU.train.filter(id => actionIds.has(id)),
-  job: V1_SPACE_MENU.job.filter(id => actionIds.has(id)),
+  train: [...TRACK_TRAIN.map(action => action.id), ...V1_SPACE_MENU.train.filter(id => actionIds.has(id))],
+  job: [...TRACK_WORK.map(action => action.id), ...V1_SPACE_MENU.job.filter(id => actionIds.has(id))],
+  rankup: TRACK_PREP.map(action => action.id),
   contest: [], event: [], rest: [], start: [], pay: [],
 };
-// Existing paid duties earn performance when selected in the extra-action slot.
+// Job duties also earn performance when selected in the extra-action slot.
 export const CAREER_ACTIONS = [...SPACE_MENU.job!, 'pi_assist', 'ac_teach', 'dir_forum', 'assoc_volunteer'];
 export const SETTLEMENT_KINDS: SpaceKind[] = ['pay', 'start'];
 

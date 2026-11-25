@@ -11,7 +11,7 @@ import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, E
   flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
   jobChoices, performance, review, startingAction } from './jobs.ts';
-import { JOB_RULES } from './tracks.ts';
+import { JOB_RULES, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
 import { BOARD_CHOICES, CAREER_ACTIONS, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT } from './life-data.ts';
 import { applyMove, randInt, reachable as reachableMoves, rollDice } from './move.ts';
@@ -189,10 +189,11 @@ function resolve(state: GameState): Map<string, Resolved> {
   } else {
     const tile = state.board.step === 'space';
     // Match v1 SPACE_MENU: tile menus use kind + when; extras use the actual place + when.
-    for (const original of ACTIONS) {
+    for (const original of [...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, ...ACTIONS]) {
       const action = startingAction(state, original, tile);
       if (!(tile ? SPACE_MENU[node.kind]?.includes(action.id) : action.place === node.place)
         || !met(state, action.when) || (!tile && state.s.stamina < (action.tire ?? 0))) continue;
+      if (SPACE_MENU.rankup?.includes(action.id) && (!tile || canPromote(state))) continue;
       choices.set(`act:${action.id}`, { kind: action.flight ? 'job' : 'action', place: action.place,
         choice: tile ? { ...action, tire: 0 } : action, flight: !!action.flight });
     }
