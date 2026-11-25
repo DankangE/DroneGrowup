@@ -225,7 +225,7 @@ for (const pts of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) {
       const state = spring(20, 0, pts, 3), next = checked(state, `gift:${mode}`).state;
       assert.equal(next.s.happy - state.s.happy, (pts < 3 ? 20 : pts < 6 ? 40 : 70) + extra);
       assert.equal(next.s.money, state.s.money - cost); assert.equal(next.family.kids[0].stage, 4);
-      assert.deepEqual(next.feats, ['kid_independent:0']);
+      assert.deepEqual(next.feats, ['visit:A', 'home', 'marriage', 'kid_independent:0']);
       assert.equal(familyAchievementPoints(next), pts < 3 ? 200 : pts < 6 ? 500 : 1000);
       assert.equal(derived(next).familyAchievementPoints, familyAchievementPoints(next));
       assert.equal(familyPopup(next), null); assert.throws(() => choose(next, `gift:${mode}`), /not available/);

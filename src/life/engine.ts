@@ -11,13 +11,14 @@ import { applyAssetChoice, applyAssetMove, assetPopup, assetReachable, consumeLu
   discountedChoice, drawLuck, luckChanceBonus, rollAssetDice, shortcutMoves } from './assets.ts';
 import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, ECONOMY_TEXT,
   flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
+import { canRetireEarly, finish, recordAchievements, recordEndingEffect, retireEarly } from './ending.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
   contestPrize, creatorIncome, performance, review, specialistChoices, startingAction } from './jobs.ts';
 import { applyHomeChoice, homeRecovery, yearEndHome } from './home.ts';
 import type { EstateOffer } from './home.ts';
 import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery } from './family.ts';
 import { CREATOR_VIDEO, JOB_RULES, SPECIAL_RULES as S, SPECIAL_TEXT as ST, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
-import { BOARD_CHOICES, CAREER_ACTIONS, FAMILY_RULES, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
+import { BOARD_CHOICES, CAREER_ACTIONS, ENDING_KEYS, ENDING_RULES, ENDING_TEXT, FAMILY_RULES, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT, WEDDINGS } from './life-data.ts';
 import { answer, childFor, EVENTS_A, EVENT_KEYS as EK, EVENT_RULES as ER, EVENT_TEXT as ET,
   familyEventEffect, materialize } from './events-a.ts';
@@ -31,13 +32,14 @@ import { afterFundEvent, beginFinanceEvent, EVENT2_KEYS as E2K, eventFundYearEnd
 import type { EventExtra2 } from './events-e.ts';
 import { closeEventHealth, eventFlightPenalty, eventRecovery, EVENTS_F, healthEventEffect } from './events-f.ts';
 import { eventJobChoices, EVENTS_G, travelEventEffect } from './events-g.ts';
-import { EVENTS_H, lateEventEffect, successionValue, villaLocks } from './events-h.ts';
+import { EVENTS_H, lateEventEffect, villaLocks } from './events-h.ts';
 import { randInt } from './move.ts';
 import type { Move } from './move.ts';
 import { PLACES, WORLD } from './world.ts';
 import type { Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
 import { restore as restoreBase } from './restore.ts';
 export { jobOffers } from './jobs.ts';
+export { settlementSummary } from './ending.ts';
 export const estateOffers = eventEstateOffers;
 export const LIFE_EVENTS = [...EVENTS_A, ...EVENTS_B, ...EVENTS_C, ...EVENTS_D, ...EVENTS_E, ...EVENTS_F, ...EVENTS_G, ...EVENTS_H];
 export const ALL_EVENTS = [...EVENTS, ...LIFE_EVENTS];
@@ -48,6 +50,13 @@ const eventState = (s: GameState): EventState => structuredClone({ job: s.job, h
   fund: s.fund, turn: s.turn, board: s.board, phase: s.phase, eventId: s.eventId, seen: s.seen });
 /** Validate new event saves through the existing strict boundary, including every nested integer. */
 export function restore(raw: unknown): GameState | null {
+  // v2 has no total-score cap. Retain the strict legacy shape checks without its v1 score ceiling.
+  if (raw && typeof raw === 'object' && 'phase' in raw && raw.phase === 'ended' && 'score' in raw
+    && typeof raw.score === 'number' && Number.isSafeInteger(raw.score) && raw.score > RULES.score.max) {
+    const restored = restoreBase({ ...raw, score: 0 });
+    if (restored) restored.score = raw.score;
+    return restored;
+  }
   if (raw && typeof raw === 'object' && 'phase' in raw && raw.phase === 'event' && 'eventId' in raw
     && LIFE_EVENTS.some(event => event.id === raw.eventId)) {
     const restored = restoreBase({ ...raw, phase: 'action', eventId: null });
@@ -318,15 +327,20 @@ function resolve(state: GameState): Map<string, Resolved> {
 }
 
 export function options(state: GameState, menu: 'board' | 'phone' = 'board'): OptionView[] {
-  if (menu === 'phone') return [...economyChoices(state, true), ...eventAssetChoices(state, true)].map(({ id, locks, ...service }) =>
+  if (menu === 'phone') return phoneServices(state).map(({ id, locks, ...service }) =>
     view(state, id, { ...service, flight: false, jobLocks: locks }));
   return [...resolve(state)].map(([id, r]) => view(state, id, r));
+}
+
+function phoneServices(state: GameState): ReturnType<typeof economyChoices> {
+  return [...economyChoices(state, true), ...eventAssetChoices(state, true), ...(canRetireEarly(state)
+    ? [{ id: ENDING_RULES.earlyId, kind: 'action' as const, place: nodeAt(state).place, choice: ENDING_TEXT.early, free: true }] : [])];
 }
 
 function resolveOption(state: GameState, id: string, menu: 'board' | 'phone') {
   let r = menu === 'board' ? resolve(state).get(id) : undefined;
   if (!r) {
-    const service = [...economyChoices(state, true), ...eventAssetChoices(state, true)].find(choice => choice.id === id);
+    const service = phoneServices(state).find(choice => choice.id === id);
     if (service) r = { ...service, flight: false, jobLocks: service.locks };
   }
   if (!r) throw new Error(TEXT.unavailable(id));
@@ -340,8 +354,8 @@ function diff(before: GameState['s'], after: GameState['s']): StatMap {
 function payLedger(state: GameState, result: Result) {
   const lines = Object.entries(state.board.ledger).map(([label, amount]) => ({ label, amount }));
   const before = state.s.money - state.s.debt, total = ledgerSum(state);
-  const paidState = settleLedger(state);
-  state.s = paidState.s; state.board.ledger = paidState.board.ledger;
+  const paidState = recordAchievements(state, settleLedger(state));
+  Object.assign(state, paidState);
   const applied = state.s.money - state.s.debt - before;
   if (applied !== total) lines.push({ label: TEXT.balanceAdjustment, amount: applied - total });
   state.board.ledger = {};
@@ -368,13 +382,17 @@ function endSeason(state: GameState, result: Result, runHooks: boolean, drawLife
   }
   state.turn++;
   // Career close includes yearEndReview at spring and age-based retirement, before stamina refill.
-  state = advanceCareer(advanceStudies(state));
+  state = recordAchievements(state, advanceCareer(advanceStudies(state)));
   state = yearEndHome(state);
   const beforeCredit = state.s.overdue;
-  state = checkCredit(state);
+  state = recordAchievements(state, checkCredit(state));
   if (state.s.overdue) result.notes.push(ECONOMY_TEXT.overdue(state.s.overdue));
   else if (beforeCredit && state.log.at(-1)?.turn === state.turn
-    && state.log.at(-1)?.text === ECONOMY_TEXT.liquidation) result.notes.push(ECONOMY_TEXT.liquidation);
+    && state.log.at(-1)?.text === ECONOMY_TEXT.liquidation) {
+    // Liquidation can create and fully repay a ledger shortfall inside one accounting operation.
+    if (!state.flags.includes(ENDING_KEYS.borrowed)) state.flags.push(ENDING_KEYS.borrowed);
+    result.notes.push(ECONOMY_TEXT.liquidation);
+  }
   state = advanceFamily(state);
   state.phase = 'action'; state.eventId = null;
   state.board.step = 'spin'; state.board.dice = [];
@@ -388,15 +406,11 @@ function endSeason(state: GameState, result: Result, runHooks: boolean, drawLife
   state.s.acts = 0;
   if (state.eventId) result.eventId = state.eventId;
   result.season = { from, to: dateLabel(state.turn), refill: state.s.stamina - beforeRefill, accrual: upkeep.lines };
-  // T03 always runs 204 seasons: overdue strikes are counted, never an early ending.
+  // Debts and career goals never end a run before the lifetime settlement.
   if (state.turn >= LIFE_RULES.maxTurns) {
     payLedger(state, result);
-    const worth = derived(state).netWorth + successionValue(state);
-    state.phase = 'ended'; state.eventId = null;
-    state.ending = worth < RULES.debtorNetWorth ? 'debtor' : LIFE_RULES.timeoutEnding;
-    state.score = state.ending === 'debtor' ? 0 : clamp(worth, 0, RULES.score.max);
-    state.log.push({ turn: state.turn, text: TEXT.finished, tone: 'info' });
-    result.ended = state.ending;
+    state = finish(state);
+    result.ended = state.ending!;
   }
   return state;
 }
@@ -465,16 +479,20 @@ function land(state: GameState, result: Result): GameState {
 function travel(state: GameState, destination: string, result: Result): GameState {
   const applied = applyAssetMove(eventCarState(state), destination, { canPromote });
   applied.state.s.car = state.s.car;
-  return arrive(applied.state, applied.move, result);
+  return arrive(applied.state, applied.move, result, state.board.pos);
 }
 
-function arrive(state: GameState, move: Move, result: Result): GameState {
+function arrive(state: GameState, move: Move, result: Result, origin: string): GameState {
   result.move = move;
+  const path = move.path.slice(0, move.path.indexOf(state.board.pos) + 1);
+  for (const id of path) state.board.visited |= 1 << MAP_IDS.indexOf(BY_ID.get(id)!.map);
   // applyMove includes arrivals in passed; ledger clearing makes arrival settlement idempotent.
   for (const kind of SETTLEMENT_KINDS) {
     for (const _node of move.passed[kind as 'pay' | 'start']) payLedger(state, result);
   }
   for (const id of move.passed.start) {
+    const map = BY_ID.get(id)!.map, from = path[path.indexOf(id) - 1] ?? origin;
+    if (move.steps > 0 && BY_ID.get(from)!.map === map) state.board.laps |= 1 << MAP_IDS.indexOf(map);
     const before = state.s.money;
     state = passStart(state, BY_ID.get(id)!.map);
     const amount = state.s.money - before;
@@ -495,7 +513,7 @@ function express(state: GameState, destination: string, result: Result): GameSta
   state.board.visited |= 1 << MAP_IDS.indexOf(node.map);
   if (node.map === S.map) state.flags = state.flags.filter(flag => flag !== S.invite);
   state = arrive(state, { node: destination, steps: 0, path: [destination], tolls: [S.expressFare],
-    fare: S.expressFare, via: origin, passed: { pay: [], start: [destination] } }, result);
+    fare: S.expressFare, via: origin, passed: { pay: [], start: [destination] } }, result, origin);
   state.board.step = 'bonus';
   return state;
 }
@@ -514,6 +532,8 @@ function applyEffect(state: GameState, effect: Effect, add: StatMap): string | u
 }
 
 function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, runHooks: boolean): { state: GameState; result: Result } {
+  const history = state;
+  state = recordAchievements(state);
   const before = { ...state.s }, success = branch === 'success', crashed = branch === 'crash';
   const side = success ? 'success' : 'fail';
   const effect = branch === 'sure' ? r.choice.effect! : r.choice.roll![side];
@@ -573,6 +593,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     state = lateEventEffect(travelEventEffect(healthEventEffect(financeEventEffect(state, extra), extra), extra), extra);
     if (extra.popup && extra.popup !== 'headhunter') state.timers[EK.popup] = EK.popupIds.indexOf(extra.popup) + 1;
   }
+  state = recordAchievements(history, recordEndingEffect(state, effect.end, eventBefore, extra?.points));
   if (flag) result.flag = flag;
   if (!v.free && (r.kind !== 'board' || v.id === 'skip')) state.s.acts++;
   if (extra?.skipSeasons) {
@@ -581,6 +602,10 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
       state = endSeason(state, result, true, i === extra.skipSeasons - 1);
     }
   }
+  if (v.id === ENDING_RULES.earlyId) {
+    state = retireEarly(state); result.ended = state.ending!;
+    result.season = { from: dateLabel(history.turn), to: dateLabel(state.turn), refill: 0, accrual: [] };
+  }
   result.deltas = diff(before, state.s);
   const afterOption = { ...state.s };
   state.log.push({ turn: state.turn, text: TEXT.log(v.title, result.text), tone: branch === 'sure' ? 'info' : success ? 'good' : 'bad' });
@@ -588,7 +613,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     // jobs.ts owns popup continuation; entry never consumes the extra action or a season.
   } else if (shortcut) {
     state.board.pos = shortcut.node;
-    state = arrive(state, shortcut, result);
+    state = arrive(state, shortcut, result, history.board.pos);
   } else if (v.id === 'spin') {
     state = rollAssetDice(state); state.board.step = 'pick';
     const moves = reachable(state);
@@ -605,12 +630,13 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     delete state.timers[EK.kid];
   } else if (state.board.step === 'bonus') state = endSeason(state, result, runHooks);
   else state.board.step = 'bonus';
+  state = recordAchievements(state);
   result.statusTo = state.status; result.trackTo = state.track;
   const settlement = diff(afterOption, state.s);
   if (Object.keys(settlement).length || result.season || result.upkeep || result.restGain !== undefined) result.settle = { deltas: settlement };
   if (state.log.length > LIFE_RULES.logMax) state.log.splice(0, state.log.length - LIFE_RULES.logMax);
   state = eventIncomeState(state);
-  if (r.life || r.eventPopup || hunterBonus !== undefined) result.effects = eventState(state);
+  if (r.life || r.eventPopup || hunterBonus !== undefined || v.id === ENDING_RULES.earlyId) result.effects = eventState(state);
   return { state, result };
 }
 

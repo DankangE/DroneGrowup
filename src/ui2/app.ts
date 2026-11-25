@@ -14,6 +14,7 @@ import { mountPopup, phoneChoices, popupModel } from './popups/index.ts';
 import type { PopupModel } from './popups/index.ts';
 import { resultPopups } from './popups/presentation.ts';
 import { COPY } from './popups/data.ts';
+import { mountEnding, mountEndingCollection } from './popups/ending.ts';
 
 const DESTINATION_PAGE_SIZE = 2;
 const PHASE_LABEL = { spin: '이번 계절', pick: '갈 곳 고르기', space: '이곳에서 할 일',
@@ -28,6 +29,7 @@ declare global {
 
 export function mountLife(root: HTMLElement, seed: number, debug = false): void {
   let state = newGame(seed), page = 0;
+  const gallery = new Set<string>(), bestByEnding: Record<string, number> = {};
   let pending: PendingPopup[] = [], menu: 'my-life' | 'phone' | undefined, dismissed = false;
   let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
   root.classList.add('life2');
@@ -63,6 +65,18 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     sequence.next();
   }
   function render(focus = false) {
+    if (!frame && state.phase === 'ended') {
+      pending = []; menu = undefined;
+      if (state.ending) {
+        gallery.add(state.ending); bestByEnding[state.ending] = Math.max(bestByEnding[state.ending] ?? 0, state.score);
+      }
+      mountEnding(root, state, {
+        title: () => window.location.assign(import.meta.env?.BASE_URL ?? '/'),
+        restart: () => { state = newGame(seed); page = 0; dismissed = false; render(true); },
+        collection: () => mountEndingCollection(root, { gallery: [...gallery], bestByEnding }, () => render(true)),
+      });
+      return;
+    }
     const shown = frame && before ? { ...before, board: { ...before.board, pos: frame.pos } } : state;
     const offered = frame ? [] : options(state), view = derived(shown);
     const model = frame ? undefined : menu === 'phone' ? phoneModel()
