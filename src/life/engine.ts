@@ -6,7 +6,9 @@ import type { BranchId, Derived as V1Derived, Forecast as V1Forecast,
   Result as V1Result } from '../game/types.ts';
 import { CONTEST_EVENTS } from '../game/data.ts';
 import { ACTIONS, EVENTS } from './compat.ts';
-import { CAREER_TEXT } from './career2.ts';
+import { CAREER_TEXT, promotionView } from './career2.ts';
+import { applyAssetChoice, applyAssetMove, assetChoices, assetPopup, assetReachable, consumeLuck,
+  discountedChoice, drawLuck, fundYearEnd, luckChanceBonus, rollAssetDice, shortcutMoves, withShopIncome } from './assets.ts';
 import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, ECONOMY_TEXT,
   flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
@@ -16,7 +18,7 @@ import type { EstateOffer } from './home.ts';
 import { JOB_RULES, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
 import { BOARD_CHOICES, CAREER_ACTIONS, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT } from './life-data.ts';
-import { applyMove, randInt, reachable as reachableMoves, rollDice } from './move.ts';
+import { randInt } from './move.ts';
 import type { Move } from './move.ts';
 import { PLACES, WORLD } from './world.ts';
 import type { Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
@@ -36,6 +38,7 @@ export type OptionView = Omit<V1OptionView, 'place' | 'missing' | 'roll' | 'sure
 export type Result = Omit<V1Result, 'place' | 'move' | 'deltas' | 'settle' | 'stageFrom' | 'stageTo' | 'ended'> & {
   place: PlaceId; move?: Move; deltas: StatMap; settle?: { deltas: StatMap };
   review?: ReturnType<typeof review>;
+  luck?: { id: string; title: string; text: string };
   statusFrom: Status; statusTo: Status; trackFrom: TrackId | null; trackTo: TrackId | null; ended?: EndingId;
 };
 export type Forecast = Omit<V1Forecast, 'branches'> & {
@@ -55,7 +58,7 @@ const ageCap = (turn: number) => LIFE_RULES.staminaCaps.find(row => ageAt(turn) 
 const dateLabel = (turn: number) => TEXT.date(ageAt(turn), LIFE_RULES.seasons[seasonAt(turn)]);
 
 /** Engine previews and actual travel use the same career stop predicate. */
-export const reachable = (state: GameState): Move[] => reachableMoves(state, { canPromote });
+export const reachable = (state: GameState): Move[] => assetReachable(state, { canPromote });
 
 export function newGame(seed: number): GameState {
   const state = structuredClone(INITIAL_STATE);
@@ -67,14 +70,14 @@ export function newGame(seed: number): GameState {
 export function derived(state: GameState): Derived {
   const age = ageAt(state.turn);
   const period = LIFE_RULES.periods.find(row => age <= row.maxAge) ?? LIFE_RULES.periods.at(-1)!;
-  return { ...economyView(state), age, season: seasonAt(state.turn),
+  return { ...economyView(withShopIncome(state)), age, season: seasonAt(state.turn),
     seasonName: LIFE_RULES.seasons[seasonAt(state.turn)], dateLabel: dateLabel(state.turn), period: period.name,
     remainingSeasons: Math.max(0, LIFE_RULES.maxTurns - state.turn),
     capStamina: Math.min(ageCap(state.turn), state.s.capStamina) };
 }
 
-/** Empty extension points. Called with the new turn, including the terminal 70-year-old spring. */
-export const yearEnd = (state: GameState): GameState => state;
+/** Called with the new turn, including the terminal 70-year-old spring. */
+export const yearEnd = fundYearEnd;
 export const lifeEvent = (state: GameState): GameState => state;
 export const HOOKS = { yearEnd, lifeEvent };
 
@@ -136,7 +139,7 @@ function outcome(state: GameState, effect: Effect, flight = false): OutcomeView 
 type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean; free?: boolean;
   jobLocks?: string[]; home?: EstateOffer };
 function view(state: GameState, id: string, r: Resolved): OptionView {
-  const { choice, kind, place, flight } = r;
+  const { kind, place, flight } = r, choice = discountedChoice(state, id, r.choice);
   const { locks, missing } = unmet(state, choice.need);
   locks.push(...(r.jobLocks ?? []));
   const cost = choice.cost ?? 0, tire = choice.tire ?? 0;
@@ -149,7 +152,7 @@ function view(state: GameState, id: string, r: Resolved): OptionView {
     cost, tire, enabled: !locks.length, locks, missing };
   if (choice.roll) {
     const staminaPct = r.jobLocks ? 0 : staminaBonus(state);
-    let chance = choice.roll.base + staminaPct;
+    let chance = choice.roll.base + staminaPct + luckChanceBonus(state, id);
     for (const mod of choice.roll.mods ?? []) {
       chance += clamp(Math.floor((state.s[mod.stat] - mod.over) / mod.per) * mod.pct, 0, mod.cap);
     }
@@ -158,6 +161,7 @@ function view(state: GameState, id: string, r: Resolved): OptionView {
       success: outcome(state, choice.roll.success, flight),
       fail: outcome(state, choice.roll.fail),
       ...(flight && { crashPct: flightOdds(state, choice).crashPct }) };
+    if (id === 'promo') option.desc = CAREER_TEXT.promoDesc(promotionView(state).title, option.roll.chance);
   } else if (choice.effect) option.sure = outcome(state, choice.effect);
   return option;
 }
@@ -167,6 +171,11 @@ function resolve(state: GameState): Map<string, Resolved> {
   if (state.phase === 'ended') return choices;
   const node = nodeAt(state);
   const board = (id: string, choice: Choice) => choices.set(id, { kind: 'board', place: node.place, choice, flight: false });
+  const popup = assetPopup(state);
+  if (popup) {
+    for (const { id, locks, ...service } of popup) choices.set(id, { ...service, flight: false, jobLocks: locks });
+    return choices;
+  }
   const jobs = jobChoices(state);
   for (const { id, choice, locks } of jobs.choices) {
     choices.set(id, { kind: 'board', place: node.place, choice, flight: false, jobLocks: locks });
@@ -176,7 +185,7 @@ function resolve(state: GameState): Map<string, Resolved> {
     choices.set(home.id, { kind: 'action', place: node.place, choice: home.choice,
       flight: false, jobLocks: home.locked, home });
   }
-  for (const { id, locks, ...service } of economyChoices(state)) {
+  for (const { id, locks, ...service } of [...economyChoices(state), ...assetChoices(state)]) {
     choices.set(id, { ...service, flight: false, jobLocks: locks });
   }
   if (state.phase === 'event') {
@@ -211,15 +220,15 @@ function resolve(state: GameState): Map<string, Resolved> {
 }
 
 export function options(state: GameState, menu: 'board' | 'phone' = 'board'): OptionView[] {
-  if (menu === 'phone') return economyChoices(state, true).map(({ id, locks, ...service }) =>
+  if (menu === 'phone') return [...economyChoices(state, true), ...assetChoices(state, true)].map(({ id, locks, ...service }) =>
     view(state, id, { ...service, flight: false, jobLocks: locks }));
   return [...resolve(state)].map(([id, r]) => view(state, id, r));
 }
 
-function resolveOption(state: GameState, id: string) {
-  let r = resolve(state).get(id);
+function resolveOption(state: GameState, id: string, menu: 'board' | 'phone') {
+  let r = menu === 'board' ? resolve(state).get(id) : undefined;
   if (!r) {
-    const service = economyChoices(state, true).find(choice => choice.id === id);
+    const service = [...economyChoices(state, true), ...assetChoices(state, true)].find(choice => choice.id === id);
     if (service) r = { ...service, flight: false, jobLocks: service.locks };
   }
   if (!r) throw new Error(TEXT.unavailable(id));
@@ -244,7 +253,7 @@ function payLedger(state: GameState, result: Result) {
 
 function endSeason(state: GameState, result: Result, runHooks: boolean): GameState {
   const from = dateLabel(state.turn), { upkeep } = derived(state);
-  state = accrue(state, false);
+  state = accrue(withShopIncome(state), false);
   if (state.status === 'working' && state.track === 'academy') {
     const a = RULES.academy, seated = Math.min(state.s.students, a.baseSeats + state.s.staff * a.seatsPerStaff);
     setStat(state, 'students', seated - Math.max(1, Math.floor(seated / a.leaveDiv)));
@@ -297,7 +306,7 @@ function pickEvent(state: GameState, contest: boolean) {
   return null;
 }
 
-function land(state: GameState, result: Result) {
+function land(state: GameState, result: Result): GameState {
   const node = nodeAt(state);
   state.board.step = 'space';
   if (node.kind === 'rankup' && state.status === 'working') {
@@ -312,6 +321,13 @@ function land(state: GameState, result: Result) {
     setStat(state, 'stamina', before + homeRecovery(state).rest);
     result.restGain = state.s.stamina - before;
     result.notes.push(TEXT.rested); state.board.step = 'bonus';
+  } else if (node.kind === 'luck') {
+    const drawn = drawLuck(state);
+    state = drawn.state;
+    applyEffect(state, drawn.effect, drawn.effect.add ?? {});
+    result.luck = { id: drawn.card.id, title: drawn.card.title, text: drawn.card.text };
+    result.notes.push(TEXT.log(drawn.card.title, drawn.card.text));
+    state.log.push({ turn: state.turn, text: TEXT.log(drawn.card.title, drawn.card.text), tone: 'info' });
   } else if (node.kind === 'event' || node.kind === 'contest') {
     const event = pickEvent(state, node.kind === 'contest');
     if (event) {
@@ -319,16 +335,21 @@ function land(state: GameState, result: Result) {
       state.seen[event.id] = state.turn;
     }
   }
+  return state;
 }
 
 function travel(state: GameState, destination: string, result: Result): GameState {
-  const applied = applyMove(state, destination, { canPromote });
-  state = applied.state; result.move = applied.move;
+  const applied = applyAssetMove(state, destination, { canPromote });
+  return arrive(applied.state, applied.move, result);
+}
+
+function arrive(state: GameState, move: Move, result: Result): GameState {
+  result.move = move;
   // applyMove includes arrivals in passed; ledger clearing makes arrival settlement idempotent.
   for (const kind of SETTLEMENT_KINDS) {
-    for (const _node of applied.move.passed[kind as 'pay' | 'start']) payLedger(state, result);
+    for (const _node of move.passed[kind as 'pay' | 'start']) payLedger(state, result);
   }
-  for (const id of applied.move.passed.start) {
+  for (const id of move.passed.start) {
     const before = state.s.money;
     state = passStart(state, BY_ID.get(id)!.map);
     const amount = state.s.money - before;
@@ -337,8 +358,8 @@ function travel(state: GameState, destination: string, result: Result): GameStat
       paid.lines.push({ label: ECONOMY_TEXT.lap, amount }); paid.total += amount;
     }
   }
-  land(state, result);
-  if (applied.move.passed.start.length) state = afterStartPass(state);
+  state = land(state, result);
+  if (move.passed.start.length) state = afterStartPass(state);
   return state;
 }
 
@@ -359,9 +380,12 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   const side = success ? 'success' : 'fail';
   const effect = branch === 'sure' ? r.choice.effect! : r.choice.roll![side];
   const outcome = branch === 'sure' ? v.sure! : v.roll![side];
+  const shortcut = v.id.startsWith('luck:shortcut:') ? shortcutMoves(state)
+    .find(move => BY_ID.get(move.node)!.kind === v.id.split(':')[2]) : undefined;
   const result: Result = { optionId: v.id, title: v.title, place: v.place, free: v.free, text: effect.text,
     deltas: {}, crashed, notes: [], statusFrom: state.status, statusTo: state.status, trackFrom: state.track, trackTo: state.track };
   state.s.money -= v.cost; state.s.stamina = Math.max(0, state.s.stamina - v.tire);
+  state = consumeLuck(state, v.id, !!v.roll);
   if (branch !== 'sure' && !r.jobLocks) {
     setStat(state, success ? 'wins' : 'losses', state.s[success ? 'wins' : 'losses'] + 1);
     if (r.flight) {
@@ -386,6 +410,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   }
   if (v.id.startsWith('lifestyle:')) state = applyEconomyChoice(state, v.id);
   if (r.home) state = applyHomeChoice(state, r.home);
+  if (/^(biz:|fund:|luck:)/.test(v.id) || v.id === 'skip') state = applyAssetChoice(state, v.id, v.cost);
   if (flag) result.flag = flag;
   if (!v.free && (r.kind !== 'board' || v.id === 'skip')) state.s.acts++;
   result.deltas = diff(before, state.s);
@@ -393,11 +418,14 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   state.log.push({ turn: state.turn, text: TEXT.log(v.title, result.text), tone: branch === 'sure' ? 'info' : success ? 'good' : 'bad' });
   if (job || v.free) {
     // jobs.ts owns popup continuation; entry never consumes the extra action or a season.
+  } else if (shortcut) {
+    state.board.pos = shortcut.node;
+    state = arrive(state, shortcut, result);
   } else if (v.id === 'spin') {
-    rollDice(state); state.board.step = 'pick';
+    state = rollAssetDice(state); state.board.step = 'pick';
     const moves = reachable(state);
     if (moves.length === 1) state = travel(state, moves[0].node, result);
-    else if (!moves.length) land(state, result);
+    else if (!moves.length) state = land(state, result);
   } else if (v.id.startsWith('go:')) state = travel(state, v.id.slice('go:'.length), result);
   else if (state.phase === 'event') {
     if (nodeAt(state).kind === 'contest' && success) {
@@ -411,11 +439,11 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   const settlement = diff(afterOption, state.s);
   if (Object.keys(settlement).length || result.season || result.upkeep || result.restGain !== undefined) result.settle = { deltas: settlement };
   if (state.log.length > LIFE_RULES.logMax) state.log.splice(0, state.log.length - LIFE_RULES.logMax);
-  return { state, result };
+  return { state: withShopIncome(state), result };
 }
 
-export function choose(prev: GameState, optionId: string): { state: GameState; result: Result } {
-  const { r, v } = resolveOption(prev, optionId);
+export function choose(prev: GameState, optionId: string, menu: 'board' | 'phone' = 'board'): { state: GameState; result: Result } {
+  const { r, v } = resolveOption(prev, optionId, menu);
   if (!v.enabled) throw new Error(TEXT.disabled(optionId, v.locks));
   const state = structuredClone(prev);
   let branch: BranchId = 'sure', roll: Result['roll'];
@@ -431,8 +459,8 @@ export function choose(prev: GameState, optionId: string): { state: GameState; r
 }
 
 /** Previews share the same branch executor; neither RNG nor hooks on the live run are touched. */
-export function forecast(prev: GameState, optionId: string): Forecast {
-  const { r, v } = resolveOption(prev, optionId);
+export function forecast(prev: GameState, optionId: string, menu: 'board' | 'phone' = 'board'): Forecast {
+  const { r, v } = resolveOption(prev, optionId, menu);
   const ids: BranchId[] = v.roll ? ['success', 'fail'] : ['sure'];
   if (v.roll?.crashPct) ids.push('crash');
   const branches = ids.map((id): Forecast['branches'][number] => {

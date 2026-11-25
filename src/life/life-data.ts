@@ -4,7 +4,7 @@ import { ENDINGS, RULES, SPACE_MENU as V1_SPACE_MENU, STAT_LABEL as V1_STAT_LABE
 import type { BoardState as V1BoardState } from '../game/types.ts';
 import { ACTIONS } from './compat.ts';
 import { TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
-import type { Choice, GameState, MapId, SpaceKind, Stat, TrackId } from './types.ts';
+import type { Choice, GameState, MapId, PlaceId, SpaceKind, Stat, StatMap, TrackId } from './types.ts';
 
 export const LIFE_RULES = {
   version: 2,
@@ -148,3 +148,70 @@ export const ACCOUNTING_BOARD: V1BoardState = {
   pos: 0, step: 'spin', left: 0, route: -1, roll: 0, contest: false,
   ledger: {}, forks: 0, routes: 0, contests: 0, rankups: 0,
 };
+
+// T09 tables: §§8.5–8.6 and 9.3. Income tuples are spring, summer, autumn, winter.
+export type ShopDef = { id: string; name: string; map: MapId; place: PlaceId; price: number;
+  income: readonly number[]; indexed?: boolean; equipmentDiscount?: number };
+export const SHOPS: readonly ShopDef[] = [
+  { id: 'drone_cafe', name: '드론 카페', map: 'B', place: 'mall', price: 1200, income: [35, 35, 35, 35] },
+  { id: 'drone_shop', name: '드론 숍', map: 'B', place: 'mall', price: 3000, income: [80, 80, 80, 80], equipmentDiscount: 10 },
+  { id: 'farm', name: '방제 농장', map: 'C', place: 'logistics', price: 2500, income: [110, 110, 30, 30] },
+  { id: 'waterfront_cafe', name: '수변 카페', map: 'E', place: 'waterfront_mall', price: 2000, income: [60, 60, 60, 60] },
+  { id: 'franchise', name: '프랜차이즈 지점', map: 'E', place: 'waterfront_mall', price: 5000, income: [130, 130, 130, 130] },
+  { id: 'building', name: '임대 빌딩', map: 'E', place: 'waterfront_mall', price: 25000, income: [600, 600, 600, 600], indexed: true },
+  { id: 'pension', name: '펜션', map: 'F', place: 'pension', price: 4000, income: [70, 180, 70, 70] },
+];
+export const FUNDS = [
+  { kind: 0, name: '안정형', chance: 100, gain: 4, loss: 4, desc: '연말 수익 +4%.' },
+  { kind: 1, name: '성장형', chance: 60, gain: 14, loss: -8, desc: '연말 60% 확률 +14%, 40% 확률 −8%.' },
+  { kind: 2, name: '모험형', chance: 45, gain: 35, loss: -20, desc: '연말 45% 확률 +35%, 55% 확률 −20%.' },
+] as const;
+export const ASSET_RULES = {
+  upgradePct: 60, incomeStepPct: 50, resalePct: 70, maxLevel: 3, phoneFeePct: 2,
+  fundAmounts: [100, 500, 2000], couponPct: 20, benefactorPct: 10, dreamPct: 20,
+  demotionPerf: -15, promotionPerf: 60, waitPerf: 10, waitRep: 3,
+  singleStep: 1, tripleDice: 3,
+} as const;
+export const ASSET_KEYS = {
+  lastLuck: 'asset_last_luck', popup: 'asset_popup', shortcut: 1, promotion: 2,
+  triple: 'luck_triple', transfer: 'luck_transfer', benefactor: 'luck_benefactor',
+  coupon: 'luck_discount', dream: 'luck_dream', fundYear: 'asset_fund_year',
+} as const;
+export type LuckDef = { id: string; title: string; text: string; add?: StatMap; flag?: string;
+  action?: 'again' | 'shortcut' | 'promotion' | 'demotion'; fallback?: StatMap };
+export const LUCK: readonly LuckDef[] = [
+  { id: 'prize', title: '경품 당첨', text: '경품으로 300만원을 받았다.', add: { money: 300 } },
+  { id: 'refund', title: '세금 환급', text: '세금 150만원을 돌려받았다.', add: { money: 150 } },
+  { id: 'parking', title: '주차 위반', text: '주차 위반으로 80만원을 냈다.', add: { money: -80 } },
+  { id: 'wedding_gift', title: '축의금', text: '축의금 100만원을 내고 인맥이 5 늘었다.', add: { money: -100, net: 5 } },
+  { id: 'again', title: '한 번 더', text: '이번 계절에 한 번 더 돌린다.', action: 'again' },
+  { id: 'triple', title: '세 개의 룰렛', text: '다음 이동에서 룰렛 세 개 중 하나를 고른다.', flag: ASSET_KEYS.triple },
+  { id: 'transfer', title: '무료 환승권', text: '다음 환승은 통행료가 없다. 특구 진입 조건은 필요하다.', flag: ASSET_KEYS.transfer },
+  { id: 'shortcut', title: '지름길', text: '이 지도에서 원하는 칸 종류를 골라 가장 가까운 칸으로 간다.', action: 'shortcut' },
+  { id: 'promotion', title: '발탁', text: '급여 직군은 특별 승진 제안을 받는다. 그 밖에는 평판 +8.', action: 'promotion', fallback: { rep: 8 } },
+  { id: 'demotion', title: '한직 발령', text: '급여 직군은 성과 −15. 그 밖에는 평판 −5.', action: 'demotion', fallback: { rep: -5 } },
+  { id: 'tonic', title: '보약', text: '보약을 먹어 체력을 30 회복했다.', add: { stamina: 30 } },
+  { id: 'cold', title: '감기', text: '감기로 체력이 20 줄었다.', add: { stamina: -20 } },
+  { id: 'benefactor', title: '은인', text: '인맥 +10, 다음 승급 심사 성공률 +10%p.', add: { net: 10 }, flag: ASSET_KEYS.benefactor },
+  { id: 'rumor', title: '구설수', text: '구설수로 평판이 8 줄었다.', add: { rep: -8 } },
+  { id: 'discount', title: '단골 할인', text: '다음 상점가 또는 상가 구매가 20% 할인된다.', flag: ASSET_KEYS.coupon },
+  { id: 'dream', title: '돼지꿈', text: '다음 성공 여부 굴림의 성공률 +20%p.', flag: ASSET_KEYS.dream },
+];
+export const ASSET_TEXT = {
+  buy: (name: string) => `${name} 구입`, up: (name: string) => `${name} 확장`,
+  sell: (name: string) => `${name} 매각`, check: (name: string) => `${name} 매출 점검`,
+  bought: '가게를 구입했다.', upgraded: '가게를 한 단계 확장했다.', sold: '가게를 매각했다.', checked: '이번 계절 수입을 한 번 더 받았다.',
+  shop: (cost: number, income: number) => `${cost}만원. 이번 계절 수입 ${income}만원.`,
+  capacity: '가게는 최대 4곳까지 보유할 수 있습니다.', level: '이미 최대 3단계입니다.',
+  deposit: (n: number) => `펀드에 ${n}만원 넣기`, withdraw: (n: number) => `펀드에서 ${n}만원 빼기`,
+  kind: (name: string) => `${name}으로 변경`, deposited: '펀드에 돈을 넣었다.', withdrawn: '펀드에서 돈을 뺐다.', changed: '펀드 유형을 바꾸었다.',
+  fundFee: (fee: number) => `수수료 ${fee}만원.`, fundShort: '펀드 잔액이 부족합니다.',
+  fundYear: (name: string, delta: number) => `${name} 연말 수익 ${delta}만원.`,
+  shortcut: (name: string) => `${name} 칸으로 지름길`, shortcutDone: '지름길로 이동했다.',
+  promotion: '특별 승진을 받는다', promoted: '특별 승진으로 직급이 올랐다.',
+  wait: '정식 심사를 기다린다', waited: '정식 심사를 준비하며 성과와 평판을 높였다.',
+  badMove: 'Unreachable destination',
+  kinds: { start: '출발', pay: '월급날', train: '배움', job: '일감', contest: '대회 · 시험', event: '사건',
+    rest: '휴식', rankup: '승급 심사', jobfair: '취업 · 이직', shop: '상점가', estate: '부동산',
+    life: '생활', biz: '상가', luck: '행운', station: '환승', invest: '투자' } satisfies Record<SpaceKind, string>,
+} as const;
