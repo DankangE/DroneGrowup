@@ -1,9 +1,12 @@
 // Read-only views for the board UI: letter grades, the rank a run stands on, the ranks it can reach next and
 // what a rank-up changed. Pure and DOM-free like engine.ts. Nothing here changes a state, a roll or a payout:
 // every figure comes from `options`, `derived` and the data tables.
-import { ACTIONS, CAREER, CAREER_TOP_LEVEL, ENDINGS, FLAG_LABEL, GRADES, GRADE_STEPS, STAGES, STAT_LABEL } from './data.ts';
-import { derived, options } from './engine.ts';
-import type { Effect, EndingId, GameState, PlaceId, Stage, Stat } from './types.ts';
+import { ACTIONS, CAREER_TOP_LEVEL, ENDINGS, FLAG_LABEL, GRADES, GRADE_STEPS, STAGES, STAT_LABEL } from './data.ts';
+import { actionViews, derived } from './engine.ts';
+import type { Effect, GameState, PlaceId, Stat } from './types.ts';
+
+import { careerRank, type CareerRank } from './rank.ts';
+export { careerRank, type CareerRank } from './rank.ts';
 
 export type GradeLetter = (typeof GRADES)[number];
 export type Grade = {
@@ -24,39 +27,6 @@ export function grade(stat: Stat, value: number): Grade | null {
   if (!steps) return null;
   const index = steps.filter((from) => value >= from).length;
   return { letter: GRADES[index], index, from: index === 0 ? 0 : steps[index - 1], next: steps[index] ?? null };
-}
-
-export type CareerRank = {
-  stage: Stage;
-  /** The career the rung belongs to, e.g. "드론 회사 직원". */
-  field: string;
-  /** The rung itself, e.g. "대리". */
-  title: string;
-  /** Orders every rung of the game; the big number on the rank card. */
-  level: number;
-  /** Rungs reached inside this career, 1-based, out of `maxStars`. */
-  stars: number;
-  maxStars: number;
-  /** Set when the rung is an achievement ending. */
-  ending?: EndingId;
-};
-
-type Standing = Pick<GameState, 'stage' | 's' | 'flags'>;
-
-function rung(at: Standing): number {
-  switch (at.stage) {
-    case 'employee': case 'director': return at.s.rank;
-    case 'instructor': return at.flags.includes('examiner') ? 1 : 0;
-    case 'academy': return at.s.level - 1;
-    case 'company': return at.s.round;
-    default: return 0;
-  }
-}
-
-export function careerRank(at: Standing): CareerRank {
-  const rungs = CAREER[at.stage];
-  const i = Math.min(rungs.length - 1, Math.max(0, rung(at)));
-  return { stage: at.stage, field: STAGES[at.stage].name, title: rungs[i].title, level: rungs[i].level, stars: i + 1, maxStars: rungs.length };
 }
 
 /** Where the run would stand once `effect` has been applied. */
@@ -117,14 +87,12 @@ export type NextRank = {
 /** The higher rungs the run can reach from here, in the engine's order. Empty once nothing higher is on offer. */
 export function nextRanks(state: GameState): NextRank[] {
   if (state.phase === 'ended') return [];
-  // An event may be waiting; the ladder still reads the actions of the season behind it.
-  const acting: GameState = state.phase === 'action' ? state : { ...state, phase: 'action', eventId: null };
   const here = careerRank(state);
   const out: NextRank[] = [];
-  for (const o of options(acting)) {
+  for (const o of actionViews(state)) {
     const action = ACTIONS.find((a) => a.id === o.id);
     const effect = action?.roll?.success ?? action?.effect;
-    if (!action || !effect || o.id === 'rest') continue;
+    if (!action || !effect) continue;
     const rank = rankAfter(state, effect);
     if (rank.level <= here.level) continue;
     const requirements: Requirement[] = [];

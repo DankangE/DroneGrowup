@@ -37,10 +37,8 @@ export function price({ cost, tire }: Pick<Forecast, 'cost' | 'tire'>) {
   return (cost ? statValue('money', cost) : '무료') + (tire ? ' · ' + token('stamina', -tire) : '');
 }
 
-export const restGain = (f: Forecast) => token('stamina', f.branches[0].deltas.stamina ?? 0);
-
-export function detailLabel(title: string, f: Forecast, rest?: 'light' | 'full') {
-  if (rest) return [title, restGain(f), ...(rest === 'full' ? ['계절 전체'] : [])].join(' · ');
+export function detailLabel(title: string, f: Forecast) {
+  if (f.die) return title + ' · 1~' + f.die + '칸';
   return (f.chance === undefined ? '실행' : `룰렛 돌리기 · ${f.chance}%`) + ' · ' + price(f);
 }
 
@@ -88,14 +86,15 @@ export const resultMarkers = (r: Result) => markers({ flag: r.flag,
   stage: r.stageTo !== r.stageFrom ? r.stageTo : undefined, end: r.ended });
 
 export function settlementText(result: Result) {
-  if (!result.settle || !result.season || !result.upkeep) return;
-  const { from, to, auto, rest, refill } = result.season;
-  const { lines, total } = result.upkeep;
-  const { deltas } = result.settle;
-  // Voluntary rest was the option itself and already has a chip. Wind-down belongs to settlement.
-  const recovery = (auto && rest ? `휴식 +${rest} · ` : '') + `계절 회복 +${refill}`;
-  const ledger = (lines.length <= 3 ? lines : [{ label: '합계', amount: total }])
-    .map(l => l.label + ' ' + signed(l.amount) + '만원');
+  if (!result.season && !result.upkeep && result.restGain === undefined) return;
+  const season = result.season;
+  const recovery = [
+    ...(result.restGain !== undefined ? [`휴식 +${result.restGain}`] : []),
+    ...(season ? [`계절 회복 +${season.refill}`] : []),
+  ].join(' · ');
+  const ledger = (result.upkeep?.lines ?? []).map(l => l.label + ' ' + signed(l.amount) + '만원');
+  const deltas = result.settle?.deltas ?? {};
   const other = visible.filter(k => k !== 'stamina' && k !== 'money' && deltas[k]).map(k => token(k, deltas[k]!));
-  return { date: from.replace(' · ', ' ') + ' → ' + to.replace(' · ', ' '), recovery, ledger, other };
+  const date = season ? season.from.replace(' · ', ' ') + ' → ' + season.to.replace(' · ', ' ') : result.upkeep ? '월급 정산' : '휴식 칸';
+  return { date, recovery, ledger, other };
 }

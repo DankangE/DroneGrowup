@@ -2,9 +2,9 @@
 // the second (crash) draw and the separate season ledger. Expected coverage comes from the tables.
 import { isDeepStrictEqual } from 'node:util';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
-import { ACTIONS, ENDINGS, EVENTS, FLAG_LABEL, LOAN_STEPS, STAGES, STAT_LABEL, STAT_MAX } from '../src/game/data.ts';
+import { ACTIONS, BOARD, BOARD_PLACES, SPACE_MENU, ENDINGS, EVENTS, FLAG_LABEL, LOAN_STEPS, STAGES, STAT_LABEL, STAT_MAX } from '../src/game/data.ts';
 import { choose, forecast, newGame, options } from '../src/game/engine.ts';
-import { BOOKKEEPING, detailLabel, forecastLines, parseTokens, restGain, resultChips, resultMarkers, settlementText, token } from '../src/game/outcome-text.ts';
+import { BOOKKEEPING, forecastLines, parseTokens, resultChips, resultMarkers, settlementText, token } from '../src/game/outcome-text.ts';
 import type { BranchId, Choice, Cond, GameState, OptionView, Result, Stat, StatMap } from '../src/game/types.ts';
 
 const stats = Object.keys(STAT_LABEL) as Stat[];
@@ -24,9 +24,11 @@ function branches(rolled: boolean, flight: boolean): BranchId[] {
   if (!rolled) return ['sure'];
   return flight ? ['success', 'fail', 'crash'] : ['success', 'fail'];
 }
-for (const a of ACTIONS) expected.set(a.id, branches(!!a.roll, !!a.flight));
+for (const a of ACTIONS) {
+  for (const step of ['space', 'bonus']) expected.set(step + ':' + a.id, branches(!!a.roll, !!a.flight));
+}
 for (const e of EVENTS) e.choices.forEach((c, i) => expected.set(`event:${e.id} choice ${i}`, branches(!!c.roll, false)));
-for (const id of ['rest:light', 'repair', 'buy:drone', 'buy:gear', 'buy:car', ...LOAN_STEPS.map(n => 'loan:' + n),
+for (const id of ['skip', 'end', 'route:0', 'route:1', 'spin', 'repair', 'buy:drone', 'buy:gear', 'buy:car', ...LOAN_STEPS.map(n => 'loan:' + n),
   'repay:' + LOAN_STEPS[0], 'repay:all']) expected.set(id, ['sure']);
 
 function equal(where: string, claimed: unknown, actual: unknown) {
@@ -41,7 +43,7 @@ function statDiff(where: string, claim: StatMap, actual: StatMap) {
 }
 function choiceKey(state: GameState, o: OptionView) {
   if (state.phase === 'event') return `event:${state.eventId} choice ${o.id.slice(3)}`;
-  return o.id === 'rest' && state.s.acts > 0 ? 'rest:light' : o.id;
+  return o.kind === 'action' || o.kind === 'job' ? state.board.step + ':' + o.id : o.id;
 }
 function readMarkers(text: string) {
   const parts = text.split(' · ');
@@ -50,13 +52,18 @@ function readMarkers(text: string) {
 function checkSettlement(where: string, r: Result) {
   const settle = r.settle?.deltas ?? {};
   const sheet = settlementText(r);
-  equal(where + ' settlement block', !!sheet, !!r.season);
+  equal(where + ' settlement block', !!sheet, !!r.season || !!r.upkeep || r.restGain !== undefined);
   if (sheet) {
     const recovery = [...sheet.recovery.matchAll(/(?:휴식|계절 회복) \+(\d+)/g)].reduce((n, m) => n + Number(m[1]), 0);
-    const ledger = sheet.ledger.reduce((n, line) => n + Number(line.match(/ ([+-]?[\d,]+)만원$/)?.[1].replaceAll(',', '')), 0);
+    const lines = sheet.ledger.map(line => {
+      const match = /^(.+) ([+-]?[\d,]+)만원$/.exec(line);
+      return { label: match?.[1], amount: Number(match?.[2].replaceAll(',', '')) };
+    });
+    equal(where + ' pay lines', lines, r.upkeep?.lines ?? []);
+    const ledger = lines.reduce((n, line) => n + line.amount, 0);
     const shown = parseTokens(sheet.other.join(' · '));
     statDiff(where + ' settlement extras', shown, { ...settle, stamina: 0, money: 0 });
-    equal(where + ' upkeep', ledger, r.upkeep?.total);
+    equal(where + ' upkeep', ledger, r.upkeep?.total ?? 0);
     equal(where + ' funded upkeep', ledger, (settle.money ?? 0) - (settle.debt ?? 0));
     statDiff(where + ' settlement', { ...shown, stamina: recovery, money: ledger + (shown.debt ?? 0) }, settle);
   }
@@ -93,13 +100,11 @@ function inspect(before: GameState, o: OptionView, force = false) {
     statDiff(key + ' ' + b.id + ' preview', changes, b.deltas);
     claims.set(b.id, changes);
   }
-  if (o.id === 'rest') {
-    const mode = before.s.acts ? 'light' : 'full';
-    for (const label of [restGain(f), detailLabel(o.title, f, mode)]) {
-      statDiff(key + ' rest label', parseTokens(label), f.branches[0].deltas);
-    }
-    equal(key + ' full season', detailLabel(o.title, f, mode).includes('계절 전체'), mode === 'full');
+  if (o.kind === 'action' || o.kind === 'job') {
+    const action = ACTIONS.find(a => a.id === o.id)!;
+    equal(key + ' tire by step', o.tire, before.board.step === 'space' ? 0 : action.tire);
   }
+  if (o.id === 'spin') equal(key + ' die', f.die, 6);
   if (!o.enabled) return;
 
   const played = new Set<BranchId>();
@@ -134,9 +139,16 @@ function inspect(before: GameState, o: OptionView, force = false) {
     equal(where + ' markers', previewMarks, marks);
     equal(where + ' result markers', resultMarkers(r), marks);
     equal(where + ' metadata', [b.flag, b.stage, b.end], [flag, stage, end]);
-    equal(where + ' ended season', b.endsSeason, !!r.season);
-    equal(where + ' season marker', displayed.includes('→ 계절 종료'), !!r.season);
-    equal(where + ' season advanced', !!r.settle, after.turn !== before.turn && !(r.ended && !r.upkeep));
+    equal(where + ' ended season', b.endsSeason, !!r.season || !!r.ended);
+    equal(where + ' season marker', displayed.includes('→ 계절 종료'), !!r.season || !!r.ended);
+    equal(where + ' season advanced', after.turn !== before.turn, !!r.season || !!r.ended);
+    equal(where + ' accrual forecast', b.accrual, r.season?.accrual);
+    const ledger = { ...before.board.ledger };
+    if (r.move?.path.some(at => BOARD.nodes[at].kind === 'pay')) {
+      for (const key of Object.keys(ledger)) delete ledger[key];
+    }
+    for (const line of r.season?.accrual ?? []) ledger[line.label] = (ledger[line.label] ?? 0) + line.amount;
+    equal(where + ' closing ledger', after.board.ledger, r.ended ? {} : ledger);
 
     checkSettlement(where, r);
     const settle = r.settle?.deltas ?? {};
@@ -186,7 +198,16 @@ function exercise(state: GameState, id: string) {
   if (!o?.enabled) return equal(`fixture ${state.eventId ?? state.stage} ${id}`, o?.locks ?? 'not offered', 'enabled');
   inspect(state, o, true);
 }
-for (const a of ACTIONS) exercise(fixture(a.when, a), a.id);
+for (const a of ACTIONS) {
+  const state = fixture(a.when, a);
+  state.board.step = 'space';
+  const menu = Object.entries(SPACE_MENU).find(([, ids]) => ids.includes(a.id));
+  state.board.pos = BOARD.nodes.find(n => n.kind === menu?.[0])!.id;
+  exercise(state, a.id);
+  state.board.step = 'bonus';
+  state.board.pos = BOARD_PLACES[state.stage].indexOf(a.place);
+  exercise(state, a.id);
+}
 for (const e of EVENTS) {
   e.choices.forEach((choice, i) => {
     const state = fixture(e.when, choice);
@@ -196,16 +217,24 @@ for (const e of EVENTS) {
   });
 }
 const pilot = fixture({ stage: ['pilot'], min: { drone: 1, cond: 70, debt: 200, acts: 1 } });
-for (const o of options(pilot).filter(o => o.free || o.id === 'rest')) inspect(pilot, o, true);
-
-// Exercise capped shortfalls, voluntary rest, and a crash that replaces nonzero wear with zero.
-const capped = fixture({});
-Object.assign(capped.s, { debt: STAT_MAX.debt!, money: 0, stamina: 99 });
-exercise(capped, 'rest');
+for (const o of options(pilot).filter(o => o.free)) inspect(pilot, o, true);
+exercise(pilot, 'spin');
+pilot.board.step = 'space';
+pilot.board.pos = 3;
+exercise(pilot, 'route:0');
+exercise(pilot, 'route:1');
+pilot.board.pos = 2;
+exercise(pilot, 'skip');
 exercise(pilot, 'job_event');
-exercise(fixture({ stage: ['company'], min: { contracts: 4, staff: 2 } }), 'rest');
-exercise(fixture({ stage: ['academy'], min: { students: 16, staff: 1 } }), 'rest');
-exercise(fixture({ stage: ['company'], flags: ['tech'] }), 'co_rnd');
+
+// Closing a capped debt, paying at timeout, and organization changes on a season end.
+for (const state of [fixture({}), fixture({ stage: ['company'], min: { contracts: 4, staff: 2 } }),
+  fixture({ stage: ['academy'], min: { students: 16, staff: 1 } })]) {
+  if (state.stage === 'student') Object.assign(state.s, { debt: STAT_MAX.debt!, money: 0, stamina: 99 });
+  state.board.step = 'bonus';
+  state.turn = 119;
+  exercise(state, 'end');
+}
 
 const sample = Object.fromEntries(stats.map((k, i) => [k, (i - 1) * 1234]));
 equal('token round trip', parseTokens(stats.map(k => token(k, sample[k])).join(' · ')), sample);

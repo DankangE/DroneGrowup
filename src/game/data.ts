@@ -1,12 +1,12 @@
 // Every number and every line of story text of 파일럿 키우기. Money is in 만원, always integers.
 // The rules that read these tables are in engine.ts; docs/design.md explains the intent behind the numbers.
-import type { ActionDef, ChanceMod, EndingDef, EndingId, EventDef, ItemKind, ItemLevel, PlaceId, Stage, Stat } from './types.ts';
+import type { ActionDef, BoardNode, SpaceKind, ChanceMod, EndingDef, EndingId, EventDef, ItemKind, ItemLevel, PlaceId, Stage, Stat } from './types.ts';
 
 export const RULES = {
   maxTurns: 120, // 30 years, four seasons per year
   startAge: 20,
   seasons: ['봄', '여름', '가을', '겨울'],
-  rest: { full: 60, light: 20 },
+  board: { die: 6, restGain: 60, achievement: { fork: 30, contest: 150, rankup: 300 }, bonusCap: 10000 },
   seasonRefill: 30,
   start: { money: 60, cond: 100, stamina: 100 } as Partial<Record<Stat, number>>,
   /** 체력 0..100. Every roll (actions and events) reads it; the card shows the chance after it. */
@@ -16,7 +16,6 @@ export const RULES = {
     exhausted: 20, exhaustedPenalty: 20, exhaustedCrashPct: 15, // below `exhausted`: -20%p, and failed flights crash more often
   },
   interestPct: 2, // of debt, per turn, rounded up
-  eventChancePct: 38,
   eventCooldown: 8,
   chanceMin: 5,
   chanceMax: 95,
@@ -57,7 +56,7 @@ export const STAGES: Record<Stage, { name: string; living: number; salary: numbe
 };
 
 // ---------------------------------------------------------------- display only: career ladder and letter grades
-// Nothing below is read by engine.ts, so it cannot change a roll, a payout or an ending. career.ts reads it.
+// Career levels also determine the rank-up achievement.
 
 /**
  * The rungs of each career. `level` is the big number on the rank card and orders every rung of the game:
@@ -104,7 +103,7 @@ export const STAT_LABEL: Record<Stat, string> = {
 
 /** Upper bounds; every stat is also kept at 0 or above. */
 export const STAT_MAX: Partial<Record<Stat, number>> = {
-  acts: 99, stamina: 100, theory: 999, skill: 999, drone: 5, gear: 3, car: 3, cond: 100, rank: 3, staff: 12, round: 3, level: 3, support: 100, students: 200, contracts: 30,
+  acts: 2, stamina: 100, theory: 999, skill: 999, drone: 5, gear: 3, car: 3, cond: 100, rank: 3, staff: 12, round: 3, level: 3, support: 100, students: 200, contracts: 30,
   xp: 9999, rep: 999, biz: 999, teach: 999, net: 999, value: 9_000_000, money: 9_000_000, debt: 9_000_000,
 };
 
@@ -158,6 +157,11 @@ export const ITEMS: Record<ItemKind, { label: string; none: string; levels: Item
   },
 };
 
+export const UPKEEP_LABELS = [
+  '급여', '평가관 수당', '고정 계약 수입', '계약 매출', '직원 급여', '사옥 운영비',
+  '수강료 수입', '교관 급여', '실습장 운영비', '생활비', '대출 이자',
+] as const;
+
 export const LOAN_STEPS = [100, 500];
 
 export const FLAG_LABEL: Record<string, string> = {
@@ -171,17 +175,7 @@ const mod = (stat: Stat, over: number, per: number, cap: number): ChanceMod => (
 const LICENSED: Stage[] = ['pilot', 'employee', 'instructor', 'solo'];
 const FLYERS: Stage[] = ['pilot', 'solo', 'company'];
 
-export const WIND_DOWN_NOTE = '체력이 바닥났다. 남은 계절은 쉬면서 보냈다.';
-export const REST_LIGHT = {
-  title: '쉬고 계절 넘기기',
-  desc: '남은 계절을 쉬며 보낸다.',
-  effect: { text: '조종기를 내려놓고 남은 계절을 쉬었다.', add: { get stamina() { return RULES.rest.light; } } },
-};
-
 export const ACTIONS: ActionDef[] = [
-  // ------------------------------------------------------------ 어디서나
-  { id: 'rest', place: 'home', when: {}, title: '푹 쉰다', desc: '이번 계절을 통째로 쉰다.',
-    effect: { text: '밀린 잠을 자고, 하늘을 올려다봤다. 몸이 가벼워졌다.', add: { get stamina() { return RULES.rest.full; } } } },
   { id: 'self_study', place: 'home', when: { stage: [...LICENSED, 'academy', 'company', 'director'] }, tire: 15, title: '항공법 · 기상 독학', desc: '개정된 법규와 기상 자료를 혼자 읽는다. 시험과 서류에 쓰인다.',
     effect: { text: '개정 항공안전법에 밑줄을 그었다.', add: { theory: 7 } } },
 
@@ -661,3 +655,90 @@ export const ENDINGS: EndingDef[] = [
 ];
 
 export const ENDING_IDS: EndingId[] = ENDINGS.map((e) => e.id);
+
+export const SPACE_LABEL: Record<SpaceKind, string> = {
+  pay: '월급날', train: '훈련', job: '일감', contest: '대회 · 시험', event: '사건', rest: '휴식', fork: '갈림길', rankup: '승급',
+};
+
+const node = (id: number, kind: SpaceKind, x: number, y: number, ...next: number[]): BoardNode => ({ id, kind, x, y, next });
+export const BOARD = {
+  start: 0,
+  nodes: [
+    node(0, 'pay', 10, 10, 1), node(1, 'train', 30, 10, 2), node(2, 'job', 50, 10, 3),
+    node(3, 'fork', 70, 10, 4, 16), node(4, 'train', 90, 10, 5), node(5, 'rest', 90, 30, 6),
+    node(6, 'train', 90, 50, 7), node(7, 'rankup', 90, 70, 8), node(8, 'event', 90, 90, 9),
+    node(9, 'job', 70, 90, 10), node(10, 'pay', 50, 90, 11), node(11, 'fork', 30, 90, 12, 19),
+    node(12, 'job', 10, 90, 13), node(13, 'rest', 10, 70, 14), node(14, 'train', 10, 50, 15),
+    node(15, 'rankup', 10, 30, 0), node(16, 'job', 62, 27, 17), node(17, 'event', 66, 44, 18),
+    node(18, 'contest', 74, 58, 7), node(19, 'job', 38, 73, 20), node(20, 'contest', 34, 56, 21),
+    node(21, 'event', 26, 42, 15),
+  ],
+  forks: [{ at: 3, join: 7, routes: [4, 16] }, { at: 11, join: 15, routes: [12, 19] }],
+};
+
+export const BOARD_PLACES: Record<Stage, PlaceId[]> = {
+  student: [
+    'town', 'school', 'town', 'school', 'airfield', 'home', 'school', 'exam',
+    'school', 'town', 'bank', 'school', 'town', 'home', 'school', 'exam',
+    'airfield', 'town', 'airfield', 'town', 'airfield', 'school',
+  ],
+  pilot: [
+    'bank', 'academy', 'town', 'town', 'assoc', 'home', 'academy', 'office',
+    'garage', 'town', 'bank', 'assoc', 'farm', 'home', 'academy', 'town',
+    'site', 'bridge', 'studio', 'windfarm', 'coast', 'town',
+  ],
+  employee: [
+    'hq', 'home', 'hq', 'town', 'assoc', 'home', 'hq', 'hq',
+    'town', 'town', 'hq', 'assoc', 'hq', 'home', 'assoc', 'hq',
+    'town', 'town', 'assoc', 'hq', 'town', 'hq',
+  ],
+  instructor: [
+    'academy', 'academy', 'academy', 'assoc', 'academy', 'home', 'academy', 'exam',
+    'assoc', 'academy', 'bank', 'academy', 'academy', 'home', 'academy', 'academy',
+    'town', 'academy', 'exam', 'academy', 'assoc', 'town',
+  ],
+  academy: [
+    'academy', 'academy', 'town', 'academy', 'academy', 'home', 'academy', 'academy',
+    'town', 'academy', 'bank', 'assoc', 'town', 'home', 'academy', 'assoc',
+    'town', 'academy', 'assoc', 'academy', 'assoc', 'town',
+  ],
+  solo: [
+    'office', 'office', 'town', 'assoc', 'office', 'home', 'assoc', 'hq',
+    'town', 'town', 'bank', 'office', 'farm', 'home', 'office', 'hq',
+    'site', 'bridge', 'studio', 'windfarm', 'coast', 'town',
+  ],
+  company: [
+    'bank', 'hq', 'hq', 'hq', 'hq', 'home', 'assoc', 'bank',
+    'town', 'hq', 'bank', 'hq', 'farm', 'home', 'hq', 'hq',
+    'site', 'bridge', 'studio', 'windfarm', 'coast', 'town',
+  ],
+  director: [
+    'assoc', 'assoc', 'town', 'town', 'assoc', 'home', 'assoc', 'assoc',
+    'town', 'coast', 'bank', 'assoc', 'town', 'home', 'assoc', 'assoc',
+    'coast', 'town', 'assoc', 'town', 'assoc', 'coast',
+  ],
+};
+
+export const ROUTE_NAMES: Record<Stage, [[string, string], [string, string]]> = {
+  student: [['이론 코스', '실전 코스'], ['도서관 길', '현장 실습 길']],
+  pilot: [['안전 항로', '도전 항로'], ['연습장 길', '출장 길']],
+  employee: [['사내 연수길', '파견 항로'], ['본사 길', '외근 길']],
+  instructor: [['교안 연구길', '시범 비행길'], ['강의동 길', '평가장 길']],
+  academy: [['교재 연구길', '모집 행사길'], ['실습동 길', '교육 박람회길']],
+  solo: [['사무실 길', '수주 항로'], ['계약 정리길', '원정 촬영길']],
+  company: [['사내 교육길', '납품 항로'], ['기술 연수길', '입찰 현장길']],
+  director: [['회관 길', '지부 순회길'], ['정책 연구길', '공청회 길']],
+};
+
+export const SPACE_MENU = {
+  train: ['self_study','st_theory','st_sim','st_flight','pi_assist','pi_study','pi_meetup','assoc_join','assoc_volunteer','inst_teach','ac_teach','solo_study','dir_forum'],
+  job: ['st_parttime','st_assist', ...ACTIONS.filter(a => a.flight).map(a => a.id), 'pi_repair_gig','emp_work','emp_overtime','solo_sales','co_sales','co_bid','co_hire','co_rnd','ac_ad','ac_hire','dir_campaign','dir_tour'],
+  rankup: ['st_exam','emp_apply','inst_course','solo_register','emp_promo1','emp_promo2','emp_promo3','emp_quit','inst_examiner','academy_found','inst_quit','ac_expand','ac_expand2','ac_accredit','corp_found','co_ir','co_ipo','assoc_run','dir_vice','dir_chair'],
+};
+export const RANKUP_STOPS = SPACE_MENU.rankup.filter(id => !['emp_quit', 'inst_quit'].includes(id));
+export const CONTEST_EVENTS = ['scholarship', 'club', 'grant', 'expo', 'best_instructor', 'taskforce', 'hearing'];
+export const FINAL_GRADES = [
+  { from: 30000, grade: 'S', title: '하늘의 개척자' }, { from: 15000, grade: 'A', title: '항로의 달인' },
+  { from: 7000, grade: 'B', title: '노련한 조종사' }, { from: 3000, grade: 'C', title: '성실한 비행가' },
+  { from: 0, grade: 'D', title: '첫 항로의 도전자' },
+];

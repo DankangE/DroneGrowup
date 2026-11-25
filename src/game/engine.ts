@@ -1,8 +1,9 @@
 // Rules of 파일럿 키우기: pure functions over a JSON-serialisable GameState. No DOM, no Date, no Math.random;
 // all luck comes from the seeded generator stored in the state, so a seed plus a list of choices replays a run.
-import { ACTIONS, ENDINGS, EVENTS, FLAG_LABEL, ITEMS, LOAN_STEPS, REST_LIGHT, RULES, STAGES, STAT_LABEL, STAT_MAX, WIND_DOWN_NOTE } from './data.ts';
+import { careerRank } from './rank.ts';
+import { BOARD, BOARD_PLACES, SPACE_LABEL, SPACE_MENU, ROUTE_NAMES, RANKUP_STOPS, UPKEEP_LABELS, FINAL_GRADES, CONTEST_EVENTS, ACTIONS, ENDINGS, EVENTS, FLAG_LABEL, ITEMS, LOAN_STEPS, RULES, STAGES, STAT_LABEL, STAT_MAX } from './data.ts';
 import type {
-  ActionDef, BranchForecast, BranchId, Choice, Cond, Derived, Effect, EndingDef, EndingId, EventDef, Forecast, GameState, ItemKind, OptionKind, OptionView,
+  ActionDef, BoardState, BranchForecast, BranchId, Choice, Cond, Derived, Effect, EndingDef, EndingId, EventDef, Forecast, GameState, ItemKind, OptionKind, OptionView,
   OutcomeView, PlaceId, Result, Stage, Stat, StatMap, UpkeepLine,
 } from './types.ts';
 
@@ -27,11 +28,15 @@ const randInt = (state: GameState, n: number) => Math.floor((nextRandom(state) /
 
 // ---------------------------------------------------------------- state
 
+function initialBoard(): BoardState {
+  return { pos: BOARD.start, step: 'spin', left: 0, route: -1, roll: 0, contest: false, ledger: {}, forks: 0, contests: 0, rankups: 0 };
+}
+
 export function newGame(seed: number): GameState {
   const s = Object.fromEntries(STATS.map((k) => [k, 0])) as Record<Stat, number>;
   Object.assign(s, RULES.start);
   const clean = (Math.floor(Number(seed)) >>> 0) || 1;
-  return { v: 1, seed: clean, rng: clean, turn: 0, stage: 'student', phase: 'action', s, flags: [], eventId: null, seen: {}, ending: null, score: 0, log: [] };
+  return { v: 1, board: initialBoard(), seed: clean, rng: clean, turn: 0, stage: 'student', phase: 'action', s, flags: [], eventId: null, seen: {}, ending: null, score: 0, log: [] };
 }
 
 function setStat(state: GameState, stat: Stat, value: number) {
@@ -68,15 +73,16 @@ function orgWorth(state: GameState) {
 }
 
 export const creditLimit = (state: GameState) => STAGES[state.stage].credit + itemValue(state);
-export const netWorth = (state: GameState) => state.s.money - state.s.debt + itemValue(state) + orgWorth(state);
+const ledgerSum = (state: GameState) => Object.values(state.board.ledger).reduce((sum, amount) => sum + amount, 0);
+export const netWorth = (state: GameState) => state.s.money - state.s.debt + itemValue(state) + orgWorth(state) + ledgerSum(state);
 const academySeats = (state: GameState) => RULES.academy.baseSeats + state.s.staff * RULES.academy.seatsPerStaff;
 
-/** Money that moves at the end of a turn, as labelled lines (income positive). */
+/** Upkeep accrued at the end of a season, as labelled lines (income positive). */
 function upkeepLines(state: GameState): UpkeepLine[] {
   const st = STAGES[state.stage];
   const s = state.s;
   const lines: UpkeepLine[] = [];
-  const line = (label: string, amount: number) => { if (amount !== 0) lines.push({ label, amount }); };
+  const line = (label: typeof UPKEEP_LABELS[number], amount: number) => { if (amount !== 0) lines.push({ label, amount }); };
   line('급여', st.salary + st.salaryPerRank * s.rank);
   if (state.stage === 'instructor' && state.flags.includes('examiner')) line('평가관 수당', RULES.examinerPay);
   if (state.stage === 'solo') line('고정 계약 수입', s.contracts * RULES.solo.contractPay);
@@ -257,19 +263,70 @@ function freeChoices(state: GameState): { id: string; kind: OptionKind; place: P
 
 type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean };
 
+const placeAt = (state: GameState) => BOARD_PLACES[state.stage][state.board.pos];
+const nodeAt = (state: GameState) => BOARD.nodes[state.board.pos];
+const forkIndex = (pos: number) => BOARD.forks.findIndex(f => f.at === pos);
+
+export function boardView(state: GameState) {
+  const { pos, route, step } = state.board;
+  const routeNames: string[] = [];
+  for (const [i, fork] of BOARD.forks.entries()) {
+    for (const [j, first] of fork.routes.entries()) {
+      for (let at = first; at !== fork.join; at = BOARD.nodes[at].next[0]) routeNames[at] = ROUTE_NAMES[state.stage][i][j];
+    }
+  }
+  const nodes = BOARD.nodes.map(node => ({ ...node, next: [...node.next], place: BOARD_PLACES[state.stage][node.id],
+    label: SPACE_LABEL[node.kind], routeName: routeNames[node.id] }));
+  const reachable: Record<number, number[]> = {};
+  let frontier = [pos];
+  for (let face = 1; face <= RULES.board.die; face++) {
+    frontier = [...new Set(frontier.flatMap(at => face === 1 && route >= 0 ? [nodes[at].next[route]] : nodes[at].next))];
+    reachable[face] = frontier;
+  }
+  return { nodes, pos, step, reachable };
+}
+
+function actionKind(a: ActionDef) { return a.flight ? 'job' : 'action'; }
+
+export function actionViews(state: GameState): OptionView[] {
+  return ACTIONS.filter(a => met(state, a.when)).map(a => view(state, a.id, actionKind(a), a.place, a, !!a.flight));
+}
+
+function menuActions(state: GameState, step: 'space' | 'bonus') {
+  const kind = nodeAt(state).kind;
+  const ids = kind === 'train' || kind === 'job' || kind === 'rankup' ? SPACE_MENU[kind] : [];
+  return ACTIONS.filter(a => (step === 'space' ? ids.includes(a.id) : a.place === placeAt(state)) && met(state, a.when));
+}
+
+// Keep a money-only lock visible so the player can borrow before making the choice.
+function hasMenu(state: GameState, step: 'space' | 'bonus') {
+  return menuActions(state, step).some(a => met(state, a.need) && (step === 'space' || state.s.stamina >= (a.tire ?? 0)));
+}
+
 function resolve(state: GameState): Map<string, Resolved> {
   const map = new Map<string, Resolved>();
   if (state.phase === 'event') {
     const ev = currentEvent(state);
     ev?.choices.forEach((choice, i) => map.set(`ev:${i}`, { kind: 'event', place: ev.place, choice, flight: false }));
-  } else if (state.phase === 'action') {
-    for (const a of ACTIONS as ActionDef[]) {
-      if (!met(state, a.when)) continue;
-      const choice = a.id === 'rest' && state.s.acts > 0 ? REST_LIGHT : a;
-      map.set(a.id, { kind: a.flight ? 'job' : 'action', place: a.place, choice, flight: a.flight === true });
-    }
-    for (const f of freeChoices(state)) map.set(f.id, { kind: f.kind, place: f.place, choice: f.choice, flight: false });
   }
+  if (state.phase !== 'action') return map;
+  const { step, pos } = state.board;
+  const boardOption = (id: string, title: string, desc: string) => map.set(id, {
+    kind: 'board', place: placeAt(state), choice: { title, desc, effect: { text: desc } }, flight: false,
+  });
+  if (step === 'fork' || (step === 'space' && nodeAt(state).kind === 'fork')) {
+    ROUTE_NAMES[state.stage][forkIndex(pos)].forEach((name, i) => boardOption('route:' + i, name, name + '로 향한다.'));
+    return map;
+  }
+  if (step === 'spin') boardOption('spin', '주사위 굴리기', '주사위 눈만큼 이동한다.');
+  else {
+    for (const a of menuActions(state, step)) {
+      map.set(a.id, { kind: actionKind(a), place: a.place, choice: step === 'space' ? { ...a, tire: 0 } : a, flight: !!a.flight });
+    }
+    if (step === 'space') boardOption('skip', '그냥 지나간다', '이번 칸의 행동을 건너뛴다.');
+    else boardOption('end', '계절 마치기', '이번 계절을 마무리한다.');
+  }
+  for (const f of freeChoices(state)) map.set(f.id, { ...f, flight: false });
   return map;
 }
 
@@ -280,15 +337,40 @@ export function options(state: GameState): OptionView[] {
 
 // ---------------------------------------------------------------- playing a choice
 
-function finish(state: GameState, ending: EndingId, early: boolean) {
-  const info = endingInfo(ending);
-  const bonus = info.bonus + (early ? Math.max(0, RULES.maxTurns - state.turn) * RULES.score.turnBonus : 0);
+export function finalRank(state: GameState) {
+  const { forks, contests, rankups } = state.board;
+  const weights = RULES.board.achievement;
+  const points = forks * weights.fork + contests * weights.contest + rankups * weights.rankup;
+  const worth = netWorth(state);
+  const endingBonus = state.ending ? endingInfo(state.ending).bonus : 0;
+  const bonus = Math.min(RULES.board.bonusCap, endingBonus + points);
+  const early = state.ending && state.ending !== 'debtor' ? (RULES.maxTurns - state.turn) * RULES.score.turnBonus : 0;
+  const total = state.ending === 'debtor' ? 0 : clamp(Math.max(0, worth) + bonus + early, 0, RULES.score.max);
+  const { grade, title: gradeTitle } = FINAL_GRADES.find(g => total >= g.from)!;
+  return { netWorth: worth, endingBonus, achievements: { forks, contests, rankups, points }, bonus, early, total, grade, gradeTitle };
+}
+
+function payLedger(state: GameState, result: Result) {
+  const lines = Object.entries(state.board.ledger).map(([label, amount]) => ({ label, amount }));
+  const balance = state.s.money - state.s.debt;
+  const total = ledgerSum(state);
+  setStat(state, 'money', state.s.money + total);
+  settle(state);
+  const applied = state.s.money - state.s.debt - balance;
+  if (applied !== total) lines.push({ label: '잔액 한도 조정', amount: applied - total });
+  state.board.ledger = {};
+  const paid = result.upkeep ??= { lines: [], total: 0 };
+  paid.lines.push(...lines);
+  paid.total += applied;
+}
+
+function finish(state: GameState, ending: EndingId, result: Result) {
+  if (Object.keys(state.board.ledger).length) payLedger(state, result);
   state.phase = 'ended';
   state.eventId = null;
   state.ending = ending;
-  // A debtor scores nothing, even when three overdue strikes came with assets still on the books.
-  state.score = ending === 'debtor' ? 0 : clamp(Math.max(0, netWorth(state)) + bonus, 0, RULES.score.max);
-  state.log.push({ turn: state.turn, text: `엔딩 — ${info.title}`, tone: ending === 'debtor' ? 'bad' : 'good' });
+  state.score = finalRank(state).total;
+  state.log.push({ turn: state.turn, text: `엔딩 — ${endingInfo(ending).title}`, tone: ending === 'debtor' ? 'bad' : 'good' });
 }
 
 function timeoutEnding(state: GameState): EndingId {
@@ -298,9 +380,11 @@ function timeoutEnding(state: GameState): EndingId {
   return STAGES[state.stage].timeout;
 }
 
-function pickEvent(state: GameState): EventDef | null {
-  if (randInt(state, 100) >= RULES.eventChancePct) return null;
-  const pool = EVENTS.filter((e) => met(state, e.when) && (state.seen[e.id] === undefined || state.turn - state.seen[e.id] >= RULES.eventCooldown));
+function pickEvent(state: GameState, contest: boolean): EventDef | null {
+  const available = EVENTS.filter((e) => met(state, e.when) && (state.seen[e.id] === undefined || state.turn - state.seen[e.id] >= RULES.eventCooldown));
+  const themed = contest ? available.filter(e => CONTEST_EVENTS.includes(e.id)) : [];
+  const pool = themed.length ? themed : available;
+  if (!pool.length) return null;
   let pick = randInt(state, pool.reduce((sum, e) => sum + e.weight, 0));
   for (const e of pool) {
     pick -= e.weight;
@@ -309,18 +393,10 @@ function pickEvent(state: GameState): EventDef | null {
   return null;
 }
 
-/** Settle the season before recovering stamina and rolling the next season's event. */
-function endSeason(state: GameState, result: Result, rest: number, auto: boolean) {
+function endSeason(state: GameState, result: Result) {
   const from = dateLabel(state.turn);
-  const lines = upkeepLines(state);
-  const total = lines.reduce((sum, l) => sum + l.amount, 0);
-  const balance = state.s.money - state.s.debt;
-  state.s.money += total;
-  settle(state);
-  // Near the saved-stat ceiling, only part of a shortfall can become debt.
-  const applied = state.s.money - state.s.debt - balance;
-  if (applied !== total) lines.push({ label: '부채 상한 조정', amount: applied - total });
-  result.upkeep = { lines, total: applied };
+  const accrual = upkeepLines(state);
+  for (const { label, amount } of accrual) state.board.ledger[label] = (state.board.ledger[label] ?? 0) + amount;
   if (state.stage === 'academy') {
     const seated = Math.min(state.s.students, academySeats(state));
     setStat(state, 'students', seated - Math.max(1, Math.floor(seated / RULES.academy.leaveDiv)));
@@ -329,24 +405,88 @@ function endSeason(state: GameState, result: Result, rest: number, auto: boolean
     const c = RULES.company;
     setStat(state, 'value', state.s.value + Math.min(state.s.contracts, state.s.staff * c.perStaff) * c.valuePerContract);
   }
-  const over = state.s.debt * 100 > creditLimit(state) * RULES.overduePct;
+  const over = (state.s.debt + Math.max(0, -ledgerSum(state))) * 100 > creditLimit(state) * RULES.overduePct;
   state.s.overdue = over ? state.s.overdue + 1 : 0;
   if (over) result.notes.push(`대출 한도 초과 — 연체 경고 ${state.s.overdue}/${RULES.overdueStrikes}`);
   state.turn += 1;
   state.s.acts = 0;
-  result.season = { from, to: dateLabel(state.turn), rest, refill: 0, auto };
-  if (state.s.overdue >= RULES.overdueStrikes) return finish(state, 'debtor', false);
-  if (state.turn >= RULES.maxTurns) return finish(state, timeoutEnding(state), false);
   const beforeRefill = state.s.stamina;
   setStat(state, 'stamina', beforeRefill + RULES.seasonRefill);
-  result.season.refill = state.s.stamina - beforeRefill;
-  const ev = pickEvent(state);
-  if (ev) {
-    state.phase = 'event';
-    state.eventId = ev.id;
-    state.seen[ev.id] = state.turn;
-    result.eventId = ev.id;
+  result.season = { from, to: dateLabel(state.turn), refill: state.s.stamina - beforeRefill, accrual };
+  Object.assign(state.board, { step: 'spin', roll: 0, left: 0, contest: false });
+  if (state.s.overdue >= RULES.overdueStrikes) finish(state, 'debtor', result);
+  else if (state.turn >= RULES.maxTurns) finish(state, timeoutEnding(state), result);
+}
+
+function enterBonus(state: GameState, result: Result) {
+  state.board.step = 'bonus';
+  if (!hasMenu(state, 'bonus')) endSeason(state, result);
+}
+
+function land(state: GameState, result: Result) {
+  const kind = nodeAt(state).kind;
+  if (kind === 'event' || kind === 'contest') {
+    const ev = pickEvent(state, kind === 'contest');
+    if (ev) {
+      state.board.contest = kind === 'contest';
+      state.board.step = 'bonus';
+      state.phase = 'event';
+      result.eventId = state.eventId = ev.id;
+      state.seen[ev.id] = state.turn;
+      return;
+    }
+  } else if (kind === 'rest') {
+    const before = state.s.stamina;
+    setStat(state, 'stamina', before + RULES.board.restGain);
+    result.restGain = state.s.stamina - before;
+  } else if (kind === 'fork' || (kind !== 'pay' && hasMenu(state, 'space'))) {
+    state.board.step = 'space';
+    return;
   }
+  enterBonus(state, result);
+}
+
+const stops = ACTIONS.filter(a => RANKUP_STOPS.includes(a.id));
+function move(state: GameState, result: Result, steps: number) {
+  const b = state.board;
+  const movement: NonNullable<Result['move']> = { roll: b.roll, path: [], landed: b.pos };
+  result.move = movement;
+  b.left = 0;
+  while (steps > 0) {
+    const node = nodeAt(state);
+    if (node.kind === 'fork' && b.route === -1) {
+      b.step = 'fork';
+      b.left = steps;
+      movement.stop = 'fork';
+      return;
+    }
+    b.pos = node.next[node.kind === 'fork' ? b.route : 0];
+    b.route = -1;
+    steps--;
+    movement.path.push(b.pos);
+    movement.landed = b.pos;
+    if (nodeAt(state).kind === 'pay') payLedger(state, result);
+    if (BOARD.forks.some(f => f.join === b.pos)) b.forks++;
+    if (steps && nodeAt(state).kind === 'rankup' && stops.some(a => met(state, a.when) && met(state, a.need))) {
+      movement.stop = 'rankup';
+      result.notes.push('승급에 도전할 수 있어 이곳에 멈췄다.');
+      break;
+    }
+  }
+  land(state, result);
+}
+
+function playBoardOption(state: GameState, id: string, result: Result) {
+  const b = state.board;
+  if (id === 'spin') {
+    b.roll = randInt(state, RULES.board.die) + 1;
+    move(state, result, b.roll);
+  } else if (id === 'end') endSeason(state, result);
+  else if (id.startsWith('route:')) {
+    b.route = Number(id.slice(6));
+    if (b.step === 'fork') move(state, result, b.left);
+    else enterBonus(state, result);
+  } else enterBonus(state, result);
 }
 
 function resolveOption(state: GameState, id: string) {
@@ -388,51 +528,47 @@ function applyBranch(state: GameState, before: GameState['s'], r: Resolved, v: O
       } else if (!success) setStat(state, 'cond', s.cond - f.failWear);
     }
   }
+  const level = careerRank(state).level;
   const flag = applyEffect(state, effect, outcome.add);
+  if (careerRank(state).level > level) state.board.rankups++;
   if (flag) result.flag = flag;
   result.stageTo = state.stage;
   state.log.push({ turn: state.turn, text: `${v.title} — ${result.text}`, tone: branch === 'sure' ? 'info' : success ? 'good' : 'bad' });
   for (const note of result.notes) state.log.push({ turn: state.turn, text: note, tone: 'bad' });
 
-  let endsSeason = false;
-  if (state.phase === 'event') {
+  if (r.kind !== 'board' && !v.free) s.acts++;
+  result.deltas = diff(before, s);
+  const afterOption = { ...s };
+  if (r.kind === 'board') playBoardOption(state, v.id, result);
+  else if (state.phase === 'event') {
+    if (state.board.contest && success) state.board.contests++;
+    state.board.contest = false;
     state.phase = 'action';
     state.eventId = null;
-  } else if (v.id === 'rest') {
-    endsSeason = true;
+    enterBonus(state, result);
   } else if (!v.free) {
-    setStat(state, 'acts', s.acts + 1);
     if (effect.end) {
-      state.turn += 1;
-      finish(state, effect.end, true);
-    } else {
-      endsSeason = !ACTIONS.some(a => a.id !== 'rest' && (a.tire ?? 0) <= s.stamina && met(state, a.when));
-    }
+      state.turn++;
+      finish(state, effect.end, result);
+    } else if (state.board.step === 'bonus') endSeason(state, result);
+    else enterBonus(state, result);
   }
-  result.deltas = diff(before, s);
-  if (endsSeason) {
-    const afterOption = { ...s };
-    const auto = v.id !== 'rest';
-    let rest = s.stamina - before.stamina;
-    if (auto) {
-      setStat(state, 'stamina', s.stamina + RULES.rest.light);
-      rest = s.stamina - afterOption.stamina;
-      result.notes.push(WIND_DOWN_NOTE);
-      state.log.push({ turn: state.turn, text: WIND_DOWN_NOTE, tone: 'info' });
-    }
-    endSeason(state, result, rest, auto);
-    result.settle = { deltas: diff(afterOption, s) };
-  }
+  if (result.season || result.upkeep || result.restGain !== undefined) result.settle = { deltas: diff(afterOption, s) };
   if (state.ending) result.ended = state.ending;
   if (state.log.length > LOG_MAX) state.log.splice(0, state.log.length - LOG_MAX);
   return result;
+}
+
+function copyState(state: GameState): GameState {
+  return { ...state, board: { ...state.board, ledger: { ...state.board.ledger } }, s: { ...state.s },
+    log: state.log.map(entry => ({ ...entry })), flags: [...state.flags], seen: { ...state.seen } };
 }
 
 /** Plays one option on a copy of the state. Throws when the option is not offered or is disabled. */
 export function choose(prev: GameState, optionId: string): { state: GameState; result: Result } {
   const { r, v } = resolveOption(prev, optionId);
   if (!v.enabled) throw new Error(`option disabled: ${optionId} (${v.locks.join(', ')})`);
-  const state: GameState = structuredClone(prev);
+  const state = copyState(prev);
   let branch: BranchId = 'sure';
   let roll: Result['roll'];
   if (v.roll) {
@@ -456,21 +592,58 @@ export function forecast(prev: GameState, optionId: string): Forecast {
   // so the lines show the price and not a loan that choose() would never grant.
   const before = prev.s.money < v.cost ? { ...prev.s, money: v.cost } : prev.s;
   const branches = ids.map((id): BranchForecast => {
-    const state = { ...prev, s: { ...before }, flags: [...prev.flags], seen: { ...prev.seen }, log: [...prev.log] };
+    const state = copyState(prev);
+    state.s.money = before.money;
     const result = applyBranch(state, before, r, v, id);
-    const branch: BranchForecast = { id, deltas: result.deltas, endsSeason: !!result.season };
+    const branch: BranchForecast = { id, deltas: result.deltas, endsSeason: !!result.season || !!result.ended };
+    if (result.season) branch.accrual = result.season.accrual;
     if (result.flag) branch.flag = result.flag;
     if (result.stageTo !== result.stageFrom) branch.stage = result.stageTo;
     if (result.ended) branch.end = result.ended;
     return branch;
   });
   const f: Forecast = { cost: v.cost, tire: v.tire, branches };
+  if (optionId === 'spin') f.die = RULES.board.die;
   if (v.roll) f.chance = v.roll.chance;
   if (v.roll?.crashPct !== undefined) f.crashPct = v.roll.crashPct;
   return f;
 }
 
 // ---------------------------------------------------------------- saves
+
+const ledgerLabels = new Set<string>(UPKEEP_LABELS);
+
+function restoreBoard(raw: unknown): BoardState {
+  const board = initialBoard();
+  if (!raw || typeof raw !== 'object') return board;
+  const data = raw as Partial<BoardState>;
+  const inRange = (value: unknown, min: number, max: number): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
+  if (inRange(data.pos, 0, BOARD.nodes.length - 1)) board.pos = data.pos;
+  const kind = BOARD.nodes[board.pos].kind;
+  if (inRange(data.roll, 1, RULES.board.die)) {
+    if (data.step === 'bonus' || (data.step === 'space' && ['train', 'job', 'rankup', 'fork'].includes(kind))) {
+      board.step = data.step;
+    } else if (kind === 'fork' && data.step === 'fork' && inRange(data.left, 1, data.roll)) {
+      board.step = 'fork';
+      board.left = data.left;
+    }
+    if (board.step !== 'spin') board.roll = data.roll;
+  }
+  if (kind === 'fork' && (board.step === 'spin' || board.step === 'bonus') && inRange(data.route, 0, 1)) {
+    board.route = data.route;
+  }
+  board.contest = kind === 'contest' && data.contest === true;
+  for (const key of ['forks', 'contests', 'rankups'] as const) {
+    if (inRange(data[key], 0, RULES.maxTurns * 2)) board[key] = data[key];
+  }
+  if (data.ledger && typeof data.ledger === 'object') {
+    for (const [label, amount] of Object.entries(data.ledger)) {
+      if (ledgerLabels.has(label) && Number.isSafeInteger(amount) && Math.abs(amount) <= 9_000_000 * RULES.maxTurns) board.ledger[label] = amount;
+    }
+  }
+  return board;
+}
 
 const STAGE_IDS = Object.keys(STAGES) as Stage[];
 
@@ -499,6 +672,12 @@ export function restore(raw: unknown): GameState | null {
     setStat(state, k, value);
   }
   settle(state);
+  state.board = restoreBoard(d.board);
+  if (d.phase !== 'ended') {
+    const behindChoice = d.phase === 'action' && state.board.step === 'bonus';
+    state.s.acts = behindChoice ? Math.min(1, state.s.acts) : 0;
+  }
+  if (d.phase !== 'event') state.board.contest = false;
   state.flags = d.flags.filter((f) => typeof f === 'string' && f in FLAG_LABEL);
   for (const e of EVENTS) {
     const at = d.seen?.[e.id];

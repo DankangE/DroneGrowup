@@ -45,7 +45,7 @@ export function titleScreen(meta: Meta, saved: GameState | null, actions: TitleA
   guide.append(el('h2','section-heading','비행 안내'));
   for (const [symbol,title,body] of [
     ['map','한 바퀴', '사계절을 한 바퀴 돌면 한 살 더!'],
-    ['drone','행동과 휴식',`한 계절에 여러 번 행동해요. 첫 휴식 +${RULES.rest.full}, 활동 후 +${RULES.rest.light}.`],
+    ['drone','행동과 휴식',`칸 행동 뒤 추가 행동은 한 번이에요. 휴식 칸 체력 +${RULES.board.restGain}, 계절 회복 +${RULES.seasonRefill}.`],
     ['flag','성장', '능력 등급을 올리고 다음 랭크에 도전해요.'],
   ] as const) {
     const row = el('div','guide-row');

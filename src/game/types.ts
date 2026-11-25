@@ -2,6 +2,13 @@
 
 export type Stage = 'student' | 'pilot' | 'employee' | 'instructor' | 'academy' | 'solo' | 'company' | 'director';
 
+export type SpaceKind = 'pay' | 'train' | 'job' | 'contest' | 'event' | 'rest' | 'fork' | 'rankup';
+export type BoardNode = { id: number; kind: SpaceKind; x: number; y: number; next: number[] };
+export type BoardState = {
+  pos: number; step: 'spin' | 'fork' | 'space' | 'bonus'; left: number; route: number; roll: number;
+  contest: boolean; ledger: Record<string, number>; forks: number; contests: number; rankups: number;
+};
+
 export type EndingId =
   | 'ceo' | 'chairman' | 'academy' | 'solo' | 'debtor'
   | 'smallbiz' | 'director' | 'instructor' | 'employee' | 'pilot' | 'student';
@@ -96,6 +103,7 @@ export type LogEntry = { turn: number; text: string; tone: 'good' | 'bad' | 'inf
 
 export type GameState = {
   v: 1;
+  board: BoardState;
   seed: number;
   rng: number;
   turn: number;
@@ -121,7 +129,7 @@ export type OutcomeView = {
   end?: EndingId;
 };
 
-export type OptionKind = 'action' | 'job' | 'event' | 'shop' | 'repair' | 'bank';
+export type OptionKind = 'board' | 'action' | 'job' | 'event' | 'shop' | 'repair' | 'bank';
 
 export type OptionView = {
   id: string;
@@ -153,8 +161,10 @@ export type BranchForecast = {
   stage?: Stage;
   end?: EndingId;
   endsSeason: boolean;
+  accrual?: UpkeepLine[];
 };
 export type Forecast = {
+  die?: number;
   cost: number;
   tire: number;
   chance?: number;
@@ -163,6 +173,8 @@ export type Forecast = {
 };
 
 export type Result = {
+  move?: { roll: number; path: number[]; landed: number; stop?: 'fork' | 'rankup' };
+  restGain?: number;
   optionId: string;
   title: string;
   place: PlaceId;
@@ -171,15 +183,15 @@ export type Result = {
   text: string;
   /** Net stat changes of the option itself (cost included), before upkeep. */
   deltas: StatMap;
-  /** Net changes after the option, including automatic rest, upkeep and refill. */
+  /** Landing, paid ledger and season changes, separate from the option's own deltas. */
   settle?: { deltas: StatMap };
   /** A flag acquired for the first time. */
   flag?: string;
   crashed: boolean;
   notes: string[];
-  /** Present when the turn advanced. */
+  /** Paid on crossing a pay space or closing the run. */
   upkeep?: { lines: UpkeepLine[]; total: number };
-  season?: { from: string; to: string; rest: number; refill: number; auto: boolean };
+  season?: { from: string; to: string; refill: number; accrual: UpkeepLine[] };
   stageFrom: Stage;
   stageTo: Stage;
   /** A random event started and now waits for a choice. */
@@ -197,6 +209,6 @@ export type Derived = {
   stageName: string;
   rankName: string;
   items: Record<ItemKind, { level: number; name: string }>;
-  /** Expected money change of the next turn's upkeep. */
+  /** Upkeep the current stage and stats would accrue at season end. */
   upkeep: { lines: UpkeepLine[]; total: number };
 };

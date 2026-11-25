@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
 import { GRADED_STATS, careerPerks, careerRank, grade, nextRanks, rankChange } from '../src/game/career.ts';
 import { ACTIONS, CAREER, EVENTS, GRADES, GRADE_STEPS, RULES, STAGES, STAT_MAX } from '../src/game/data.ts';
-import { choose, derived, newGame, options } from '../src/game/engine.ts';
+import { actionViews, choose, derived, newGame } from '../src/game/engine.ts';
 import type { Choice, GameState, Stage, Stat, StatMap } from '../src/game/types.ts';
 
 function at(stage: Stage, stats: StatMap = {}, flags: string[] = []): GameState {
@@ -64,7 +64,7 @@ test('next ranks come from the offered options with their requirements, grades a
   const student = at('student', { theory: 95, skill: 40 });
   const [exam, ...rest] = nextRanks(student);
   assert.equal(rest.length, 0);
-  const offered = options(student).find((o) => o.id === 'st_exam')!;
+  const offered = actionViews(student).find((o) => o.id === 'st_exam')!;
   assert.equal(exam.optionId, 'st_exam');
   assert.equal(exam.rank.title, '프리랜서 파일럿');
   assert.equal(exam.chance, offered.roll!.chance);
@@ -82,7 +82,7 @@ test('next ranks come from the offered options with their requirements, grades a
   ]);
   assert.deepEqual(nextRanks(at('employee', { rank: 1 })).map((n) => n.rank.title), ['과장']);
   // Quitting is on offer too but leads down, so it is not a next rank.
-  assert.ok(options(at('employee')).some((o) => o.id === 'emp_quit'));
+  assert.ok(actionViews(at('employee')).some((o) => o.id === 'emp_quit'));
   assert.ok(!nextRanks(at('employee')).some((n) => n.optionId === 'emp_quit'));
   const company = at('company', { round: 2, staff: 8, value: 30000, money: 5000 });
   const ipo = nextRanks(company).find((n) => n.optionId === 'co_ipo')!;
@@ -112,8 +112,8 @@ test('a rank change reports the new rank and what it pays, straight from the eng
 
 test('reading the career views never changes a run', () => {
   for (const policy of ['ceo', 'chairman', 'academy']) {
-    let state = newGame(11);
-    const rand = botRandom(11);
+    let state = newGame(1);
+    const rand = botRandom(1);
     let ups = 0;
     for (let i = 0; i < 20000 && state.phase !== 'ended'; i++) {
       const frozen = JSON.stringify(state);

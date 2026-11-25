@@ -1,141 +1,146 @@
-// Balance simulation: every bot policy x many seeds through the real engine.
-// Fails (exit 1) on a softlock, an unreachable ending, or an ending share outside the allowed band.
-//   npm run simulate            # 300 seeds per policy
-//   SIM_RUNS=2000 npm run simulate
+// Play real choices. Time in seconds: spin/move 3, fork pause 3, landed space decision 5,
+// automatic landing 2, event answer 8, bonus 4.5, explicit end 1, pay settlement 2, free service 4.
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as data from '../src/game/data.ts';
 import { POLICIES, pick, botRandom } from '../src/game/bots.ts';
-import { choose, newGame, options } from '../src/game/engine.ts';
-import type { EndingId } from '../src/game/types.ts';
-
-const runs = Number(process.env.SIM_RUNS ?? 300);
-const MIN_SHARE = 2;
-const MAX_SHARE = 30;
-const MAX_STEPS = 20_000;
-const MIN_PLANNER_FULL_RESTS = 1;
-const MAX_PLANNER_FULL_REST_PCT = 35;
-const MAX_SCORE = 100_000;
-const MIN_ACTIONS_PER_SEASON = 1.0;
-const MAX_ACTIONS_PER_SEASON = 4.0;
-// Seconds a player spends per decision. An action is one tap on its card (two for a costly or career-changing one), a
-// 0.7 s skippable wheel and one tap on 계속: about 4.5 s, down from 6 s with the old three-tap list and 1.6 s locked spin.
-const ACTION_SECONDS = 4.5;
-const REST_SECONDS = 3;
-const EVENT_SECONDS = 8;
-const FREE_SECONDS = 4;
+import { choose, finalRank, netWorth, newGame, options } from '../src/game/engine.ts';
 
 if (process.env.SIM_TUNE) {
   const tuning = await import(pathToFileURL(resolve(process.env.SIM_TUNE)).href);
   await tuning.default(data);
 }
-const { ENDINGS, RULES } = data;
+const { BOARD, ENDINGS, RULES } = data;
+const runs = Number(process.env.SIM_RUNS ?? 300);
 const names = Object.keys(POLICIES);
-const table: Record<string, Record<string, number>> = {};
-const scores: Record<string, number[]> = {};
-const turns: Record<string, number[]> = {};
-const problems: string[] = [];
-const newCounts = () => ({ seasons: 0, actions: 0, full: 0, light: 0, auto: 0, events: 0, free: 0, decisions: 0 });
-const activity: Record<string, ReturnType<typeof newCounts>> = {};
-const distribution = [0, 0, 0, 0, 0, 0];
-const minutes: number[] = [];
-let highest = 0;
-let total = 0;
+const problems = new Set<string>();
+const ages = [25, 30, 35, 40, 45, 50];
+const wealth = ages.map((): number[] => []);
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+function median(xs: number[]) {
+  const sorted = [...xs].sort((a, b) => a - b);
+  return (sorted[Math.floor((xs.length - 1) / 2)] + sorted[Math.floor(xs.length / 2)]) / 2;
+}
+const pct = (n: number, total: number) => (100 * n / total).toFixed(1) + '%';
+const row = (...values: (string | number)[]) => console.log(values.join('\t'));
+const counts = () => ({ seasons: 0, spins: 0, space: 0, bonus: 0, events: 0, pays: 0, routes: [[0, 0], [0, 0]] });
+const activity = names.map(counts);
+const all = counts();
+const maxima = { turns: 0, rollsOver: -Infinity, flightsOver: -Infinity, acts: 0, score: 0, scoreOver: -Infinity };
 
-for (const name of names) {
-  table[name] = {};
-  const counts = activity[name] = newCounts();
-  for (let seed = 1; seed <= runs; seed++) {
-    let state = newGame(seed * 7919 + names.indexOf(name));
-    const rand = botRandom(seed);
-    let steps = 0, seconds = 0;
-    while (state.phase !== 'ended') {
-      const open = options(state).filter((o) => o.enabled);
-      if (!open.length || (state.phase === 'action' && !open.some((o) => !o.free))) { problems.push(`softlock: ${name} seed ${seed} turn ${state.turn}`); break; }
-      if (++steps > MAX_STEPS) { problems.push(`no end: ${name} seed ${seed}`); break; }
-      const id = pick(POLICIES[name], state, rand);
-      const option = open.find(o => o.id === id);
-      if (!option) { problems.push(`softlock: ${name} seed ${seed} picked disabled ${id}`); break; }
-      const { state: next, result } = choose(state, id);
-      counts.decisions++;
-      if (option.kind === 'event') {
-        counts.events++;
-        seconds += EVENT_SECONDS;
-      } else if (option.free) {
-        counts.free++;
-        seconds += FREE_SECONDS;
-      } else if (id !== 'rest') {
-        counts.actions++;
-        seconds += ACTION_SECONDS;
-      }
-      if (result.season) {
-        if (result.season.auto) counts.auto++;
-        else if (state.s.acts === 0) counts.full++;
-        else counts.light++;
-        seconds += REST_SECONDS;
-      }
-      if (next.turn > state.turn) {
-        counts.seasons++;
-        distribution[Math.min(5, state.s.acts + Number(id !== 'rest'))]++;
-      }
-      state = next;
+function run(name: string, seed: number, forced?: number) {
+  const policy = POLICIES[name];
+  const index = names.indexOf(name);
+  let state = newGame(seed * 7919 + index);
+  const rand = botRandom(seed);
+  const c = forced === undefined ? activity[index] : counts();
+  let seconds = 0, space = 0, bonus = 0, spins = 0, steps = 0;
+  while (state.phase !== 'ended') {
+    if (++steps > 20000) throw new Error(`no end: ${name} seed ${seed}`);
+    const opts = options(state);
+    if (!opts.some(o => o.enabled && !o.free)) throw new Error(`softlock: ${name} seed ${seed}`);
+    const id = forced !== undefined && opts[0].id.startsWith('route:') ? 'route:' + forced : pick(policy, state, rand);
+    const o = opts.find(option => option.id === id && option.enabled);
+    if (!o) throw new Error(`unplayable: ${name} seed ${seed} picked ${id}`);
+    const { state: next, result } = choose(state, id);
+    const step = state.board.step;
+    if (o.free) seconds += 4;
+    else if (id === 'spin') { spins++; c.spins++; seconds += 3; }
+    else if (state.phase === 'event') { space++; c.space++; c.events++; seconds += 8; }
+    else if (id.startsWith('route:')) {
+      c.routes[BOARD.forks.findIndex(f => f.at === state.board.pos)][Number(id.slice(6))]++;
+      seconds += step === 'fork' ? 3 : 5;
+    } else if (step === 'space') {
+      if (id !== 'skip') { space++; c.space++; }
+      seconds += 5;
+    } else if (id === 'end') seconds++;
+    else { bonus++; c.bonus++; seconds += 4.5; }
+    if (result.move) {
+      if (result.move.stop !== 'fork' && next.phase !== 'event' && next.board.step !== 'space') seconds += 2;
     }
-    if (state.phase !== 'ended') continue;
-    if (state.turn > RULES.maxTurns) problems.push(`over the turn limit: ${name} seed ${seed}`);
-    if (!Number.isInteger(state.score) || state.score < 0) problems.push(`bad score ${state.score}: ${name} seed ${seed}`);
-    minutes.push(seconds / 60);
-    const id = state.ending as EndingId;
-    table[name][id] = (table[name][id] ?? 0) + 1;
-    (scores[id] ??= []).push(state.score);
-    (turns[id] ??= []).push(state.turn);
-    highest = Math.max(highest, state.score);
-    total++;
+    if (result.upkeep) {
+      const paySpaces = result.move?.path.filter(at => BOARD.nodes[at].kind === 'pay').length ?? 0;
+      // A final cash-out also settles the ledger. A final spin can both cross payday and close a season.
+      const settlements = paySpaces + Number(!!result.ended && (!!result.season || paySpaces === 0));
+      c.pays += settlements;
+      seconds += settlements * 2;
+    }
+    maxima.acts = Math.max(maxima.acts, space + bonus, next.s.acts);
+    if (space > 1 || bonus > 1 || spins > 1) throw new Error(`season limit: ${name} seed ${seed} turn ${state.turn}`);
+    if (next.turn !== state.turn) {
+      if (spins !== 1 || next.turn !== state.turn + 1) throw new Error('expected one spin per season');
+      c.seasons++;
+      space = bonus = spins = 0;
+      const ageIndex = ages.findIndex(age => next.turn === (age - RULES.startAge) * RULES.seasons.length);
+      if (ageIndex >= 0 && forced === undefined) wealth[ageIndex].push(netWorth(next));
+    }
+    state = next;
+  }
+  const rank = finalRank(state);
+  maxima.turns = Math.max(maxima.turns, state.turn);
+  maxima.rollsOver = Math.max(maxima.rollsOver, state.s.wins + state.s.losses - (8 * state.turn + 10));
+  maxima.flightsOver = Math.max(maxima.flightsOver, state.s.flights - 5 * state.turn);
+  maxima.score = Math.max(maxima.score, state.score);
+  maxima.scoreOver = Math.max(maxima.scoreOver, state.score - (Math.max(0, rank.netWorth) + 10000 + (120 - state.turn) * 50));
+  if (!Number.isInteger(state.score) || state.score !== rank.total) throw new Error('invalid final score');
+  return { name, ending: state.ending!, score: state.score, turn: state.turn, minutes: seconds / 60,
+    ...rank.achievements, credited: state.ending === 'debtor' ? 0 : rank.bonus - rank.endingBonus };
+}
+
+const results = names.flatMap(name => Array.from({ length: runs }, (_, i) => run(name, i + 1)));
+console.log(`\n${results.length} runs (${names.length} policies × ${runs} seeds)\n`);
+row('ending', 'share', 'runs', 'median score', 'max score', 'median age');
+for (const { id } of ENDINGS) {
+  const group = results.filter(r => r.ending === id);
+  const share = group.length / results.length;
+  row(id, pct(group.length, results.length), group.length, group.length ? median(group.map(r => r.score)) : '—',
+    group.length ? Math.max(...group.map(r => r.score)) : '—', group.length ? median(group.map(r => 20 + Math.floor(r.turn / 4))) : '—');
+  if (share < 0.02 || share > 0.30) problems.add(`ending share ${id} ${pct(group.length, results.length)} (range 2..30%)`);
+}
+row('\npolicy (%)', ...ENDINGS.map(e => e.id));
+for (const name of names) row(name, ...ENDINGS.map(e => (100 * results.filter(r => r.name === name && r.ending === e.id).length / runs).toFixed(1)));
+
+row('\npolicy', 'spins/s', 'acts/s', 'bonus/s', 'events/s', 'pay/s', 'fork 1 A/B %', 'fork 2 A/B %');
+for (const [i, c] of activity.entries()) {
+  for (const key of ['spins','seasons','space','bonus','events','pays'] as const) all[key] += c[key];
+  for (const [j, pair] of c.routes.entries()) pair.forEach((n, k) => all.routes[j][k] += n);
+  // Full rest is gone. Gate each planner on the fraction of seasons in which it takes a bonus action.
+  if (POLICIES[names[i]].style === 'planner' && (c.bonus / c.seasons < 0.30 || c.bonus / c.seasons > 0.95)) {
+    problems.add(`planner bonus share ${names[i]} ${pct(c.bonus, c.seasons)} (range 30..95%)`);
   }
 }
-
-const pct = (n: number, of: number) => ((n * 100) / of).toFixed(1).padStart(5) + '%';
-console.log(`\n파일럿 키우기 balance simulation: ${names.length} policies x ${runs} seeds = ${total} runs\n`);
-console.log('ending'.padEnd(12) + 'share'.padStart(7) + 'runs'.padStart(7) + '  median score   max score  median age  title');
-for (const e of ENDINGS) {
-  const n = names.reduce((sum, p) => sum + (table[p][e.id] ?? 0), 0);
-  const sc = (scores[e.id] ?? []).sort((a, b) => a - b);
-  const tn = (turns[e.id] ?? []).sort((a, b) => a - b);
-  const age = n ? RULES.startAge + Math.floor(tn[tn.length >> 1] / 4) : '—';
-  console.log(e.id.padEnd(12) + pct(n, total).padStart(7) + String(n).padStart(7)
-    + String(sc[sc.length >> 1] ?? '—').padStart(14) + String(sc.at(-1) ?? '—').padStart(12) + String(age).padStart(12) + '  ' + e.title);
-  const share = (n * 100) / total;
-  if (share < MIN_SHARE) problems.push(`ending ${e.id} is at ${share.toFixed(1)}% (< ${MIN_SHARE}%)`);
-  if (share > MAX_SHARE) problems.push(`ending ${e.id} is at ${share.toFixed(1)}% (> ${MAX_SHARE}%)`);
+for (const [i, c] of [...activity, all].entries()) {
+  row(names[i] ?? 'overall', ...[c.spins, c.space + c.bonus, c.bonus, c.events, c.pays].map(n => (n / c.seasons).toFixed(3)),
+    ...c.routes.map(pair => pair.map(n => pct(n, pair[0] + pair[1])).join('/')));
 }
-console.log('\nper policy (% of that policy\'s runs)\n' + 'policy'.padEnd(11) + ENDINGS.map((e) => e.id.slice(0, 8).padStart(9)).join(''));
-for (const p of names) console.log(p.padEnd(11) + ENDINGS.map((e) => (((table[p][e.id] ?? 0) * 100) / runs).toFixed(0).padStart(9)).join(''));
-console.log('\npolicy       seasons actions   full  light   auto events   free  acts/season  full share  decisions/run');
-for (const name of names) {
-  const c = activity[name];
-  const fullPct = c.full * 100 / c.seasons;
-  console.log(name.padEnd(11) + [c.seasons, c.actions, c.full, c.light, c.auto, c.events, c.free].map(n => String(n).padStart(7)).join('')
-    + (c.actions / c.seasons).toFixed(2).padStart(13) + pct(c.full, c.seasons).padStart(12) + (c.decisions / runs).toFixed(1).padStart(15));
-  if (POLICIES[name].style === 'planner' && (c.full < MIN_PLANNER_FULL_RESTS || fullPct > MAX_PLANNER_FULL_REST_PCT)) {
-    problems.push(`planner ${name} took ${c.full} full rests in ${c.seasons} seasons`);
-  }
+const actions = (all.space + all.bonus) / all.seasons;
+if (actions < 1 || actions > 2) problems.add(`mean actions/season ${actions.toFixed(3)} (range 1..2)`);
+const minutes = results.map(r => r.minutes);
+row('\nminutes/run (mean, median)', mean(minutes).toFixed(2), median(minutes).toFixed(2));
+row('age', 'runs reaching age', 'mean net worth', 'median net worth');
+ages.forEach((age, i) => row(age, wealth[i].length, mean(wealth[i]).toFixed(1), median(wealth[i])));
+row('\nmean forks', 'mean contests', 'mean rankups', 'mean achievement points', 'credited share of score');
+row(...(['forks','contests','rankups','points'] as const).map(k => mean(results.map(r => r[k])).toFixed(2)),
+  pct(mean(results.map(r => r.credited)), mean(results.map(r => r.score))));
+
+row('\nforced route (100 seeds per route)', 'A mean score', 'A goal share', 'B mean score', 'B goal share');
+const winners: number[] = [];
+for (const name of names.filter(n => POLICIES[n].style === 'planner')) {
+  const [a,b] = [0,1].map(route => {
+    const group = Array.from({ length: 100 }, (_, i) => run(name, i + 1, route));
+    return { score: mean(group.map(r => r.score)), goals: group.filter(r => r.ending === name).length };
+  });
+  row(name, a.score.toFixed(1), pct(a.goals, 100), b.score.toFixed(1), pct(b.goals, 100));
+  winners.push(a.score > b.score && a.goals > b.goals ? 1 : b.score > a.score && b.goals > a.goals ? -1 : 0);
 }
-
-const seasonCount = distribution.reduce((sum, n) => sum + n, 0);
-const meanActions = Object.values(activity).reduce((sum, c) => sum + c.actions, 0) / seasonCount;
-minutes.sort((a, b) => a - b);
-const mid = Math.floor(minutes.length / 2);
-const medianMinutes = minutes.length % 2 ? minutes[mid] : (minutes[mid - 1] + minutes[mid]) / 2;
-console.log('\nactions per season: ' + distribution.map((n, i) => `${i === 5 ? '5+' : i}: ${pct(n, seasonCount).trim()}`).join(' | '));
-console.log(`mean actions per season: ${meanActions.toFixed(2)}`);
-console.log(`estimated minutes per run: mean ${(minutes.reduce((sum, n) => sum + n, 0) / total).toFixed(2)}, median ${medianMinutes.toFixed(2)}`);
-console.log(`highest score: ${highest}`);
-if (highest > MAX_SCORE) problems.push(`highest score ${highest} exceeds ${MAX_SCORE}`);
-if (meanActions < MIN_ACTIONS_PER_SEASON || meanActions > MAX_ACTIONS_PER_SEASON) problems.push(`overall mean actions per season: ${meanActions}`);
-
-const limits = `no softlocks, all runs end within ${MAX_STEPS} steps and ${RULES.maxTurns} seasons, ending shares ${MIN_SHARE}..${MAX_SHARE}%, planners ≥${MIN_PLANNER_FULL_RESTS} full rest and ≤${MAX_PLANNER_FULL_REST_PCT}% full-rest seasons, score ≤${MAX_SCORE}, actions/season ${MIN_ACTIONS_PER_SEASON}..${MAX_ACTIONS_PER_SEASON}`;
-if (problems.length) {
-  console.error('\nFAILED\n' + [...new Set(problems)].join('\n'));
+if (Math.abs(winners.reduce((a,b) => a+b, 0)) === winners.length) console.log('WARNING: one route wins both metrics for every planner');
+row('\nAPI maxima (including forced runs)', ...Object.keys(maxima));
+row('observed', ...Object.values(maxima));
+row('limit', 120, 0, 0, 2, 340000, 0);
+if (maxima.turns > 120 || maxima.rollsOver > 0 || maxima.flightsOver > 0 || maxima.acts > 2 ||
+    maxima.score > 340000 || maxima.scoreOver > 0) problems.add('API limit exceeded');
+if (maxima.score > 100000) problems.add(`highest score ${maxima.score} exceeds 100000`);
+if (problems.size) {
+  console.error('\nFAILED\n' + [...problems].join('\n'));
   process.exitCode = 1;
-} else {
-  console.log(`\nOK: ${limits}.`);
-}
+} else console.log('\nAll gates passed.');
