@@ -9,6 +9,7 @@ export type Stat = V1Stat | 'happy' | 'fans' | 'homeIndex' | 'capStamina';
 export type StatMap = Partial<Record<Stat, number>>;
 // New locations from appendix A; the existing places keep their v1 ids.
 export type PlaceId = V1PlaceId
+  | 'estate_street' | 'downtown' | 'broadcast_station' | 'city_park'
   | 'village_hall' | 'library' | 'park' | 'bus_terminal' | 'job_center' | 'estate'
   | 'city_hall' | 'wedding' | 'station' | 'department_store' | 'mall' | 'apartment' | 'lottery'
   | 'airport' | 'hospital' | 'jobfair' | 'convention' | 'culture'
