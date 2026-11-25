@@ -2,15 +2,15 @@
 import { ITEMS, RULES } from '../game/data.ts';
 import type { ItemKind, OptionKind, UpkeepLine } from '../game/types.ts';
 import { careerAge, careerIncome, careerSalary, careerTrack, CAREER_TEXT } from './career2.ts';
-import { LIFE_RULES } from './life-data.ts';
+import { HOMES, HOME_RULES, LIFE_RULES } from './life-data.ts';
+import { homeValue, rentalIncome } from './home.ts';
 import { JOB_RULES } from './tracks.ts';
 import { MAPS, WORLD } from './world.ts';
 import type { Choice, GameState, MapId, PlaceId } from './types.ts';
+export { homeValue } from './home.ts';
 
 export const ECONOMY_RULES = {
   living: [25, 45, 90, 200], livingNames: ['검소', '보통', '여유', '호화'],
-  housing: [0, 25, 5, 10, 20, 35, 60], homePrices: [0, 0, 1500, 6000, 15000, 32000, 60000],
-  ownedTier: 3, countryTier: 5, countryPrice: 12000, familyHomeAge: 29, lodging: 20,
   spouse: 20, dual: 80, dualRaise: 10, dualYears: 5, dualMax: 160, child: 35, childUntil: 20,
   vehicle: [0, 5, 15, 30], graduateTuition: 150, graduateSeasons: 6,
   creditBase: 1000, creditSeasons: 8, assetCreditPct: 50, interestPct: 1,
@@ -19,10 +19,10 @@ export const ECONOMY_RULES = {
   shopPct: 85, streetResalePct: 60, phoneResalePct: 50, loans: [100, 500, 2000],
   items: ['drone', 'gear', 'car'] as readonly ItemKind[],
 } as const;
-// Integration slots for later tickets; no property/family/business purchasing rules live here.
+// Integration slots for later family/business tickets.
 export const ECONOMY_KEYS = {
   graduateUntil: 'economy_graduate_until', education: 'economy_education',
-  rentIncome: 'economy_rent_income', shopIncome: 'economy_shop_income',
+  shopIncome: 'economy_shop_income',
 } as const;
 export const ECONOMY_TEXT = {
   salary: '급여', allowance: '용돈', living: '생활비', housing: '주거비', lodging: '숙박비',
@@ -63,13 +63,8 @@ export function flightPay(state: GameState, amount: number): number {
   return Math.floor(amount * rankPct * (MAPS[nodeAt(state).map].flightPayPct ?? P) / (P * P));
 }
 
-// Valuation only; T07 owns estate offers, purchases, rent and annual index changes.
-export function homeValue(state: GameState, home: { map: MapId; tier: number }): number {
-  const base = home.map === 'F' && home.tier === R.countryTier ? R.countryPrice : R.homePrices[home.tier] ?? 0;
-  return Math.floor(base * MAPS[home.map].homePct * state.s.homeIndex / (P * P));
-}
 export function assetValue(state: GameState): number {
-  const home = state.home ? state.home.tier >= R.ownedTier ? homeValue(state, state.home) : state.home.deposit : 0;
+  const home = state.home ? state.home.tier >= HOME_RULES.ownedTier ? homeValue(state, state.home) : state.home.deposit : 0;
   const items = R.items.reduce((sum, kind) => sum + pct(itemPrice(state, kind), R.phoneResalePct), 0);
   const shops = state.holdings.reduce((sum, holding) => sum + pct(holding.paid, R.liquidationPct), 0);
   const organization = state.track === 'company' ? Math.floor(state.s.value / RULES.company.worthDiv)
@@ -94,9 +89,11 @@ export function upkeepLines(state: GameState): UpkeepLine[] {
   const income = careerIncome(state);
   line(CAREER_TEXT.pensionLabel, income.pension); line(CAREER_TEXT.benefitLabel, income.unemployment);
   line(T.living, -pct(R.living[state.life], MAPS[map].livePct));
-  if (state.home) line(T.housing, -(R.housing[state.home.tier] ?? 0));
+  if (state.home) line(T.housing, -(HOMES[state.home.tier]?.upkeep ?? 0));
   const hasHome = state.home && state.home.tier > 0;
-  if (hasHome ? state.home!.map !== map : map !== 'A' || careerAge(state) > R.familyHomeAge) line(T.lodging, -R.lodging);
+  if (hasHome ? state.home!.map !== map : map !== HOME_RULES.familyMap || careerAge(state) > HOME_RULES.familyAge) {
+    line(T.lodging, -HOME_RULES.lodging);
+  }
   if (state.family.marriedAt !== null) {
     line(T.spouse, -R.spouse);
     if (state.family.dual) line(T.dual, Math.min(R.dualMax, R.dual + R.dualRaise
@@ -106,7 +103,7 @@ export function upkeepLines(state: GameState): UpkeepLine[] {
   line(T.education, -(state.timers[ECONOMY_KEYS.education] ?? 0));
   line(T.vehicle, -R.vehicle[s.car]);
   line(T.interest, -pct(s.debt, R.interestPct));
-  line(T.rent, state.timers[ECONOMY_KEYS.rentIncome] ?? 0);
+  line(T.rent, rentalIncome(state));
   line(T.shop, state.timers[ECONOMY_KEYS.shopIncome] ?? 0);
   if (state.status === 'working') {
     if (state.track === 'solo') line(T.contracts, s.contracts * RULES.solo.contractPay);

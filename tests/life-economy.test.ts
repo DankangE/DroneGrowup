@@ -113,7 +113,7 @@ test('existing family containers supply spouse, capped dual income, children and
 });
 test('pension, benefit, rent and shop income are unscaled and T05 posts career income once', () => {
   const state = stateAt('F'); state.status = 'retired'; state.timers[C.pension] = 123;
-  state.timers[K.rentIncome] = 72; state.timers[K.shopIncome] = 80;
+  state.estates = [{ map: 'B', tier: 3, paid: 6000 }]; state.timers[K.shopIncome] = 80;
   assert.equal(lines(state)['연금'], 123); assert.equal(lines(state)['임대 수입'], 72); assert.equal(lines(state)['가게 수입'], 80);
   assert.deepEqual(choose(state, 'end').state.board.ledger, accrue(state).board.ledger);
   state.status = 'jobless'; state.timers[C.benefitUntil] = 4;
