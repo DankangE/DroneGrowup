@@ -1,4 +1,5 @@
 import type { GameState } from '../../life/types.ts';
+import { settlementSummary } from '../../life/engine.ts';
 import { button, el } from '../../ui/dom.ts';
 import { jobPortrait, placeArt } from '../art.ts';
 import { COPY } from './data.ts';
@@ -15,10 +16,10 @@ export type EndingActions = { title: () => void; restart: () => void; collection
 /** The selected ending and score are authoritative state fields, even for unusual fixtures. */
 export function endingModel(state: GameState, summary: EndingSummary = {}) {
   const ending = ENDINGS2.find(row => row.id === state.ending);
+  const details = { ...settlementSummary(state), ...summary };
   return { id: state.ending, title: ending?.title ?? state.ending ?? E.unknown, ending,
-    lines: [E.score(state.score), ...(summary.grade === undefined ? [] : [E.grade(summary.grade)]),
-      ...(summary.featScore === undefined ? [] : [E.feats(summary.featScore)]),
-      ...(ending ? [ending.text] : []), ...chapterLines(state, summary)] };
+    lines: [E.score(state.score), E.grade(details.grade), E.feats(details.featScore),
+      ...(ending ? [ending.text] : []), ...chapterLines(state, details)] };
 }
 
 export function collectionModel(meta: EndingCollection) {

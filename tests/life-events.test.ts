@@ -14,6 +14,7 @@ import { EVENTS_G } from '../src/life/events-g.ts';
 import { EVENTS_H, organizationValue, successionValue } from '../src/life/events-h.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { familyChoices } from '../src/life/family.ts';
+import { achievementScore } from '../src/life/ending.ts';
 import { careerSalary } from '../src/life/career2.ts';
 import { ASSET_KEYS, STATS } from '../src/life/life-data.ts';
 import { JOB_RULES } from '../src/life/tracks.ts';
@@ -694,7 +695,9 @@ test('successor preparation counts at settlement only and sale converts/removes 
     const failed = act(s, 'ev:1', 'fail').state; assert.equal(organizationValue(failed), value);
   }
   const s = act(fixture('successor'), 'ev:0').state; s.turn = 203; s.phase = 'action'; s.eventId = null; s.board.step = 'bonus';
-  const next = choose(s, 'end').state; assert.equal(next.score, derived(next).netWorth + successionValue(next));
+  const next = choose(s, 'end').state;
+  assert.equal(next.score, Math.max(0, derived(next).netWorth + successionValue(next))
+    + next.s.happy * 30 + achievementScore(next).capped);
 });
 
 test('dominance understands new ongoing costs, withdrawals and indivisible popup/sale effects', () => {

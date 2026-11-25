@@ -307,15 +307,15 @@ test('v2 accounting replaces compatibility amounts while preserving business clo
   assert.equal(choose(state, 'end').state.s.overdue, 0);
 });
 
-test('timeout settles the last ledger, selects debtor/worker, scores net worth and ends at 204', () => {
+test('timeout settles the last ledger, applies T13 endings and score, and ends at 204', () => {
   for (const debt of [0, 10000]) {
     const state = at('A-o1', 'bonus', { money: 4000, debt, stamina: 80, capStamina: 80 });
     state.turn = 203; state.board.ledger = { 급여: 200 };
     const next = choose(state, 'end').state;
     assert.equal(next.turn, 204); assert.equal(next.phase, 'ended');
     assert.deepEqual(next.board.ledger, {}); assert.deepEqual(options(next), []);
-    assert.equal(next.ending, debt ? 'debtor' : 'worker');
-    assert.equal(next.score, debt ? 0 : derived(next).netWorth);
+    assert.equal(next.ending, debt ? 'debtor' : 'student');
+    assert.equal(next.score, Math.max(0, derived(next).netWorth) + next.s.happy * 30 + 200 + (debt ? 0 : 1000));
     assert.equal(derived(next).remainingSeasons, 0);
     assert.deepEqual(restore(JSON.parse(JSON.stringify(next))), next);
     assert.throws(() => choose(next, 'spin'), /not available/);

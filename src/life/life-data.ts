@@ -4,7 +4,7 @@ import { ENDINGS, RULES, SPACE_MENU as V1_SPACE_MENU, STAT_LABEL as V1_STAT_LABE
 import type { BoardState as V1BoardState } from '../game/types.ts';
 import { ACTIONS } from './compat.ts';
 import { TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
-import type { Choice, GameState, MapId, PlaceId, SpaceKind, Stat, StatMap, TrackId } from './types.ts';
+import type { Choice, EndingId, GameState, MapId, PlaceId, SpaceKind, Stat, StatMap, TrackId } from './types.ts';
 
 export const LIFE_RULES = {
   version: 2,
@@ -34,7 +34,6 @@ export const LIFE_RULES = {
   minHomeIndex: 60,
   maxHomes: 3,
   maxHoldings: 4,
-  timeoutEnding: 'worker',
 } as const;
 
 export const STAT_LABEL: Record<Stat, string> = {
@@ -48,8 +47,6 @@ export const MAP_IDS: MapId[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 export const TRACK_IDS: TrackId[] = ['service', 'delivery', 'mechanic', 'clerk', 'pilot', 'employee',
   'instructor', 'public', 'rescue', 'creator', 'engineer', 'inspector', 'film', 'atc', 'racer',
   'solo', 'company', 'academy', 'director'];
-export const ENDING_IDS = [...ENDINGS.map(ending => ending.id), 'philanthropist', 'legend', 'master',
-  'star', 'hero', 'tycoon', 'family', 'official', 'freeman', 'worker'];
 export const STATUS_IDS = ['student', 'jobless', 'working', 'retired'];
 export const PHASE_IDS = ['action', 'event', 'ended'];
 export const STEP_IDS = ['spin', 'pick', 'space', 'bonus'];
@@ -278,4 +275,100 @@ export const ASSET_TEXT = {
   kinds: { start: '출발', pay: '월급날', train: '배움', job: '일감', contest: '대회 · 시험', event: '사건',
     rest: '휴식', rankup: '승급 심사', jobfair: '취업 · 이직', shop: '상점가', estate: '부동산',
     life: '생활', biz: '상가', luck: '행운', station: '환승', invest: '투자' } satisfies Record<SpaceKind, string>,
+} as const;
+
+// §10: priority, copy and settlement values are shared by the engine and UI.
+export type EndingCondition = { worthBelow: number } | { worthAtLeast: number } | { feat: string }
+  | { tops: readonly TrackId[] } | { happy: number; independent?: number }
+  | { current: readonly TrackId[] } | { last: readonly TrackId[]; flag?: string } | { fallback: true };
+export type EndingDef = { id: EndingId; title: string; text: string; hint: string; rule: EndingCondition;
+  art: { file: string } | { track: TrackId } | { place: PlaceId } };
+
+const NEW_ENDINGS = {
+  philanthropist: { title: '하늘에 길을 낸 사람',
+    text: '첫 장학증서를 받은 학생이 실습장으로 달려간다. 당신의 이름을 단 재단보다, 그 아이가 오래 날 수 있는 하늘이 더 자랑스럽다.' },
+  legend: { title: '전설의 레이서',
+    text: '결승선 위로 기체가 지나가자 관중석이 일어선다. 기록판에서 내려온 뒤에도 후배들은 당신이 남긴 비행선을 연습한다.' },
+  master: { title: '전문직 명장',
+    text: '어려운 일이 생기면 동료들은 당신의 작업대부터 찾는다. 오래 쌓은 솜씨는 이제 다음 사람의 손끝으로 이어진다.' },
+  star: { title: '스타 크리에이터',
+    text: '작은 방에서 시작한 방송이 수많은 사람의 일상이 됐다. 카메라를 켜기 전, 오늘 처음 찾아올 한 사람에게 건넬 인사를 고른다.' },
+  hero: { title: '구조 영웅',
+    text: '구조를 마친 기체가 조용히 내려앉는다. 누군가 무사히 집으로 돌아갔다는 소식이, 진열장 속 어떤 표창보다 반갑다.' },
+  tycoon: { title: '자산가',
+    text: '집과 가게가 저마다의 불을 밝히는 저녁이다. 오래 적어 온 장부를 덮고, 내일부터는 조금 더 천천히 걸어 보기로 한다.' },
+  family: { title: '다복한 집',
+    text: '독립한 아이들이 저녁을 먹으러 찾아왔다. 식탁에 의자를 하나 더 놓으며, 함께 보낸 평범한 날들이 가장 큰 재산임을 느낀다.' },
+  official: { title: '정년 퇴임 공직자',
+    text: '마지막 결재를 마치고 책상을 비운다. 후임에게 넘긴 서류마다 시민들의 일상이 담겨 있다. 내일 아침에는 알람 없이 일어나도 된다.' },
+  freeman: { title: '유유자적 자유인',
+    text: '바람이 좋은 날에는 기체를 띄우고, 비가 오면 창가에서 쉰다. 남의 일정표 대신 오늘의 마음을 따라 사는 법을 배웠다.' },
+  worker: { title: '성실한 생활인',
+    text: '하루 일을 마치고 익숙한 길로 돌아온다. 요란한 기록은 없어도 당신이 지킨 약속 덕분에 누군가의 하루가 편안했다.' },
+} as const;
+
+const ENDING_ROWS: readonly [EndingId, string, EndingDef['art'], EndingCondition][] = [
+  ['debtor', '순자산 −3,000만 미만', { file: 'ending-debtor' }, { worthBelow: -3000 }],
+  ['philanthropist', '재단 설립', { place: 'school' }, { feat: 'foundation' }],
+  ['ceo', '상장 성공', { file: 'ending-ceo' }, { feat: 'ceo' }],
+  ['chairman', '당선 경력', { file: 'ending-chairman' }, { feat: 'chairman' }],
+  ['academy', '교육원 인가 성공', { file: 'ending-academy' }, { feat: 'academy' }],
+  ['legend', '레이서 최고 직급 경력', { track: 'racer' }, { tops: ['racer'] }],
+  ['master', '엔지니어 · 점검 · 촬영 · 관제 중 최고 직급 경력', { track: 'engineer' }, { tops: ['engineer', 'inspector', 'film', 'atc'] }],
+  ['star', '다이아 등급 경력', { track: 'creator' }, { tops: ['creator'] }],
+  ['hero', '항공대장 경력', { track: 'rescue' }, { tops: ['rescue'] }],
+  ['tycoon', '순자산 100,000만 이상', { place: 'residence' }, { worthAtLeast: 100000 }],
+  ['family', '행복 700 이상 · 자녀 독립 2명 이상', { place: 'home' }, { happy: 700, independent: 2 }],
+  ['official', '공무원으로 정년', { track: 'public' }, { feat: 'official' }],
+  ['smallbiz', '결산 때 법인 대표', { file: 'ending-smallbiz' }, { current: ['company'] }],
+  ['solo', '결산 때 또는 마지막 직업이 1인 사업자', { file: 'ending-solo' }, { last: ['solo'] }],
+  ['director', '협회 임원 경력으로 마침', { file: 'ending-director' }, { last: ['director'] }],
+  ['instructor', '마지막 직업이 교관 · 교육원', { file: 'ending-instructor' }, { last: ['instructor', 'academy'] }],
+  ['employee', '마지막 직업이 드론 회사 직원 · 사무직', { file: 'ending-employee' }, { last: ['employee', 'clerk'] }],
+  ['pilot', '마지막 직업이 파일럿 · 정비사 · 배송 기사 중 자격증 보유', { file: 'ending-pilot' }, { last: ['pilot', 'mechanic', 'delivery'], flag: 'licensed' }],
+  ['freeman', '행복 500 이상', { place: 'promenade' }, { happy: 500 }],
+  ['worker', '마지막 직업이 가게 직원 · 배송 기사 · 정비사', { track: 'service' }, { last: ['service', 'delivery', 'mechanic'] }],
+  ['student', '그 밖의 인생', { file: 'ending-student' }, { fallback: true }],
+];
+
+export const ENDINGS2: readonly EndingDef[] = ENDING_ROWS.map(([id, hint, art, rule]) => {
+  const copy = ENDINGS.find(row => row.id === id) ?? NEW_ENDINGS[id as keyof typeof NEW_ENDINGS];
+  return { id, title: copy.title, text: copy.text, hint, art, rule };
+});
+export const ENDING_IDS = ENDINGS2.map(ending => ending.id);
+
+export const FEATS = {
+  visit: { title: '지도 첫 방문', points: 200 }, lap: { title: '지도 첫 완주', points: 300 },
+  promotion: { title: '승급', points: 300 }, contest: { title: '대회 성공', points: 150 },
+  top: { title: '직업 최고 직급', points: 2000 },
+  three_jobs: { title: '서로 다른 직업 세 개', points: 500, count: 3 },
+  home: { title: '내 집 마련', points: 500 }, marriage: { title: '결혼', points: 300 },
+  independent: { title: '자녀 독립', levels: INDEPENDENCE },
+  three_shops: { title: '가게 세 곳 보유', points: 500, count: 3 },
+  ceo: { title: '상장', points: 5000 }, chairman: { title: '총협회장 당선', points: 4000 },
+  academy: { title: '교육원 인가', points: 3500 },
+  scholarship: { title: '장학금', points: 300 }, foundation: { title: '재단', points: 3000 },
+  no_loan: { title: '대출 없이 완주', points: 1000 },
+  event: { title: '사건 업적', points: 1 },
+} as const;
+export const ENDING_RULES = {
+  happyPoints: 30, featCap: 30000, earlyAge: 55, happyPerYear: 2,
+  grades: [{ grade: 'S', min: 120000 }, { grade: 'A', min: 70000 }, { grade: 'B', min: 40000 },
+    { grade: 'C', min: 20000 }, { grade: 'D', min: 0 }],
+  historyFeats: ['three_jobs', 'home', 'marriage', 'three_shops', 'ceo', 'chairman', 'academy'] as const,
+  achievementEndings: ['ceo', 'chairman', 'academy'] as readonly string[],
+  achievementFlags: { ceo: 'listed', chairman: 'elected', academy: 'accredited' } as Readonly<Record<string, string>>,
+  earlyId: 'phone:retire', foundationEvent: 'foundation',
+} as const;
+export const ENDING_KEYS = {
+  borrowed: 'ending_borrowed', lastTrack: 'ending_last_track', earlyAt: 'ending_early_at',
+  top: (track: TrackId) => `top:${track}`, visit: (map: MapId) => `visit:${map}`, lap: (map: MapId) => `lap:${map}`,
+} as const;
+export const ENDING_TEXT = {
+  early: { title: '은퇴하고 여생을 보낸다',
+    desc: '70세까지 남은 계절의 연금·임대·가게 수입만 더한다. 남은 1년마다 행복 +2.',
+    effect: { text: '일을 내려놓고 여생을 보낸 뒤 인생의 결산을 마쳤다.' } } satisfies Choice,
+  unavailable: 'early retirement not available', tooSoon: 'settlement not available',
+  counted: (title: string, count: number) => `${title} · ${count}회`,
+  named: (title: string, name: string) => `${title} · ${name}`,
 } as const;
