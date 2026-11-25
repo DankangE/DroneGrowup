@@ -243,10 +243,60 @@ function audit() {
   return [...new Set(issues)];
 }
 
+// T18 isolated popup section: no changes to the existing map/movement fixtures.
+async function popupChecks(page, base) {
+  await page.goto(`${base}src/ui2/popups/layout.html`);
+  await page.waitForFunction(() => window.__popupFixture);
+  for (const kind of await page.evaluate(() => window.__popupFixture.kinds)) {
+    const model = await page.evaluate(kind => window.__popupFixture.show(kind), kind);
+    const popup = page.locator('[data-popup]');
+    assert.equal(await popup.getAttribute('data-popup'), kind);
+    const seen = [];
+    do {
+      assert.deepEqual(await popup.evaluate(panel => {
+        const issues = [], box = panel.getBoundingClientRect();
+        if (innerHeight > innerWidth && !panel.hasAttribute('data-fullscreen') && box.height > innerHeight * .55 + 1) issues.push('sheet exceeds 55%');
+        if (panel.querySelectorAll('[data-option]').length > 3) issues.push('more than three choices');
+        for (const node of [panel, ...panel.querySelectorAll('*')]) {
+          if (node.closest('svg')) continue;
+          const rect = node.getBoundingClientRect(), css = getComputedStyle(node);
+          if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) issues.push('popup content outside sheet');
+          if (node.matches('button') && (rect.width < 44 || rect.height < 44)) issues.push('tap target below 44px');
+          if (['auto', 'scroll'].includes(css.overflowY) || node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push('popup content overflows');
+          if (parseFloat(css.fontSize) < 11) issues.push('text below 11px');
+        }
+        return [...new Set(issues)];
+      }), [], `${kind}: popup layout`);
+      seen.push(...await popup.locator('[data-option]').evaluateAll(nodes => nodes.map(node => node.dataset.option)));
+      if (seen.length >= model.choices.length) break;
+      await popup.locator('[data-action="popup-page-next"]').click();
+    } while (seen.length < model.choices.length);
+    assert.deepEqual(seen, model.choices.map(choice => choice.id), `${kind}: every choice paged`);
+    await page.evaluate(kind => window.__popupFixture.show(kind), kind);
+    if (model.choices.length) {
+      await popup.locator('[data-option]').first().press('Enter');
+      assert.equal(await page.evaluate(() => window.__popupFixture.taken()), model.choices[0].id);
+      await popup.locator('[data-action="popup-details"]').first().click();
+      assert.equal(await popup.getAttribute('data-details'), '');
+      await popup.locator('[data-action="popup-text-next"]').click();
+      await popup.locator('[data-action="popup-back"]').click();
+    }
+    if (kind === 'result') assert.equal(await popup.locator('[data-result-wheel]').textContent(), '43');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => window.__popupFixture.closed()), true, `${kind}: Escape exits`);
+  }
+  await page.evaluate(() => window.__popupFixture.show('result', true));
+  assert.equal(await page.locator('[data-notification]').count(), 1);
+  assert.equal(await page.locator('[data-result-wheel]').count(), 0);
+  console.log('  T18: 11 popup kinds, three choices per page, portrait sheets <=55%, keyboard exit checked');
+}
+
 async function main() {
   const shots = process.env.LAYOUT_SHOTS ? resolve(root, process.env.LAYOUT_SHOTS) : null;
   if (shots) mkdirSync(shots, { recursive: true });
   await build({ root, configFile: join(root, 'vite.config.ts'), logLevel: 'warn' });
+  await build({ root, configFile: join(root, 'vite.config.ts'), logLevel: 'warn',
+    build: { emptyOutDir: false, rollupOptions: { input: join(root, 'src/ui2/popups/layout.html') } } });
   const server = await preview({ root, configFile: join(root, 'vite.config.ts'), preview: { port: 5299, strictPort: false } });
   let browser, views = 0, mapViews = 0, seasons = 0;
   const failures = [];
@@ -323,6 +373,7 @@ async function main() {
         const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
         event.board.step = 'space'; event.board.dice = [1, 1];
         await load(event); await checkPages('event');
+        await popupChecks(page, base);
         await page.goto(`${base}?life=1&seed=11`);
         await page.locator('[data-map=A]').waitFor();
         assert.equal(await page.evaluate(() => window.__life === undefined), true, 'state loader is debug-only');
