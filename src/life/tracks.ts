@@ -214,3 +214,28 @@ export const JOB_TEXT = {
   requirement: (stat: string, min: number) => `${stat} ${min} 이상`,
   badJob: (id: string) => `job not available: ${id}`,
 };
+
+// T10: specialist benefits and activities (§§3.2, 6.1, 6.3). Tuition uses T06's table.
+export const SPECIAL_RULES = {
+  map: 'D', tenure: 2, ordinaryTenure: 1, trainingPct: 150,
+  graduateId: 'graduate:enroll', master: 'master', graduatePlace: 'grad_school',
+  videoId: 'creator_video', fanMin: 8, fanMax: 20, fanRetentionPct: 97,
+  expressFare: 150, invite: 'invite', racerContest: 'club',
+} as const;
+export const SPECIAL_TEXT = {
+  graduateTitle: '대학원 등록',
+  graduateDesc: '6계절 동안 계절당 등록금 150만원. 직업과 지역을 유지할 필요 없이 이수하면 석사를 받는다.',
+  graduateDone: '대학원 과정을 시작했다.', graduateBusy: '이미 대학원 과정을 이수 중입니다.',
+  graduated: '대학원 6계절 과정을 마치고 석사 학위를 받았다.',
+  creatorIncome: '구독자 광고 수입',
+  expressTitle: (name: string) => `${name}으로 특급 이동`,
+  expressDesc: '150만원을 내고 출발 칸으로 이동한다. 정산 뒤 추가 행동은 도착한 곳에서 한다.',
+  expressDone: (name: string) => `${name} 출발 칸에 도착했다.`,
+} as const;
+// Use the basic duty's success chance. Fan growth is sampled from the saved RNG in jobs.ts.
+export const CREATOR_VIDEO: ActionDef = {
+  id: SPECIAL_RULES.videoId, place: 'studio', when: { status: ['working'], track: ['creator'] },
+  title: '영상 촬영', desc: '영상 공개에 성공하면 구독자 8~20명. 매년 구독자의 3%가 떠난다.',
+  roll: { base: TRACK_WORK.find(action => action.id === 'work_creator')!.roll!.base,
+    success: { text: '새 영상을 공개해 구독자가 늘었다.' }, fail: { text: '촬영을 마치지 못해 다음 영상을 준비했다.' } },
+};

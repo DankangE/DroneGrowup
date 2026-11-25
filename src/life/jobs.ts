@@ -1,14 +1,15 @@
 // T04–T05: job entry and career transitions own detached copies.
 import { FLAG_LABEL, RULES } from '../game/data.ts';
 import { LIFE_RULES, STAT_LABEL, STAT_MAX, TEXT } from './life-data.ts';
+import { ECONOMY_KEYS, ECONOMY_RULES } from './economy.ts';
 import { randInt } from './move.ts';
-import { JOB_CHOICES, JOB_RULES, JOB_TEXT, START_CHOICES, TRACKS } from './tracks.ts';
+import { JOB_CHOICES, JOB_RULES, JOB_TEXT, SPECIAL_RULES as S, SPECIAL_TEXT as ST, START_CHOICES, TRACKS } from './tracks.ts';
 import { MAPS, WORLD } from './world.ts';
 import { CAREER_KEYS as K, CAREER_RULES as C, CAREER_TEXT as CT, careerAge, careerIncome, careerTrack,
   jobConditionLocks, promotionView, rankLocks, retirementView as retirementEligibility,
   review, reviewNotice, specialView } from './career2.ts';
 import type { RetirementMode } from './career2.ts';
-import type { ActionDef, Choice, Effect, GameState, Stat, StatMap, TrackDef, TrackId, WorldNode } from './types.ts';
+import type { ActionDef, Choice, Cond, Effect, GameState, Stat, StatMap, TrackDef, TrackId, WorldNode } from './types.ts';
 export { jobConditionLocks, review } from './career2.ts';
 
 export type JobSource = 'tile' | 'event' | 'headhunter';
@@ -139,7 +140,50 @@ export function advanceStudies(prev: GameState): GameState {
   const state = structuredClone(prev), until = state.timers[JOB_RULES.schoolUntil];
   if (state.status === 'student' && until !== undefined && state.turn >= until
     && !state.flags.includes(JOB_RULES.degree)) state.flags.push(JOB_RULES.degree);
+  const graduate = state.timers[ECONOMY_KEYS.graduateUntil];
+  if (state.phase !== 'ended' && graduate !== undefined && state.turn >= graduate) {
+    delete state.timers[ECONOMY_KEYS.graduateUntil];
+    if (!state.flags.includes(S.master)) {
+      state.flags.push(S.master);
+      state.log.push({ turn: state.turn, text: ST.graduated, tone: 'good' });
+      state.log = state.log.slice(-LIFE_RULES.logMax);
+    }
+  }
   return state;
+}
+
+/** Tile-only activities retain the ordinary skip/bonus continuation supplied by the engine. */
+export function specialistChoices(state: GameState): JobChoice[] {
+  if (state.phase !== 'action' || state.board.step !== 'space') return [];
+  const node = nodeAt(state), choices: JobChoice[] = [];
+  if (node.map === S.map && node.place === S.graduatePlace && node.kind === 'train') {
+    const need: Cond = { flags: [JOB_RULES.degree], notFlags: [S.master] };
+    choices.push({ id: S.graduateId, choice: { title: ST.graduateTitle, desc: ST.graduateDesc,
+      effect: { text: ST.graduateDone } }, locks: [
+      ...jobConditionLocks(state, need),
+      ...(state.timers[ECONOMY_KEYS.graduateUntil] !== undefined ? [ST.graduateBusy] : []),
+    ] });
+  }
+  if (node.kind === 'station') for (const destination of WORLD.filter(row => row.kind === 'start')) {
+    const map = MAPS[destination.map];
+    choices.push({ id: `express:${destination.id}`, locks: jobConditionLocks(state, map.gate ?? {}),
+      choice: { title: ST.expressTitle(map.name), desc: ST.expressDesc, cost: S.expressFare,
+        effect: { text: ST.expressDone(map.name) } } });
+  }
+  return choices;
+}
+
+/** Advertising is independent of salary and map multipliers. */
+export function creatorIncome(state: GameState): number {
+  return careerTrack(state)?.id === 'creator'
+    ? Math.floor(state.s.fans * JOB_RULES.creatorAdPct[state.job.rank] / LIFE_RULES.percent) : 0;
+}
+
+/** A racer multiplier applies to contest prizes, never to ordinary flight jobs. */
+export function contestPrize(state: GameState, amount: number): number {
+  const track = careerTrack(state);
+  return Math.floor(amount * (track?.id === 'racer' ? track.ranks[state.job.rank].jobPct! : LIFE_RULES.percent)
+    / LIFE_RULES.percent);
 }
 
 function nextConditions(track: TrackDef, rank: number): string {
@@ -203,11 +247,15 @@ export function jobChoices(state: GameState): { choices: JobChoice[]; exclusive:
 }
 
 export const isJobChoice = (id: string) => id.startsWith('start:') || id.startsWith('job:') || id === 'quit'
-  || id === 'promo' || id.startsWith('retire:');
+  || id === 'promo' || id.startsWith('retire:') || id === S.graduateId;
 
 /** Engine has already charged the fee; this branch executor also serves forecast without RNG. */
 export function applyJobChoice(prev: GameState, id: string, success: boolean): GameState {
   let state = structuredClone(prev);
+  if (id === S.graduateId) {
+    state.timers[ECONOMY_KEYS.graduateUntil] = state.turn + ECONOMY_RULES.graduateSeasons;
+    state.board.step = 'bonus'; return state;
+  }
   if (id === 'job:none' && retirementView(state).due && (state.timers[K.deferred] ?? state.turn) <= state.turn) {
     if (state.timers[K.deferred] !== undefined) return retire(state, 'pension');
     state.timers[JOB_RULES.retirementBase] ??= retirementView(state).salary;
@@ -237,15 +285,24 @@ export function applyJobChoice(prev: GameState, id: string, success: boolean): G
 
 /** Starting benefits affect returned choices; the UI never calculates their rewards. */
 export function startingAction(state: GameState, action: ActionDef, tile: boolean): ActionDef {
+  if (action.id === S.videoId) {
+    // Preview the success-roll draw, then fan growth. choose consumes the same two draws.
+    const sample = { ...state };
+    randInt(sample, LIFE_RULES.percent);
+    const fans = S.fanMin + randInt(sample, S.fanMax - S.fanMin + 1);
+    return { ...action, roll: { ...action.roll!, success: { ...action.roll!.success, add: { fans } } } };
+  }
   const school = state.status === 'student' && state.timers[JOB_RULES.schoolUntil] > state.turn
     && tile && nodeAt(state).kind === 'train' && nodeAt(state).map === 'A';
+  const district = tile && nodeAt(state).kind === 'train' && nodeAt(state).map === S.map;
   const partTime = JOB_RULES.partTimeActions.some(id => id === action.id);
   const self = state.timers[JOB_RULES.selfUntil] > state.turn && partTime;
   const jobless = state.status === 'jobless' && action.when.status?.includes('student');
-  if (!school && !self && !jobless) return action;
+  if (!school && !district && !self && !jobless) return action;
   const scale = (effect: Effect): Effect => ({ ...effect, add: Object.fromEntries(entries(effect.add).map(([stat, value]) =>
-    [stat, value > 0 && ((school && JOB_RULES.studyStats.includes(stat)) || (self && stat === 'money'))
-      ? Math.floor(value * (school ? JOB_RULES.studyPct : JOB_RULES.selfPct) / LIFE_RULES.percent) : value])) });
+    [stat, value > 0 && (((school || district) && JOB_RULES.studyStats.includes(stat)) || (self && stat === 'money'))
+      ? Math.floor(value * (stat === 'money' ? JOB_RULES.selfPct : district ? S.trainingPct : JOB_RULES.studyPct)
+        / LIFE_RULES.percent) : value])) });
   return { ...action, ...(jobless && { when: { ...action.when, status: [...action.when.status!, 'jobless'] } }),
     ...(action.effect && { effect: scale(action.effect) }),
     ...(action.roll && { roll: { ...action.roll, success: scale(action.roll.success), fail: scale(action.roll.fail) } }) };
@@ -329,6 +386,9 @@ export function yearEndReview(prev: GameState): GameState {
   if (state.phase === 'ended' || state.turn === 0 || state.turn % LIFE_RULES.seasons.length !== LIFE_RULES.spring
     || state.timers[K.reviewed] === state.turn) return state;
   state.timers[K.reviewed] = state.turn;
+  if (careerTrack(state)?.id === 'creator') {
+    state.s.fans = Math.floor(state.s.fans * S.fanRetentionPct / LIFE_RULES.percent);
+  }
   const completedAge = careerAge({ ...state, turn: state.turn - 1 });
   if (state.track === 'racer' && completedAge >= C.racerDeclineAge) state = performance(state, C.racerDecline);
   const evaluated = review(state), oldWarning = state.job.warn;
@@ -362,7 +422,10 @@ export function advanceCareer(prev: GameState): GameState {
   }
   if (state.timers[K.benefitUntil] <= state.turn) delete state.timers[K.benefitUntil];
   if (careerTrack(state)) {
-    state.job.tenure++; state.job.total++;
+    state.job.tenure += careerTrack(state)!.tier === JOB_RULES.specialistTier && nodeAt(state).map === S.map
+      ? S.tenure : S.ordinaryTenure;
+    // total counts actual employment seasons for severance; only promotion tenure is accelerated.
+    state.job.total++;
     state.timers[K.idle] = state.timers[K.worked] === state.turn ? 0 : (state.timers[K.idle] ?? 0) + 1;
     if (state.timers[K.idle] >= C.idleSeasons) state = performance(state, C.idlePerf);
     if (state.s.stamina < C.exhaustedBelow) state = performance(state, C.exhaustedPerf);
