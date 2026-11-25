@@ -531,7 +531,7 @@ function applyEffect(state: GameState, effect: Effect, add: StatMap): string | u
   return flag;
 }
 
-function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, runHooks: boolean): { state: GameState; result: Result } {
+function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, runHooks: boolean, singleDie = false): { state: GameState; result: Result } {
   const history = state;
   state = recordAchievements(state);
   const before = { ...state.s }, success = branch === 'success', crashed = branch === 'crash';
@@ -616,6 +616,8 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     state = arrive(state, shortcut, result, history.board.pos);
   } else if (v.id === 'spin') {
     state = rollAssetDice(state); state.board.step = 'pick';
+    // T14 counterfactual: preserve RNG consumption, use only the first eye before auto-travel.
+    if (singleDie) state.board.dice = [state.board.dice[0]!, state.board.dice[0]!];
     const moves = reachable(state);
     if (moves.length === 1) state = travel(state, moves[0].node, result);
     else if (!moves.length) state = land(state, result);
@@ -640,7 +642,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   return { state, result };
 }
 
-export function choose(prev: GameState, optionId: string, menu: 'board' | 'phone' = 'board'): { state: GameState; result: Result } {
+export function choose(prev: GameState, optionId: string, menu: 'board' | 'phone' = 'board', singleDie = false): { state: GameState; result: Result } {
   const { r, v } = resolveOption(prev, optionId, menu);
   if (!v.enabled) throw new Error(TEXT.disabled(optionId, v.locks));
   const state = structuredClone(prev);
@@ -651,7 +653,7 @@ export function choose(prev: GameState, optionId: string, menu: 'board' | 'phone
     branch = success ? 'success' : 'fail';
     if (!success && r.flight && randInt(state, LIFE_RULES.percent) < (v.roll.crashPct ?? 0)) branch = 'crash';
   }
-  const played = play(state, r, v, branch, true);
+  const played = play(state, r, v, branch, true, singleDie);
   if (roll) played.result.roll = roll;
   return played;
 }
