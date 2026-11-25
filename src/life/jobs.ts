@@ -1,10 +1,14 @@
-// T04: offers and entry only. Public state transitions own detached copies.
+// T04–T05: job entry and career transitions own detached copies.
 import { FLAG_LABEL, RULES } from '../game/data.ts';
 import { LIFE_RULES, STAT_LABEL, STAT_MAX, TEXT } from './life-data.ts';
 import { randInt } from './move.ts';
 import { JOB_CHOICES, JOB_RULES, JOB_TEXT, START_CHOICES, TRACKS } from './tracks.ts';
 import { MAPS, WORLD } from './world.ts';
-import type { ActionDef, Choice, Cond, Effect, GameState, Stat, StatMap, TrackDef, TrackId } from './types.ts';
+import { CAREER_KEYS as K, CAREER_RULES as C, CAREER_TEXT as CT, careerAge, careerIncome, careerTrack,
+  jobConditionLocks, promotionView, rankLocks, retirementView, review, reviewNotice, specialView } from './career2.ts';
+import type { RetirementMode } from './career2.ts';
+import type { ActionDef, Choice, Effect, GameState, Stat, StatMap, TrackDef, TrackId, WorldNode } from './types.ts';
+export { jobConditionLocks, review } from './career2.ts';
 
 export type JobSource = 'tile' | 'event' | 'headhunter';
 export type JobOffer = { track: TrackDef; rank: number; pay: number; locked: string[]; guidance: boolean };
@@ -14,39 +18,8 @@ const entries = (map?: StatMap) => Object.entries(map ?? {}) as [Stat, number][]
 const sourceAt = (state: GameState): JobSource => state.timers[JOB_RULES.popup] === JOB_RULES.popupHeadhunter
   ? 'headhunter' : state.timers[JOB_RULES.popup] === JOB_RULES.popupEvent ? 'event' : 'tile';
 
-/** OR alternatives count as their cheapest missing branch, never as two AND gates. */
-export function jobConditionLocks(state: GameState, cond: Cond): string[] {
-  const locks: string[] = [];
-  if (cond.status && !cond.status.includes(state.status)) locks.push(TEXT.statusLock);
-  if (cond.track && (!state.track || !cond.track.includes(state.track))) locks.push(TEXT.trackLock);
-  for (const [stat, min] of entries(cond.min)) {
-    if (state.s[stat] < min) locks.push(TEXT.minLock(STAT_LABEL[stat], min, state.s[stat]));
-  }
-  for (const [stat, max] of entries(cond.max)) {
-    if (state.s[stat] > max) locks.push(TEXT.maxLock(STAT_LABEL[stat], max));
-  }
-  const label = (flag: string) => JOB_TEXT.flag[flag] ?? FLAG_LABEL[flag] ?? flag;
-  for (const flag of cond.flags ?? []) if (!state.flags.includes(flag)) locks.push(TEXT.flagLock(label(flag)));
-  for (const flag of cond.notFlags ?? []) if (state.flags.includes(flag)) locks.push(TEXT.notFlagLock(label(flag)));
-  if (cond.any) {
-    const alternatives = cond.any.map(branch => jobConditionLocks(state, branch)).sort((a, b) => a.length - b.length);
-    if (!alternatives.length) locks.push(TEXT.anyLock);
-    else if (alternatives[0].length) {
-      const best = [...alternatives[0]];
-      best[0] = JOB_TEXT.either(alternatives.map(parts => parts.join(JOB_TEXT.conditionSeparator)));
-      locks.push(...best);
-    }
-  }
-  return locks;
-}
-
-function rankLocks(state: GameState, track: TrackDef, rank: number) {
-  // v1 wins counts every successful roll; the racer ladder requires actual contest victories.
-  const subject = track.id === 'racer' ? { ...state, s: { ...state.s, wins: state.board.contests } } : state;
-  return jobConditionLocks(subject, track.ranks[rank].need);
-}
-
 export function entryRank(state: GameState, track: TrackDef, source: JobSource = sourceAt(state)): number {
+  if (track.id === 'instructor' && state.flags.includes(K.coach)) return JOB_RULES.careerRank;
   const cap = Math.min(track.ranks.length - 1, source === 'headhunter'
     ? state.job.rank : JOB_RULES.careerRank);
   for (let rank = cap; rank > JOB_RULES.entryRank; rank--) {
@@ -56,12 +29,14 @@ export function entryRank(state: GameState, track: TrackDef, source: JobSource =
 }
 
 function entryLocks(state: GameState, track: TrackDef, source: JobSource): string[] {
-  const locks = jobConditionLocks(state, track.entry);
+  const coach = track.id === 'instructor' && state.flags.includes(K.coach);
+  const locks = coach ? [] : jobConditionLocks(state, track.entry);
   const age = LIFE_RULES.startAge + Math.floor(state.turn / LIFE_RULES.seasons.length);
   const max = JOB_RULES.maxAge[track.id];
   if (max !== undefined && age > max) locks.push(JOB_TEXT.age(max));
   if (state.s.money < (track.entryFee ?? 0)) locks.push(TEXT.moneyLock(track.entryFee!));
-  if (state.status === 'retired') locks.push(JOB_TEXT.retired);
+  if (state.status === 'retired' && !coach) locks.push(JOB_TEXT.retired);
+  if (state.flags.includes(K.switched) && !C.switchTracks.includes(track.id)) locks.push(CT.switchLock);
   const wait = JOB_RULES.wait - (state.turn - state.job.changedAt);
   if (source === 'tile' && state.job.changedAt >= 0 && wait > 0) locks.push(JOB_TEXT.wait(wait));
   return locks;
@@ -107,6 +82,8 @@ function enter(state: GameState, track: TrackDef, source: JobSource) {
     tracks: [...new Set([...state.job.tracks, track.id])] };
   // v1 effects still read this alias; job.rank is the v2 authority.
   state.s.rank = Math.min(rank, STAT_MAX.rank!);
+  clearCareer(state);
+  delete state.timers[K.benefitUntil]; delete state.timers[K.pension];
   if (track.id === 'instructor' && rank >= JOB_RULES.careerRank && !state.flags.includes('examiner')) {
     state.flags.push('examiner');
   }
@@ -131,6 +108,7 @@ export function quit(prev: GameState): GameState {
   if (state.status !== 'working' || state.phase === 'ended') return state;
   state.status = 'jobless'; state.track = null; state.s.rank = 0;
   Object.assign(state.job, { rank: 0, perf: 0, tenure: 0, total: 0, warn: 0 });
+  clearCareer(state);
   return state;
 }
 
@@ -177,6 +155,22 @@ export function jobChoices(state: GameState): { choices: JobChoice[]; exclusive:
   if (state.phase === 'ended') return { choices: [], exclusive: false };
   if (starting(state)) return { exclusive: true, choices: Object.entries(START_CHOICES)
     .map(([id, choice]) => ({ id: `start:${id}`, choice, locks: [] })) };
+  const retiring = retirementView(state);
+  if (retiring.due && !retiring.racer && state.timers[K.deferred] !== state.turn + 1) return {
+    exclusive: true, choices: [...retiring.modes.map(mode => ({
+      id: `retire:${mode}`, locks: [], choice: {
+        title: mode === 'pension' ? CT.pension : mode === 'rehire' ? CT.rehireTitle : CT.switch,
+        desc: mode === 'rehire' ? CT.rehireDesc : CT.pensionDesc(retiring.severance, mode === 'pension' ? retiring.pension : 0)
+          + (mode === 'switch' ? CT.switchDesc : ''),
+        effect: { text: mode === 'pension' ? CT.pensionDone : mode === 'rehire' ? CT.rehireDone : CT.switchDone },
+      },
+    })), { id: 'job:none', locks: [], choice: { title: CT.continue, desc: CT.deferRetirement,
+      effect: { text: CT.deferRetirement } } }],
+  };
+  const notice = reviewNotice(state);
+  if (notice) return { exclusive: true, choices: [{ id: 'job:none', locks: [], choice: {
+    title: CT.continue, desc: notice.text, effect: { text: CT.reviewed },
+  } }] };
   const node = nodeAt(state), popup = state.timers[JOB_RULES.popup];
   const tile = state.phase === 'action' && state.board.step === 'space';
   const menu = popup !== undefined || (tile && node.kind === 'jobfair');
@@ -197,14 +191,31 @@ export function jobChoices(state: GameState): { choices: JobChoice[]; exclusive:
   if (tile && (node.kind === 'jobfair' || node.kind === 'rankup') && state.status === 'working') {
     choices.push({ id: 'quit', choice: JOB_CHOICES.quit, locks: [] });
   }
+  if (tile && node.kind === 'rankup' && state.status === 'working') {
+    const promotion = promotionView(state);
+    choices.push({ id: promotion.id, locks: promotion.locks, choice: { title: CT.promo,
+      desc: CT.promoDesc(promotion.title, promotion.chance), roll: { base: promotion.chance,
+        success: { text: CT.passed }, fail: { text: CT.failed } } } });
+  }
   return { choices, exclusive: menu };
 }
 
-export const isJobChoice = (id: string) => id.startsWith('start:') || id.startsWith('job:') || id === 'quit';
+export const isJobChoice = (id: string) => id.startsWith('start:') || id.startsWith('job:') || id === 'quit'
+  || id === 'promo' || id.startsWith('retire:');
 
 /** Engine has already charged the fee; this branch executor also serves forecast without RNG. */
 export function applyJobChoice(prev: GameState, id: string, success: boolean): GameState {
   let state = structuredClone(prev);
+  if (id === 'job:none' && retirementView(state).due && state.timers[K.deferred] !== state.turn + 1) {
+    state.timers[K.deferred] = state.turn + 1; return state;
+  }
+  if (id === 'job:none' && reviewNotice(state)) {
+    delete state.timers[K.notice]; delete state.timers[K.noticeAt]; return state;
+  }
+  if (id.startsWith('retire:')) return retire(state, id.slice('retire:'.length) as RetirementMode);
+  if (id === 'promo') {
+    state = promotionResult(state, success); state.board.step = 'bonus'; return state;
+  }
   if (id.startsWith('start:')) {
     state.flags.push(JOB_RULES.started);
     state.status = id === 'start:school' ? 'student' : 'jobless';
@@ -234,4 +245,150 @@ export function startingAction(state: GameState, action: ActionDef, tile: boolea
   return { ...action, ...(jobless && { when: { ...action.when, status: [...action.when.status!, 'jobless'] } }),
     ...(action.effect && { effect: scale(action.effect) }),
     ...(action.roll && { roll: { ...action.roll, success: scale(action.roll.success), fail: scale(action.roll.fail) } }) };
+}
+
+function clearCareer(state: GameState): void {
+  for (const key of [K.retry, K.bonus, K.idle, K.worked, K.deferred]) delete state.timers[key];
+  state.flags = state.flags.filter(flag => flag !== K.rehire);
+}
+
+function changeRank(state: GameState, rank: number): void {
+  if (rank > state.job.rank) state.board.rankups += rank - state.job.rank;
+  Object.assign(state.job, { rank, perf: JOB_RULES.entryPerf, tenure: 0, warn: 0 });
+  state.s.rank = Math.min(rank, STAT_MAX.rank!);
+  delete state.timers[K.retry];
+  if (state.track === 'instructor' && rank >= JOB_RULES.careerRank && !state.flags.includes('examiner')) {
+    state.flags.push('examiner');
+  }
+}
+
+export type PerformanceSource = keyof typeof C.performance;
+/** Action/event authors call this after resolving an outcome; no random numbers are consumed. */
+export function performance(prev: GameState, source: PerformanceSource | number): GameState {
+  const delta = typeof source === 'number' ? source : C.performance[source];
+  if (!Number.isSafeInteger(delta)) throw new Error(CT.badPerformance);
+  const state = structuredClone(prev);
+  if (!careerTrack(state) || state.phase === 'ended') return state;
+  state.job.perf = Math.max(C.perfMin, Math.min(C.perfMax, state.job.perf + delta));
+  if (source === 'workSuccess' || source === 'workFailure') {
+    state.timers[K.worked] = state.turn + 1;
+    state.timers[K.idle] = 0;
+  }
+  return state;
+}
+
+/** Compatible with move.ts's injected stop predicate, including a prospective destination node. */
+export function canPromote(state: GameState, node: WorldNode = nodeAt(state)): boolean {
+  return promotionView(state, node).enabled;
+}
+
+function promotionResult(prev: GameState, success: boolean): GameState {
+  const state = structuredClone(prev);
+  delete state.timers[K.bonus];
+  if (success) changeRank(state, state.job.rank + 1);
+  else {
+    state.job.perf = Math.max(C.perfMin, state.job.perf + C.failedPerf);
+    state.timers[K.retry] = state.turn + C.retrySeasons;
+  }
+  return state;
+}
+
+/** Direct API and choose('promo') share the same exact odds and branch executor. */
+export function promote(prev: GameState): GameState {
+  if (!canPromote(prev)) throw new Error(CT.badPromotion);
+  const state = structuredClone(prev), chance = promotionView(state).chance;
+  return promotionResult(state, randInt(state, LIFE_RULES.percent) < chance);
+}
+
+export function special(prev: GameState): GameState {
+  const state = structuredClone(prev);
+  if (specialView(state).enabled) changeRank(state, state.job.rank + 1);
+  return state;
+}
+
+/** Events may demote immediately; bottom-rank dismissal uses the same benefit grant as review. */
+export function demote(prev: GameState): GameState {
+  let state = structuredClone(prev);
+  const track = careerTrack(state);
+  if (!track || state.phase === 'ended') return state;
+  if (state.job.rank > JOB_RULES.entryRank) changeRank(state, state.job.rank - 1);
+  else if (track.salaried) {
+    state = quit(state);
+    state.timers[K.benefitUntil] = state.turn + C.benefitSeasons;
+  }
+  return state;
+}
+
+/** Called with the new spring turn. Repeated calls in the same year cannot pay twice. */
+export function yearEndReview(prev: GameState): GameState {
+  let state = structuredClone(prev);
+  if (state.phase === 'ended' || state.turn === 0 || state.turn % LIFE_RULES.seasons.length !== LIFE_RULES.spring
+    || state.timers[K.reviewed] === state.turn) return state;
+  state.timers[K.reviewed] = state.turn;
+  const completedAge = careerAge({ ...state, turn: state.turn - 1 });
+  if (state.track === 'racer' && completedAge >= C.racerDeclineAge) state = performance(state, C.racerDecline);
+  const evaluated = review(state), oldWarning = state.job.warn;
+  if (evaluated.outcome === 'excellent') {
+    state.s.money = Math.min(LIFE_RULES.statMax, state.s.money + evaluated.bonus);
+    state.timers[K.bonus] = C.excellentBonus;
+  }
+  if (evaluated.outcome === 'warning') state.job.warn = 1;
+  else if (evaluated.outcome === 'dismissal') state = demote(state);
+  else if (evaluated.outcome === 'demotion' || evaluated.outcome === 'promotion') changeRank(state, evaluated.rank);
+  else if (evaluated.clearWarning) state.job.warn = 0;
+  if (evaluated.outcome !== 'none' && (evaluated.outcome !== 'normal' || oldWarning !== state.job.warn)) {
+    state.timers[K.notice] = C.reviewOutcomes.indexOf(evaluated.outcome);
+    state.timers[K.noticeAt] = state.turn;
+    state.log.push({ turn: state.turn, text: CT.review[evaluated.outcome]
+      + (evaluated.locks.length ? JOB_TEXT.conditionSeparator + CT.maintenance(evaluated.locks) : ''),
+    tone: evaluated.outcome === 'excellent' || evaluated.outcome === 'promotion' ? 'good' : 'info' });
+    if (state.log.length > LIFE_RULES.logMax) state.log.splice(0, state.log.length - LIFE_RULES.logMax);
+  }
+  return state;
+}
+
+/** Pension/benefit accrual is exposed separately in careerIncome for T06 accounting. */
+export function advanceCareer(prev: GameState): GameState {
+  let state = structuredClone(prev);
+  if (state.phase === 'ended' || state.turn === 0 || state.timers[K.season] === state.turn) return state;
+  state.timers[K.season] = state.turn;
+  const income = careerIncome({ ...state, turn: state.turn - 1 });
+  for (const [label, amount] of [[CT.benefitLabel, income.unemployment], [CT.pensionLabel, income.pension]] as const) {
+    if (amount) state.board.ledger[label] = (state.board.ledger[label] ?? 0) + amount;
+  }
+  if (state.timers[K.benefitUntil] <= state.turn) delete state.timers[K.benefitUntil];
+  if (careerTrack(state)) {
+    state.job.tenure++; state.job.total++;
+    state.timers[K.idle] = state.timers[K.worked] === state.turn ? 0 : (state.timers[K.idle] ?? 0) + 1;
+    if (state.timers[K.idle] >= C.idleSeasons) state = performance(state, C.idlePerf);
+    if (state.s.stamina < C.exhaustedBelow) state = performance(state, C.exhaustedPerf);
+  }
+  state = yearEndReview(state);
+  const retiring = retirementView(state);
+  if (retiring.due && (retiring.racer || state.flags.includes(K.rehire))) state = retire(state, 'pension');
+  return state;
+}
+
+/** Rehire defers severance until final retirement; final pay includes the 60% contract rate. */
+export function retire(prev: GameState, mode: RetirementMode = 'pension'): GameState {
+  const view = retirementView(prev);
+  if (prev.phase === 'ended' || !view.due || (view.racer ? mode !== 'pension' : !view.modes.includes(mode))) {
+    throw new Error(CT.badRetirement);
+  }
+  let state = structuredClone(prev);
+  if (mode === 'rehire') {
+    state.flags.push(K.rehire); delete state.timers[K.retry]; delete state.timers[K.bonus];
+    return state;
+  }
+  state = quit(state);
+  state.s.money = Math.min(LIFE_RULES.statMax, state.s.money + view.severance);
+  delete state.timers[K.benefitUntil]; delete state.timers[JOB_RULES.popup];
+  if (mode === 'switch') {
+    if (!state.flags.includes(K.switched)) state.flags.push(K.switched);
+    state = openJobOffers(state);
+  } else {
+    state.status = 'retired'; state.timers[K.pension] = view.pension;
+    if (view.racer && !state.flags.includes(K.coach)) state.flags.push(K.coach);
+  }
+  return state;
 }

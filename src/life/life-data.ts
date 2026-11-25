@@ -64,6 +64,8 @@ export const SPACE_MENU: Partial<Record<SpaceKind, string[]>> = {
   job: V1_SPACE_MENU.job.filter(id => actionIds.has(id)),
   contest: [], event: [], rest: [], start: [], pay: [],
 };
+// Existing paid duties earn performance when selected in the extra-action slot.
+export const CAREER_ACTIONS = [...SPACE_MENU.job!, 'pi_assist', 'ac_teach', 'dir_forum', 'assoc_volunteer'];
 export const SETTLEMENT_KINDS: SpaceKind[] = ['pay', 'start'];
 
 export const BOARD_CHOICES: Record<'spin' | 'skip' | 'end', Choice> = {
