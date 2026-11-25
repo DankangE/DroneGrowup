@@ -1,5 +1,5 @@
-import { ACTIONS as V1_ACTIONS, EVENTS as V1_EVENTS } from '../game/data.ts';
-import type { Choice as V1Choice, Cond as V1Cond, Effect as V1Effect, Stage } from '../game/types.ts';
+import { ACTIONS as V1_ACTIONS, EVENTS as V1_EVENTS } from './data.ts';
+import type { Choice as V1Choice, Cond as V1Cond, Effect as V1Effect, Stage } from './base-types.ts';
 import type { ActionDef, Choice, Cond, Effect, EventDef, TrackId } from './types.ts';
 
 // Section 6.7: student is a status, so it has no corresponding track.
@@ -36,7 +36,7 @@ function choiceFor(choice: V1Choice): Choice {
   };
 }
 
-// Adapt copies at the v2 boundary. v1 data and the default game stay untouched.
+// Adapt detached copies of the source catalog without changing its numbers.
 export const ACTIONS: ActionDef[] = V1_ACTIONS.map(({ when, id, place, flight, ...choice }) => ({
   ...choiceFor(choice), id, place, when: condFor(when), ...(flight !== undefined && { flight }),
 }));

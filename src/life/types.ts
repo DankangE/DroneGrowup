@@ -1,8 +1,8 @@
-// v2 shapes; shared v1 vocabulary stays in src/game until the T23 switch.
+// Life board state and vocabulary; base-types.ts holds the shared source catalog shapes.
 import type {
   ChanceMod as V1ChanceMod, Choice as V1Choice, Effect as V1Effect, EndingId as V1EndingId,
   EventDef as V1EventDef, LogEntry, PlaceId as V1PlaceId, Roll as V1Roll, Stat as V1Stat,
-} from '../game/types.ts';
+} from './base-types.ts';
 export type { LogEntry };
 
 export type Stat = V1Stat | 'happy' | 'fans' | 'homeIndex' | 'capStamina';

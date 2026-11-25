@@ -10,7 +10,7 @@
 
 | 항목 | PR #1 (방식 C) | 이 기획 |
 | --- | --- | --- |
-| 한 판 | 20~50세, 120계절, 약 24분 | 19~70세, 204계절, 목표 평균 50분(40~60분). 세 시기로 끊어 쉬어 갈 수 있다 |
+| 한 판 | 이전 커리어 판 | 19~70세, 204계절, 목표 평균 50분(40~60분). 세 시기로 끊어 쉬어 갈 수 있다 |
 | 지도 | 22칸 한 장 | 여섯 장 212칸. 한 화면에 지도 한 장이 다 보이고 환승으로 옮겨 간다 |
 | 이동 | 룰렛 한 번, 갈 곳 평균 1.1곳 | 룰렛 두 개 중 하나 선택. 갈 곳 평균 2.2~3.4곳, 차량이 있으면 3.7~8.5곳 |
 | 직업 | 단계 8개, 정해진 순서 | 직업 19종. 조건이 맞는 직업을 골라 입사하고 이직한다 |
@@ -507,7 +507,7 @@ PR #1의 월급 간격은 2.5계절이었다. 새 지도는 2.7~4.4계절이라 
 ### 9.1 구성
 
 - 기존 38개(PR #1 `EVENTS`, 수치 그대로, 조건의 단계만 직업으로) + 신규 82개 = **120개**.
-- 규칙은 PR #1 그대로다: 사건마다 비용과 조건이 없는 응답이 하나 있다. 어느 응답도 다른 응답을 모든 수치에서 이기지 않는다(`npm run dominance`). 표시된 확률이 굴리는 확률이다(5~95%).
+- 규칙은 PR #1 그대로다: 사건마다 비용과 조건이 없는 응답이 하나 있다. 어느 응답도 다른 응답을 모든 수치에서 이기지 않는다(`npm run dominance:life`). 표시된 확률이 굴리는 확률이다(5~95%).
 - 재등장 대기 24계절(`eventCooldown`). "1회"라고 적힌 사건은 한 판에 한 번이다.
 - 뽑히는 길 세 가지: 사건 칸 · 대회 칸(지금 지도와 직업에 맞는 것), 2년마다의 인생 사건(A · F · H 묶음과 B 묶음 일부), 연말 정리가 부르는 사건(집값, 펀드).
 - 한 판에 사건은 약 40~50번 나온다(칸 사건 약 22, 대회 약 8, 인생 사건 25에서 조건 미달을 뺀 값).
@@ -723,7 +723,7 @@ PR #1의 월급 간격은 2.5계절이었다. 새 지도는 2.7~4.4계절이라 
 | --- | --- | --- |
 | 기술 | 지금의 인라인 SVG + DOM. 새 의존성 없음 | three.js 같은 런타임 의존성(약 170KB 압축). `CLAUDE.md`의 "런타임 의존성 없음"을 바꿔야 한다 |
 | 그림 | PR #1의 탑 뷰 타일, 말, 등각 장면 18장을 그대로 쓴다. 새로 필요한 것은 칸 아이콘 8종과 장소 그림 | 지도 여섯 장의 모델이나 입체 타일, 캐릭터 모델, 조명. 지금 그림은 대부분 못 쓴다 |
-| 화면 규칙 | 7×9 격자가 한 화면에 들어가 스크롤 금지 규칙과 `npm run layout`이 그대로 선다 | 카메라가 움직여야 칸이 보인다. 누름 영역 44px과 잘림 검사를 새로 만들어야 한다 |
+| 화면 규칙 | 7×9 격자가 한 화면에 들어가 스크롤 금지 규칙과 `npm run layout:life`이 그대로 선다 | 카메라가 움직여야 칸이 보인다. 누름 영역 44px과 잘림 검사를 새로 만들어야 한다 |
 | 조작 | 도착 칸을 직접 누른다. 칸이 평면이라 겹치지 않는다 | 원근 때문에 먼 칸이 작아져 누르기 어렵다 |
 | 성능 | 저가 휴대폰에서도 문제없다 | 발열과 배터리, WebGL 미지원 기기 대비 필요 |
 | 검증 | `playtest`, `layout`, `outcomes`, `check:board`가 DOM 훅으로 돈다 | 캔버스 안은 훅이 닿지 않아 검사 도구를 다시 짜야 한다 |
@@ -776,7 +776,7 @@ PR #1의 월급 간격은 2.5계절이었다. 새 지도는 2.7~4.4계절이라 
 ### 11.4 훅과 검사
 
 - PR #1의 `data-option`, `data-pick`, `data-nav`, `data-tab`, `data-action`, `data-screen`, `data-phase`를 유지한다. 새로 `data-dest="<칸 id>"`(도착 칸), `data-map="A..F"`(지금 지도), `data-popup="<이름>"`(위 스무 가지)을 더한다.
-- `npm run layout`은 지도 여섯 장 × 네 크기와 팝업 스무 가지를 돈다. `check:board timed`는 16계절 대신 지도마다 12계절을 재서 14.9초 모형과 비교한다.
+- `npm run layout:life`은 지도 여섯 장 × 네 크기와 팝업 스무 가지를 돈다. `check:board timed`는 16계절 대신 지도마다 12계절을 재서 14.9초 모형과 비교한다.
 - UI는 지금처럼 `options(state)`를 그리고 `choose(state, id)`를 부를 뿐이다. 도착 칸 목록, 직업 후보, 집 값, 인사평가 결과는 모두 엔진이 계산해 준다.
 
 ## 12. 저장과 데이터 모델
@@ -883,7 +883,7 @@ type GameState = {
 
 모든 정책은 도착 칸을 고를 때 자기 목표에 맞는 칸 종류의 우선순위를 쓴다. 강제 실험 두 가지를 더 돌린다: 룰렛 한 개만 쓰는 판(선택지 효과 측정), 은행을 아예 못 쓰는 판.
 
-### 13.2 검사 기준(`npm run simulate`가 실패로 처리)
+### 13.2 검사 기준(`npm run simulate:life`가 실패로 처리)
 
 | 영역 | 기준 |
 | --- | --- |
@@ -910,7 +910,7 @@ type GameState = {
 4. 16개 정책 전체로 엔딩과 점수 기준을 맞추고 `dominance`, `outcomes`를 통과시킨다.
 5. 화면이 붙은 뒤 사람 속도 측정(`check:board timed`)으로 시간 모형을 고치고 2차 조정을 한다.
 
-조정 손잡이의 우선순위: 급여 표 → 생활비 배수 → 집값 → 재직 조건 → 사건 가중치. 능력치 등급 경계(`GRADE_STEPS`)는 건드리지 않는다. 204계절이면 PR #1(120계절)보다 능력치가 더 쌓이므로, S등급이 45세 이전에 흔하면 행동의 상승량을 일괄 85%로 낮춘다.
+조정 손잡이의 우선순위: 급여 표 → 생활비 배수 → 집값 → 재직 조건 → 사건 가중치. 능력치 등급 경계(`GRADE_STEPS`)는 건드리지 않는다. 204계절이면 이전 커리어 판보다 능력치가 더 쌓이므로, S등급이 45세 이전에 흔하면 행동의 상승량을 일괄 85%로 낮춘다.
 
 ## 14. 구현 지침과 티켓
 
@@ -924,6 +924,7 @@ type GameState = {
 ## What this is
 Static browser game, Korean text, mobile first. Vite 5 + TypeScript strict, vanilla DOM + inline SVG.
 No framework, no runtime dependencies (devDependencies only). Node 22+ runs .ts scripts and tests directly.
+The default client is src/ui2; src/main.ts boots it without a query flag.
 The v2 spec is docs/design/life-board.md. It is the source of truth for rules and numbers; do one ticket
 from its section 14.3 per session and do not go beyond that ticket's scope.
 
@@ -938,14 +939,14 @@ from its section 14.3 per session and do not go beyond that ticket's scope.
   anything you could not do. Do not include secrets or personal data.
 - If a command is denied by a permission rule, stop that step and report the denial as it is.
 
-## Engine rules (src/game and src/life)
+## Engine rules (src/life)
 - Pure functions only: no DOM, no Date, no Math.random, no floats in the state. Seeded RNG lives in the state.
 - Money is an integer in 만원. A percentage is integer multiply then floor: Math.floor(x * pct / 100).
 - Every number and every sentence lives in a data table (data.ts, world.ts, tracks.ts, life-data.ts, events-*.ts),
   not in engine code. The chance shown on a card is the chance that is rolled (clamped 5..95).
 - Every event has one choice with no cost and no requirement. Every popup has a way out ("그냥 지나간다").
   A run can never get stuck.
-- No choice of an event may be at least as good as another in every stat (npm run dominance).
+- No choice of an event may be at least as good as another in every stat (npm run dominance:life).
 - Every `need.min` on a graded stat is a GRADE_STEPS value.
 - The UI renders what the engine returns (options, reachable, jobOffers, forecast) and calls choose(state, id).
   It never computes odds, pay, eligibility or endings.
@@ -960,13 +961,20 @@ from its section 14.3 per session and do not go beyond that ticket's scope.
 - All names, text and art are original. Do not copy from other games.
 
 ## Before every PR
-- `npm run verify` must pass (typecheck, build, tests, simulation, dominance, outcomes, playtests, layout).
+- `npm run verify` must pass (typecheck, build, tests and the v2 gates in package.json, including keyboard checks).
+- `npm run simulate:life` enforces balance; include it in verify only when its full run takes at most 3 minutes.
+  Otherwise run it separately before the PR. Do not weaken balance criteria.
+- The platform client uses the new pilotgrowup-v2 leaderboard; NalidaGame server changes are a separate order.
 - Also run the ticket's own commands listed in its "검증" line and paste their summary lines in the PR body.
 - After changing a balance number: run the simulation and update the tables in docs/design.md.
 - Tests: `tests/life-*.test.ts`, run by `npm test` (node --test). New rule = new test.
 ```
 
-### 14.2 v1과 v2를 나란히 두는 방법
+### 14.2 전환 전 병행 구현 기록
+
+T23 이후 현재 구조: `src/main.ts`는 기본 URL과 `?life=1` 모두 `src/ui2/`를 실행한다.
+공통 표·타입·등급 계산은 `src/life/data.ts`, `base-types.ts`, `grades.ts`에 있다.
+`src/game/`과 v1 전용 UI·스크립트는 제거했다. 아래 항목은 T00~T22의 병행 구현 기록이다.
 
 모든 PR이 main으로 들어가고 그때마다 `npm run verify`가 통과해야 한다. 그래서 v2는 v1을 고치지 않고 옆에 짓는다.
 
@@ -1026,7 +1034,7 @@ from its section 14.3 per session and do not go beyond that ticket's scope.
 **M3 검증**
 
 - **T14 [M] 봇 16종과 시뮬레이션 보고.** 의존: T13. 파일: `src/life/bots.ts`, `scripts/simulate-life.ts`, `scripts/trace-life.ts`. 규칙: 13.1절, 시간 모형은 2절의 표. 완료: `npm run simulate:life`가 16정책 × 300시드를 돌려 13.2절의 모든 항목을 표로 찍는다(아직 실패 처리는 완주 · 막힘만).
-- **T15 [M] 검사 기준과 1차 밸런스.** 의존: T14. 파일: `scripts/simulate-life.ts`(13.2절 기준을 실패로), `scripts/outcome-check-life.ts`, 표 파일의 수치, `docs/design.md`(v2 표), `docs/balance-report.md`. 규칙: 13.2, 13.3절(손잡이 순서). 완료: `npm run simulate:life`, `dominance:life`, `outcomes:life` 통과. 통과시키지 못한 기준은 값과 이유를 PR 본문에 적고 기준을 임의로 풀지 않는다.
+- **T15 [M] 검사 기준과 1차 밸런스.** 의존: T14. 파일: `scripts/simulate-life.ts`(13.2절 기준을 실패로), `scripts/outcome-check-life.ts`, 표 파일의 수치, `docs/design.md`(v2 표), `docs/life-balance-report.md`. 규칙: 13.2, 13.3절(손잡이 순서). 완료: `npm run simulate:life`, `dominance:life`, `outcomes:life` 통과. 통과시키지 못한 기준은 값과 이유를 PR 본문에 적고 기준을 임의로 풀지 않는다.
 
 **M4 화면**
 
@@ -1040,7 +1048,7 @@ from its section 14.3 per session and do not go beyond that ticket's scope.
 **M5 마감**
 
 - **T22 [S] 저장 v2와 플랫폼 계약.** 의존: T13, T19. 파일: `src/save.ts`(`pilot-growup:run:v2`, `meta:v2`, v1 안내와 이관), `src/platform.ts`, `scripts/playtest-platform.mjs`, `docs/nalidagame-integration.md`(12.3절 표). 서버 저장소는 건드리지 않는다. 완료: `npm run playtest:platform` 통과, 12.2절의 이관 규칙 테스트.
-- **T23 [M] 전환.** 의존: T15, T20, T22와 15절 질문 3 · 5의 답. 파일: `src/main.ts`(v2가 기본), v1 엔진 · 화면 · 스크립트 삭제, v2가 import하던 표를 `src/life/`로 이동, `package.json`의 `verify`, `CLAUDE.md`, `AGENTS.md`, `docs/design.md`. 완료: `npm run verify` 통과, `src/game/`에 v1 전용 코드가 없다, 저장소에 "120계절" · "20~50세" 설명이 남지 않는다.
+- **T23 [M] 전환.** 의존: T15, T20, T22와 15절 질문 3 · 5의 답. 파일: `src/main.ts`(v2가 기본), v1 엔진 · 화면 · 스크립트 삭제, v2가 import하던 표를 `src/life/`로 이동, `package.json`의 `verify`, `CLAUDE.md`, `AGENTS.md`, `docs/design.md`. 완료: `npm run verify` 통과, `src/game/`에 v1 전용 코드가 없다, 저장소에 이전 버전의 나이·계절 설명이 남지 않는다.
 - **T24 [M] 2차 밸런스와 마감.** 의존: T23. 파일: 표 파일의 수치, `scripts/simulate-life.ts`의 시간 모형, `src/ui2/board.ts`(기울임 보기 토글, 11.1절), 문구. 완료: `check:board timed`로 잰 값을 넣은 추정 한 판 45~55분, 13.2절 전부 통과, 측정값을 `docs/design.md`에 적는다.
 
 합계 25개: S 2, M 23. 한 줄 요약은 순서대로 규칙 파일 → 지도 표 → 이동 → 계절 순환 → 직업 입사 → 승급과 평가 → 경제 → 집 → 가족과 행복 → 가게와 펀드 → 특구 → 사건 1 → 사건 2 → 결산 → 봇 → 1차 밸런스 → 보드 화면 → 룰렛과 이동 → 팝업 1 → 팝업 2 → 화면 검사 → 그림 → 저장과 플랫폼 → 전환 → 2차 밸런스다.
@@ -1055,6 +1063,8 @@ from its section 14.3 per session and do not go beyond that ticket's scope.
 | 4 | 목표 달성 뒤 | **끝나지 않는다.** 상장 · 당선 · 인가는 훈장이고 70세까지 산다. 55세부터 조기 은퇴 가능 | PR #1처럼 달성 즉시 끝(짧은 판이 생기지만 인생 게임 느낌이 약해진다) |
 | 5 | 순위표 | **v2용 새 순위표**(점수 체계가 다르다). NalidaGame 서버 수정이 필요하다 | 기존 순위표에 섞는다(예전 기록이 모두 하위로 밀린다) |
 | 6 | 드론과 무관한 직업 | **넣는다**(가게 직원, 배송 기사, 사무직, 공무원). "파일럿이 아닌 삶"의 자유도가 생긴다 | 드론 관련 15종만(세계관은 또렷해지나 선택 폭이 준다) |
+
+결정 기록 (2026-11-26): 3번은 PR #1~3이 이미 병합되어 있으므로 그 위에서 만든다(feat/life-dev). 재사용이 새로 시작하는 것보다 분명히 더 비싸다고 드러나면 비용 비교와 함께 사용자에게 되돌린다. 5번은 v2용 새 순위표로 정한다. 서버(NalidaGame) 변경은 별도 주문으로 처리하고, DroneGrowup 쪽 T22/T23은 서버를 건드리지 않는다.
 
 ## 부록 A. 칸 표
 

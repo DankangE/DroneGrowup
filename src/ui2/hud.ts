@@ -1,0 +1,97 @@
+import { grade, GRADED_STATS } from '../life/grades.ts';
+import { STAT_LABEL } from '../life/life-data.ts';
+import type { Derived, OptionView } from '../life/engine.ts';
+import type { GameState } from '../life/types.ts';
+import { MAPS, WORLD } from '../life/world.ts';
+import { statChanges } from './popups/polish-model.ts';
+import { COPY } from './popups/data.ts';
+import { button, el } from '../ui/dom.ts';
+
+export const HUD_STYLE = `
+.life2 .life2-shell { grid-template-rows:110px minmax(0,1fr) clamp(50px,18dvh,136px) 44px; }
+.life2 .life2-bottom { position:relative; z-index:11; }
+.life2 .life2-hud { gap:2px; }
+.life2 .life2-funds { display:flex; justify-content:space-between; gap:6px; font-size:12px; line-height:16px; }
+.life2 [data-debt-state=owing] .life2-debt { color:#9b323b; font-weight:800; }
+.life2 .life2-options[data-single-page] { grid-template-rows:18px minmax(0,1fr); }
+.life2 .life2-pager[hidden] { display:none; }
+.life2 .life2-change-strip { height:14px; font-size:11px; line-height:14px; white-space:nowrap; }
+.life2 .life2-stats { font-size:11px; line-height:14px; }
+
+.life2 .life2-grades { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:1px 3px; font-size:11px; line-height:12px; }
+/* Short screens: the visible heading shares a 44px row with the pager;
+   the single choice gets the full width and another 44px row.
+   Options = 2px border + 10px padding + 4px gap + 44px + 44px = 104px.
+   At 500x679: 16px app padding + 60px HUD + 437px board + 104px options
+   + 44px nav + 18px gaps. The board cell is (437 - 16) / 9 = 46.78px.
+   Detailed abilities remain in My Life. No clipped, 1px heading: its wrapped
+   text can otherwise enlarge the root's scrollable overflow despite clip-path. */
+@media (max-width:899px) and (max-height:739px) {
+  .life2 .life2-shell { --life2-hud-height:60px; grid-template-rows:60px minmax(0,1fr) 104px 44px; }
+  .life2 .life2-hud { padding:2px 8px; gap:2px; }
+  .life2 .life2-date { line-height:18px; }
+  .life2 .life2-grades,.life2 .life2-change-strip { display:none; }
+  .life2 .life2-options,.life2 .life2-options[data-single-page] {
+    padding:5px; gap:4px;
+    grid-template:'heading pager' 44px 'choices choices' minmax(0,1fr) / minmax(0,1fr) auto;
+  }
+  .life2 .life2-options > h2 { grid-area:heading; align-self:center; }
+  .life2 .life2-option-list { grid-area:choices; }
+  .life2 .life2-pager { grid-area:pager; gap:4px; font-size:11px; }
+  .life2 .life2-pager button { padding:0 6px; }
+}
+@media (min-width:900px) {
+  .life2 .life2-shell { grid-template-rows:138px minmax(0,1fr) 44px; }
+  .life2 .life2-hud { gap:4px; }
+}
+`;
+const GRADE_NAMES = { skill: '조종', xp: '경험', teach: '교육', biz: '사업', support: '지지' };
+
+export function hud(state: GameState, view: Derived, offered: OptionView[], choose: (id: string) => void,
+  open?: (menu: 'my-life' | 'phone') => void, before?: GameState) {
+  const changes = before ? statChanges(before, state) : [];
+  const mark = (cell: HTMLElement, stat: string) => {
+    const change = changes.find(row => row.stat === stat);
+    if (change) { cell.dataset.changedStat = stat; cell.dataset.direction = change.direction;
+      cell.setAttribute('aria-label', `${change.label} ${change.value}`); }
+    return cell;
+  };
+  const current = WORLD.find(node => node.id === state.board.pos)!;
+  const top = el('header', 'life2-hud');
+  const date = el('div', 'life2-date');
+  date.append(el('h1', '', view.dateLabel), el('span', '', MAPS[current.map].name));
+  const stats = el('div', 'life2-stats');
+  const funds = el('div', 'life2-funds'); funds.dataset.debtState = state.s.debt > 0 ? 'owing' : 'clear';
+  funds.append(mark(el('span', '', `자금 ${state.s.money.toLocaleString('ko-KR')}만`), 'money'),
+    mark(el('span', 'life2-debt', `빚 ${state.s.debt.toLocaleString('ko-KR')}만`), 'debt'));
+  const status = el('span', '', offered.some(option => option.id.startsWith('go:')) ? COPY.pickDestination
+    : offered.some(option => option.id.startsWith('start:')) ? '진로 선택 전' : view.rankName || view.stageName);
+  if (offered.some(option => option.id.startsWith('go:'))) { status.dataset.pickPrompt = ''; status.setAttribute('role', 'status'); }
+  stats.append(mark(el('span', '', `체력 ${state.s.stamina}/${view.capStamina}`), 'stamina'), status);
+  const grades = el('div', 'life2-grades'); grades.setAttribute('aria-label', '능력치 등급');
+  for (const stat of GRADED_STATS) {
+    const letter = grade(stat, state.s[stat])!.letter;
+    const cell = el('span', '', `${GRADE_NAMES[stat as keyof typeof GRADE_NAMES] ?? STAT_LABEL[stat]} ${letter}`);
+    cell.dataset.grade = stat; cell.setAttribute('aria-label', `${STAT_LABEL[stat]} ${letter}등급`); grades.append(mark(cell, stat));
+  }
+  const ticks = el('div', 'life2-change-strip'); ticks.setAttribute('aria-live', 'polite');
+  const changed = changes.filter(row => ['money', 'debt'].includes(row.stat!));
+  ticks.textContent = changed.map(row => { const delta = state.s[row.stat!] - before!.s[row.stat!];
+    return `${row.label} ${delta > 0 ? '+' : ''}${delta}만`; }).join(' · ');
+  top.append(el('style', '', HUD_STYLE), date, funds, stats, grades, ticks);
+  const bottom = el('footer', 'life2-bottom');
+  // Navigation opens presentation views; engine options still own every service.
+  for (const [name, nav] of [['내 인생', 'life'], ['휴대폰', 'phone']]) {
+    const reserved = button(name, 'life2-reserved', () => open?.(nav === 'life' ? 'my-life' : 'phone'));
+    reserved.disabled = !open;
+    reserved.dataset.nav = nav;
+    bottom.append(reserved);
+  }
+  const spin = offered.find(option => option.id === 'spin');
+  const center = spin ? button(spin.title, 'life2-spin', () => choose(spin.id))
+    : el('output', 'life2-dice', state.board.dice.join(' · ') || '— · —');
+  if (spin) { center.dataset.option = spin.id; (center as HTMLButtonElement).disabled = !spin.enabled; }
+  else center.setAttribute('aria-label', `룰렛 ${state.board.dice.join(', ')}`);
+  bottom.insertBefore(center, bottom.lastChild);
+  return { top, bottom };
+}

@@ -1,5 +1,5 @@
 // World data: life-board.md §§3.1–3.2, 8.1 and appendix A. No movement rules live here.
-import { GRADE_STEPS } from '../game/data.ts';
+import { GRADE_STEPS } from './data.ts';
 import type { Cond, MapId, PlaceId, SpaceKind, WorldNode } from './types.ts';
 
 // GRADE_STEPS starts at F: index 3 is C. Each stat has its own threshold.

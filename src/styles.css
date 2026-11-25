@@ -572,3 +572,72 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
   .spin-button { grid-area: roll; min-height: 52px; }
   .step-bar[data-option=end] { flex-direction: column; justify-content: center; gap: 0; padding: 2px 5px; }
 }
+
+/* Life board selectors are scoped to the default game root. */
+#app.life2 { padding: 6px 6px 10px; }
+.life2 .life2-shell {
+  width: min(100%,1100px); height: 100%; min-width: 0; min-height: 0;
+  display: grid; gap: 6px;
+  grid-template: 'hud' 110px 'board' minmax(0,1fr) 'options' clamp(50px,18dvh,136px) 'bottom' 44px / minmax(0,1fr);
+}
+.life2 .life2-hud,.life2 .life2-options,.life2 .life2-bottom {
+  min-width: 0; border: 1px solid var(--ink); border-radius: 10px; background: var(--paper);
+}
+.life2 .life2-hud { grid-area: hud; display: grid; align-content: center; gap: 4px; padding: 4px 8px; }
+.life2 .life2-date,.life2 .life2-stats { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.life2 .life2-date h1 { font-size: 17px; }
+.life2 .life2-date > span { font-size: 13px; }
+.life2 .life2-stats { font-size: 12px; }
+.life2 .life2-board-frame { grid-area: board; z-index:0; min-width: 0; min-height: 0; container-type: size; display: grid; place-items: center; }
+.life2 .life2-board {
+  --cell: min(calc((100cqw - 12px) / 7),calc((100cqh - 16px) / 9),72px);
+  position: relative; isolation: isolate; display: grid; gap: 2px;
+  grid-template-columns: repeat(var(--columns),var(--cell)); grid-template-rows: repeat(var(--rows),var(--cell));
+  border-radius: 8px; background: #b5d3c2;
+}
+.life2 [data-map=B] { background: #c4c4e6; }
+.life2 [data-map=C] { background: #d5c9b9; }
+.life2 [data-map=D] { background: #b8d7e4; }
+.life2 [data-map=E] { background: #b7d9d3; }
+.life2 [data-map=F] { background: #e5d5a6; }
+.life2 .life2-paths { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.life2 .life2-paths line { stroke: #645f73; stroke-width: .08; }
+.life2 .life2-tile {
+  position: relative; display: grid; place-content: center; justify-items: center;
+  border: 1px solid #80758b; border-radius: 6px; background: #fff9eb; color: var(--ink);
+}
+.life2 .life2-tile[data-kind=station] { background: #d8e9ff; }
+.life2 .life2-tile[data-kind=rankup] { background: #f1dfff; }
+.life2 .life2-tile[data-kind=pay],.life2 .life2-tile[data-kind=start] { background: #ffe39b; }
+.life2 .life2-tile[aria-current] { border: 2px solid #3a2861; background: #c5efdf; }
+.life2 .life2-glyph { font: 800 18px/22px system-ui,sans-serif; }
+.life2 .life2-tile-label { font-size: 11px; line-height: 14px; }
+.life2 .life2-pawn { position: absolute; top: 0; right: 0; width: 18px; height: 22px; fill: #6c3ec4; stroke: #fff; stroke-width: 1.5; }
+.life2 .life2-options { grid-area: options; min-height: 0; display: grid; grid-template-rows: 18px minmax(0,1fr) 44px; gap: 4px; padding: 5px; }
+.life2 .life2-options h2 { font-size: 14px; }
+.life2 .life2-option-list { display: grid; align-content: center; gap: 4px; min-width: 0; min-height: 0; font-size: 12px; }
+.life2 .life2-option { display: grid; align-content: center; gap: 1px; text-align: left; padding: 3px 7px; border-width: 1px; border-radius: 7px; }
+.life2 .life2-option strong { font-size: 13px; line-height: 16px; }
+.life2 .life2-option small { font-size: 11px; line-height: 14px; }
+.life2 button:disabled { color: #736a76; background: #eee7dc; }
+.life2 button:enabled:active { transform: none; }
+.life2 .life2-pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.life2 .life2-pager button { font-size: 12px; }
+.life2 .life2-bottom { grid-area: bottom; display: grid; grid-template-columns: 72px minmax(0,1fr) 72px; gap: 6px; border: 0; background: none; }
+.life2 .life2-bottom button { font-size: 13px; }
+.life2 .life2-turn-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px; min-width:0; }
+.life2 .life2-turn-controls [data-action=end-season] { padding:0 6px; }
+.life2 .life2-spin { background: var(--gold); }
+.life2 .life2-dice { display: grid; place-content: center; border: 1px solid var(--ink); border-radius: 10px; background: var(--paper); font-size: 20px; }
+@media (min-width: 900px) {
+  #app.life2 { padding: 12px; }
+  .life2 .life2-shell { gap: 12px; grid-template: 'board hud' 100px 'board options' minmax(0,1fr) 'bottom bottom' 44px / minmax(0,1fr) 380px; }
+  .life2 .life2-hud { padding: 12px; gap: 12px; }
+  .life2 .life2-date h1 { font-size: 21px; }
+  .life2 .life2-stats { font-size: 14px; }
+  .life2 .life2-options { padding: 12px; gap: 12px; }
+  .life2 .life2-option-list { gap: 12px; }
+  .life2 .life2-option { min-height: 64px; padding: 8px; }
+  .life2 .life2-option strong { font-size: 15px; line-height: 20px; }
+  .life2 .life2-bottom { grid-template-columns: 120px minmax(0,1fr) 120px; }
+}

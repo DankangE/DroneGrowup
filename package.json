@@ -3,27 +3,24 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.ts",
-    "simulate": "node scripts/simulate.ts",
-    "outcomes": "node scripts/outcome-check.ts",
-    "dominance": "node scripts/dominance.ts",
-    "playtest": "node scripts/playtest.mjs",
     "playtest:platform": "node scripts/playtest-platform.mjs",
-    "layout": "node scripts/layout-check.mjs",
-    "simulate:life": "echo 'TODO: scripts/simulate-life.ts (T14)'",
-    "dominance:life": "echo 'TODO: scripts/dominance-life.ts (T15)'",
-    "outcomes:life": "echo 'TODO: scripts/outcome-check-life.ts (T15)'",
-    "playtest:life": "echo 'TODO: scripts/playtest-life.mjs (T20)'",
-    "layout:life": "echo 'TODO: scripts/layout-check-life.mjs (T20)'",
-    "verify": "tsc --noEmit && vite build && npm run test && npm run simulate && npm run dominance && npm run outcomes && npm run playtest && npm run playtest:platform && npm run layout",
-    "screenshots:board": "node scripts/board-c-check.mjs shots",
-    "check:board": "node scripts/board-c-check.mjs"
+    "simulate:life": "node scripts/simulate-life.ts",
+    "cashflow:life": "node scripts/life-cashflow.ts",
+    "dominance:life": "node scripts/dominance-life.ts",
+    "outcomes:life": "node scripts/outcome-check-life.ts",
+    "playtest:life": "node scripts/playtest-life.mjs",
+    "layout:life": "node scripts/layout-check-life.mjs",
+    "verify": "npm run typecheck && vite build && npm test && npm run dominance:life && npm run outcomes:life && npm run cashflow:life && npm run playtest:life && npm run playtest:platform && npm run layout:life && npm run check:board -- keys",
+    "check:board": "node scripts/board-life-check.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
