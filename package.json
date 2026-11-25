@@ -17,7 +17,8 @@
     "playtest:platform": "node scripts/playtest-platform.mjs",
     "layout": "node scripts/layout-check.mjs",
     "verify": "tsc --noEmit && vite build && npm run test && npm run simulate && npm run dominance && npm run outcomes && npm run playtest && npm run playtest:platform && npm run layout",
-    "screenshots:board": "node scripts/screenshots-board.mjs"
+    "screenshots:board": "node scripts/board-c-check.mjs shots",
+    "check:board": "node scripts/board-c-check.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

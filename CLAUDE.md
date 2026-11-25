@@ -45,6 +45,8 @@ Node 22+ runs the `.ts` scripts and tests directly. Playwright-core drives insta
   data module, so a tuning pass can change its tables in memory.
 - `npm run build && node scripts/season-shots.mjs` — capture six season and stamina views at both sizes
   under `docs/screenshots/seasons/`.
+- `npm run check:board -- keys | timed | shots` — keyboard-only play and scroll check at the four sizes, one
+  16-season run at a human pace (seconds per season), or the board-c screenshots under `docs/screenshots/board-c/`.
 - `npm run dominance` — fails when one choice of an event (or one action against another with the same
   requirements) is at least as good in every stat, or when `docs/balance-report.md` is stale.
   `npm run dominance -- --write` regenerates that report; run it after changing a number in `data.ts`.

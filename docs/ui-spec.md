@@ -172,9 +172,9 @@ the player plate spans the top and the tabs sit in the plate's row or under the 
    “이 도전 보기” (`data-action="ladder-go"`) that opens that challenge in 홈 when offered on the current step. Other rungs show their requirements.
    “닫기” is `data-action="close"`.
 4. **Step panel.** 홈 presents the current step. The other navigation entries retain their own paged views.
-   - **Spin.** Below 900 px a 44 px-high framed place thumbnail sits beside `<place>에서 출발 · 주사위 눈만큼 1~6칸`.
-     The gold 주사위 굴리기 button (`data-option="spin"`) occupies its own row at least 52 px high. Desktop keeps the
-     large place scene. During the spin step S rolls from any tab when a sheet is closed. Space rolls when the body
+   - **Spin.** The departure place's scene, labelled with the place name, fills the room above
+     `주사위 눈만큼 1~6칸` at every width. The gold 주사위 굴리기 button (`data-option="spin"`) occupies its own row
+     at least 52 px high. During the spin step S rolls from any tab when a sheet is closed. Space rolls when the body
      or the board has focus. Focused buttons keep their native Space activation.
    - **Fork.** A mid-move stop or a fork landing shows 갈림길 · 어느 길로 갈까? (`data-fork`). Two route
      cards (`data-option="route:0"`, `data-option="route:1"`) show the engine titles and three space chips
