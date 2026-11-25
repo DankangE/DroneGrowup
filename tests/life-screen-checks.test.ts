@@ -46,6 +46,11 @@ for (const seed of [1, 11]) {
 for (const map of Object.keys(MAPS)) {
   test(`timed map ${map}: exactly 12 seasons remain local and include the final result interval`, async () => {
     const initial = mapFixture(map);
+    // This measures 12 local, single-season intervals. Event relocations and abroad are
+    // tested separately; T12 cannot change the T20 browser policy/runner scripts.
+    for (const id of ['posting', 'hq_call', 'invite_d', 'field_call', 'abroad', 'expo_e', 'holiday', 'hometown']) {
+      initial.seen[id] = initial.turn;
+    }
     assert.deepEqual(restore(initial), initial, 'debug loader accepts this map fixture');
     const driver = engineDriver(initial);
     const run = await playSeasons(driver, { stayMap: map, now: driver.now });
@@ -78,6 +83,14 @@ test('timed policy excludes cross-map routes even when a transfer is reachable',
   const id = pickLifeOption(state, { stayMap: 'A' });
   const selected = reachable(state).find(move => id === `go:${move.node}`)!;
   assert.ok(selected.path.every(node => node.startsWith('A-')));
+});
+
+test('the existing timed runner explicitly rejects a relocating event response', async () => {
+  const state = mapFixture('A'); state.phase = 'event'; state.eventId = 'hq_call';
+  state.board.step = 'space'; state.board.dice = [1, 1];
+  const driver = engineDriver(state);
+  await assert.rejects(playSeasons(driver, { stayMap: 'A', now: driver.now }), /never transfers/);
+  assert.deepEqual(driver.ids, ['ev:0']);
 });
 
 test('promotion completes the playtest target immediately, but entering a job does not', async () => {

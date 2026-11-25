@@ -1,4 +1,4 @@
-// T11: nominal expectations AND worst outcomes, including costs and persistent event effects.
+// T11–T12: nominal expectations AND worst outcomes, including costs and persistent event effects.
 // Like v1, distinct qualifications/popups/relocations are incomparable rather than assigned invented prices.
 import { pathToFileURL } from 'node:url';
 import { RULES } from '../src/game/data.ts';
@@ -8,9 +8,11 @@ import type { LifeChoice, LifeEffect } from '../src/life/events-a.ts';
 import { STATS } from '../src/life/life-data.ts';
 import type { GameState } from '../src/life/types.ts';
 
-// §9.2 explicitly includes this dominated opt-out. Keep it visible; never alter published balance silently.
-export const SPEC_EXCEPTIONS = ['headhunter:1>2'];
-const bad = new Set(['debt', 'crashes', 'overdue', 'losses', 'rent', 'carWait', 'salaryWait', 'strike', 'shopWait', 'warn']);
+// §9.2 exceptions: headhunter opt-out; scam at low theory; audit counsel at high net worth.
+// These compare expectation AND worst case, not just the lucky branch. Preserve published numbers.
+export const SPEC_EXCEPTIONS = ['headhunter:1>2', 'invest_scam:0>1', 'tax_audit2:0>1'];
+const bad = new Set(['debt', 'crashes', 'overdue', 'losses', 'rent', 'carWait', 'salaryWait', 'strike', 'shopWait', 'warn',
+  'fundOut', 'wristWait', 'careWait']);
 const clamp = (n: number) => Math.max(RULES.chanceMin, Math.min(RULES.chanceMax, n));
 type Point = { expected: Record<string, number>; worst: Record<string, number>; tokens: string };
 function vector(choice: LifeChoice, effect: LifeEffect) {
@@ -22,7 +24,8 @@ function vector(choice: LifeChoice, effect: LifeEffect) {
   if (effect.status) tokens.push(`status:${effect.status}`);
   if (effect.track) tokens.push(`track:${effect.track}`);
   for (const [key, value] of Object.entries(effect.extra ?? {})) {
-    if (['popup', 'move', 'quit', 'perfSet', 'promote', 'demote', 'sellShop', 'franchise', 'kidWedding'].includes(key)) {
+    if (['popup', 'move', 'quit', 'perfSet', 'promote', 'demote', 'sellShop', 'franchise', 'kidWedding',
+      'fundPopup', 'jobPopup', 'skipSeasons', 'villa', 'sellOrganization'].includes(key)) {
       tokens.push(`${key}:${value}`);
     } else if (key === 'dog') {
       values.dogExpense = -EVENT_RULES.dogCost; values.dogHappy = EVENT_RULES.dogHappy;
@@ -75,6 +78,8 @@ export function dominanceReport() {
       const s = newGame(1); s.status = 'working'; s.track = 'clerk';
       s.turn = 84; s.job.rank = 1; s.job.perf = perf;
       s.s.car = 2; s.s.gear = perf === 100 ? 3 : 1; s.s.capStamina = 100;
+      s.s.money = 40000; s.s.value = 20000; s.s.level = 2; s.s.stamina = perf;
+      s.s.theory = perf === 100 ? 320 : 0; s.fund = { kind: 1, amount: 1001 };
       s.holdings = [{ id: 'farm', level: 1, paid: 2500 }];
       return s;
     });
