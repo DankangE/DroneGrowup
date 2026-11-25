@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보드 플레이 목업</title>
+<!-- Static mock for docs/design/board-play.md (variant C). Not part of the game build. -->
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 13px/1.3 system-ui, "Apple SD Gothic Neo", sans-serif; background: #e9e4f4; color: #2a2230; height: 100vh; overflow: hidden; }
+  .app { height: 100vh; display: grid; grid-template-rows: auto 1fr auto auto; gap: 8px; padding: 8px; max-width: 1366px; margin: 0 auto; }
+  .card { background: #fff8e8; border: 2px solid #3a2f45; border-radius: 14px; padding: 8px 10px; }
+  .hud { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .hud b { font-size: 15px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: #efe7d4; border-radius: 999px; padding: 2px 8px; font-weight: 700; }
+  .board { position: relative; padding: 6px; display: flex; flex-direction: column; }
+  .board h3 { font-size: 13px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  svg { flex: 1; width: 100%; min-height: 0; }
+  .land { display: grid; align-content: start; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; }
+  .land .icon { width: 44px; height: 44px; border-radius: 12px; background: #ffd25a; display: grid; place-items: center; font-weight: 800; font-size: 18px; border: 2px solid #3a2f45; }
+  .land h2 { font-size: 15px; }
+  .opts { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .opt { border: 2px solid #3a2f45; border-radius: 10px; padding: 6px 8px; background: #fff; min-height: 44px; }
+  .opt strong { display: block; }
+  .opt .g { color: #1d7a3a; font-weight: 700; } .opt .r { color: #a3322a; font-weight: 700; }
+  .opt.bonus { background: #eef6ff; }
+  .spin { display: flex; gap: 8px; }
+  .spin button { flex: 1; min-height: 48px; border: 2px solid #3a2f45; border-radius: 12px; font: 800 15px system-ui; background: #ffd25a; }
+  .spin button.sec { flex: 0 0 34%; background: #ebe8f3; font-size: 13px; }
+  @media (min-width: 900px) {
+    .app { grid-template-columns: 1.6fr 1fr; grid-template-rows: auto 1fr auto; }
+    .hud { grid-column: 1 / -1; }
+    .board { grid-row: 2 / 4; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="card hud">
+    <div><b>24세 · 여름</b><div>프리랜서 파일럿 · 7년 차 판</div></div>
+    <div class="chips"><span class="chip">자금 410만원</span><span class="chip">체력 70</span><span class="chip">조종 B</span><span class="chip">평판 C</span></div>
+  </div>
+  <div class="card board">
+    <h3><span>올해의 비행 코스 (1바퀴 = 1년)</span><span>봄 · 여름 · 가을 · 겨울</span></h3>
+    <svg viewBox="0 0 400 300" role="img" aria-label="1년 한 바퀴 보드: 계절마다 칸 5개, 갈림길 하나">
+      <defs><style>
+        .s { stroke: #3a2f45; stroke-width: 2; } .t { font: 700 11px system-ui; text-anchor: middle; fill: #2a2230; }
+        .sm { font: 600 9px system-ui; text-anchor: middle; fill: #5a4f60; }
+      </style></defs>
+      <rect x="20" y="20" width="360" height="260" rx="40" fill="none" stroke="#c9bfd8" stroke-width="22"/>
+      <!-- season bands -->
+      <text x="88" y="58" class="sm">봄 →</text><text x="318" y="58" class="sm">여름 ↓</text><text x="318" y="250" class="sm">← 가을</text><text x="88" y="250" class="sm">↑ 겨울</text>
+      <!-- spaces: top row (spring -> summer) -->
+      <g>
+        <rect class="s" x="12" y="8" width="44" height="28" rx="7" fill="#ffd25a"/><text class="t" x="34" y="26">월급</text>
+        <rect class="s" x="66" y="8" width="44" height="28" rx="7" fill="#bfe3ff"/><text class="t" x="88" y="26">훈련</text>
+        <rect class="s" x="120" y="8" width="44" height="28" rx="7" fill="#c8f0c0"/><text class="t" x="142" y="26">일감</text>
+        <rect class="s" x="174" y="8" width="44" height="28" rx="7" fill="#ffc2c2"/><text class="t" x="196" y="26">사건</text>
+        <rect class="s" x="228" y="8" width="44" height="28" rx="7" fill="#e3d4ff"/><text class="t" x="250" y="26">대회</text>
+        <rect class="s" x="282" y="8" width="44" height="28" rx="7" fill="#c8f0c0"/><text class="t" x="304" y="26">일감</text>
+        <rect class="s" x="344" y="8" width="44" height="28" rx="7" fill="#ffd25a"/><text class="t" x="366" y="26">월급</text>
+      </g>
+      <!-- right column (summer -> autumn) with a fork -->
+      <g>
+        <rect class="s" x="344" y="62" width="44" height="28" rx="7" fill="#fff" stroke-dasharray="4 3"/><text class="t" x="366" y="80">갈림길</text>
+        <rect class="s" x="344" y="112" width="44" height="28" rx="7" fill="#c8f0c0"/><text class="t" x="366" y="130">일감</text>
+        <rect class="s" x="290" y="112" width="44" height="28" rx="7" fill="#ffe0a8"/><text class="t" x="312" y="125">위험</text><text class="sm" x="312" y="136">항로</text>
+        <rect class="s" x="344" y="162" width="44" height="28" rx="7" fill="#bfe3ff"/><text class="t" x="366" y="180">훈련</text>
+        <rect class="s" x="344" y="212" width="44" height="28" rx="7" fill="#f4e7c4"/><text class="t" x="366" y="230">승급</text>
+      </g>
+      <!-- bottom row (autumn -> winter) -->
+      <g>
+        <rect class="s" x="344" y="262" width="44" height="28" rx="7" fill="#ffd25a"/><text class="t" x="366" y="280">월급</text>
+        <rect class="s" x="282" y="262" width="44" height="28" rx="7" fill="#ffc2c2"/><text class="t" x="304" y="280">사건</text>
+        <rect class="s" x="228" y="262" width="44" height="28" rx="7" fill="#c8f0c0"/><text class="t" x="250" y="280">일감</text>
+        <rect class="s" x="174" y="262" width="44" height="28" rx="7" fill="#dfeee0"/><text class="t" x="196" y="280">휴식</text>
+        <rect class="s" x="120" y="262" width="44" height="28" rx="7" fill="#bfe3ff"/><text class="t" x="142" y="280">훈련</text>
+        <rect class="s" x="66" y="262" width="44" height="28" rx="7" fill="#ffc2c2"/><text class="t" x="88" y="280">사건</text>
+        <rect class="s" x="12" y="262" width="44" height="28" rx="7" fill="#ffd25a"/><text class="t" x="34" y="280">월급</text>
+      </g>
+      <!-- left column (winter -> spring) -->
+      <g>
+        <rect class="s" x="12" y="212" width="44" height="28" rx="7" fill="#e3d4ff"/><text class="t" x="34" y="230">시험</text>
+        <rect class="s" x="12" y="162" width="44" height="28" rx="7" fill="#c8f0c0"/><text class="t" x="34" y="180">일감</text>
+        <rect class="s" x="12" y="112" width="44" height="28" rx="7" fill="#dfeee0"/><text class="t" x="34" y="130">휴식</text>
+        <rect class="s" x="12" y="62" width="44" height="28" rx="7" fill="#ffc2c2"/><text class="t" x="34" y="80">사건</text>
+      </g>
+      <!-- piece and move trail -->
+      <path d="M250 36 C 300 50, 330 50, 344 76" fill="none" stroke="#e25a2a" stroke-width="3" stroke-dasharray="6 4"/>
+      <circle cx="366" cy="126" r="11" fill="#e25a2a" stroke="#3a2f45" stroke-width="2"/>
+      <text x="366" y="130" class="t" style="fill:#fff">나</text>
+      <!-- centre: spinner -->
+      <g transform="translate(200 150)">
+        <circle r="62" fill="#fff" class="s"/>
+        <path d="M0 0 L0 -62 A62 62 0 0 1 53.7 -31 Z" fill="#ffd25a"/>
+        <path d="M0 0 L53.7 -31 A62 62 0 0 1 53.7 31 Z" fill="#bfe3ff"/>
+        <path d="M0 0 L53.7 31 A62 62 0 0 1 0 62 Z" fill="#c8f0c0"/>
+        <path d="M0 0 L0 62 A62 62 0 0 1 -53.7 31 Z" fill="#ffc2c2"/>
+        <path d="M0 0 L-53.7 31 A62 62 0 0 1 -53.7 -31 Z" fill="#e3d4ff"/>
+        <path d="M0 0 L-53.7 -31 A62 62 0 0 1 0 -62 Z" fill="#f4e7c4"/>
+        <text class="t" x="22" y="-30">1</text><text class="t" x="40" y="4">2</text><text class="t" x="22" y="40">3</text>
+        <text class="t" x="-22" y="40">4</text><text class="t" x="-40" y="4">5</text><text class="t" x="-22" y="-30">6</text>
+        <path d="M0 -70 L-7 -84 L7 -84 Z" fill="#3a2f45"/>
+        <circle r="14" fill="#3a2f45"/><text class="t" y="4" style="fill:#fff">3칸</text>
+      </g>
+    </svg>
+  </div>
+  <div class="card land">
+    <div class="icon">일</div>
+    <div><h2>일감 칸 · 농약 방제 비행</h2><div>도착한 칸의 일은 체력 없이 바로 받는다. 남은 체력으로 하나 더 할 수 있다.</div></div>
+    <div class="opts">
+      <div class="opt"><strong>안전하게 끝내기 · 확정</strong><span class="g">자금 +90만원 · 경험 +4</span></div>
+      <div class="opt"><strong>빠르게 두 구역 · 62%</strong><span class="g">성공: 자금 +180만원</span> · <span class="r">실패: 기체 -20</span></div>
+      <div class="opt bonus"><strong>추가 행동 · 체력 -25</strong>근처 정비소에서 기체 점검</div>
+      <div class="opt bonus"><strong>추가 행동 · 체력 -20</strong>야간 시뮬레이터 연습</div>
+    </div>
+  </div>
+  <div class="spin"><button>룰렛 돌리기 (다음 계절)</button><button class="sec">상점 · 은행</button></div>
+</div>
+</body>
+</html>
