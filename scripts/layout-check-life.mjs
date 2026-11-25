@@ -10,6 +10,7 @@ import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
 import { reachable } from '../src/life/move.ts';
 import { destinationDetails } from '../src/ui2/pick.ts';
+import { FAMILY_KEYS } from '../src/life/life-data.ts';
 import { POPUP_GROUPS } from '../src/ui2/popups/data.ts';
 import { SIZES } from './life-check-data.mjs';
 
@@ -90,7 +91,12 @@ export function pagingChecks(page, check, activate = control => control.click())
       // on repeated audits of the same state (e.g. after spin, then season play).
       const { previous, next, choices } = await firstPage();
       const offered = await engineOptions();
-      const expected = offered.filter(option => option.id !== 'spin');
+      const state = await actual(), wedding = offered.some(option => option.id.startsWith('wed:'));
+      const hospital = WORLD.find(node => node.id === state.board.pos)?.place === 'hospital';
+      // F4 intentionally reserves this sheet for the wedding, and shows the hospital family-mode prompt once.
+      // Every remaining engine option, including every disabled option, must still occur exactly once.
+      const expected = offered.filter(option => option.id !== 'spin' && !(wedding && option.id.startsWith('lifestyle:'))
+        && !(hospital && state.timers[FAMILY_KEYS.dual] === undefined && option.id.startsWith('dual:')));
       assert.equal(await wheel.count(), 1, 'the bottom bar contains one wheel');
       assert.equal(await wheel.evaluate(node => node.matches('button:not(:disabled)')),
         offered.some(option => option.id === 'spin' && option.enabled), 'spin is available through the wheel exactly when offered');
@@ -306,7 +312,7 @@ export function audit() {
   if (popup) {
     const sheet = popup.getBoundingClientRect();
     if (vw < 900 && !popup.hasAttribute('data-fullscreen') && sheet.height > vh * .55 + 1) issues.push('sheet exceeds 55%');
-    for (const node of popup.querySelectorAll('p, button, h2')) {
+    for (const node of popup.querySelectorAll('p, button, h2, dt, dd, .life2-card-hero, .life2-stage-banner')) {
       const box = node.getBoundingClientRect();
       if (box.top < sheet.top - 1 || box.bottom > sheet.bottom + 1 || box.left < sheet.left - 1 || box.right > sheet.right + 1)
         issues.push('popup content outside sheet');
@@ -356,7 +362,7 @@ async function fix3Checks(page, load, check) {
   const promotion = worker(); promotion.board.step = 'space'; promotion.job.perf = 95;
   await load(promotion); await select('promo'); await expect('rankup');
   const warning = worker(); await load(warning); await select('end'); await expect('year-end');
-  assert.match(await popup().locator('p').textContent(), /성과 26: 경고 기준 30 미만/);
+  assert.match(await popup().locator('.life2-popup-copy').textContent(), /성과 26: 경고 기준 30 미만/);
   // Navigation must work above a pending result and return to that same result.
   await keyboardActivate(page, page.locator('[data-nav=phone]')); await expect('phone'); await close(); await expect('year-end');
   await page.locator('[data-nav=life]').click(); await expect('my-life');
@@ -364,7 +370,7 @@ async function fix3Checks(page, load, check) {
     await page.locator(`[data-tab=${tab}]`).click(); await check(`F3 life ${tab}`);
   }
   await close(); await close(); await expect('review');
-  assert.match(await popup().locator('p').textContent(), /성과 26: 경고 기준 30 미만/);
+  assert.match(await popup().locator('.life2-popup-copy').textContent(), /성과 26: 경고 기준 30 미만/);
   const demotion = worker(1); demotion.job.warn = 1;
   await load(demotion); await select('end'); await expect('demotion');
   for (const turn of [63, 143]) {
@@ -383,7 +389,9 @@ async function fix3Checks(page, load, check) {
     run.board.step = id === 'spin' ? 'spin' : 'pick'; run.board.dice = id === 'spin' ? [] : [1, 1];
     await load(run);
     if (id === 'spin') await page.locator('.life2-wheel').click(); else await page.locator('[data-space="A-o12"][data-dest]').click();
-    await expect('luck'); await close(); await expect('bonus');
+    await expect('luck'); await close();
+    if (choose(run, id).result.upkeep) { await expect('result'); await close(); }
+    await expect('bonus');
   }
   // Low pawn rows exercise top docking at each phone size.
   for (const node of WORLD.filter(node => node.map === 'A' && node.y >= 70)) {
@@ -391,6 +399,39 @@ async function fix3Checks(page, load, check) {
     await load(run); await page.locator('[data-nav=phone]').click(); await check(`F3 pawn ${node.id}`);
   }
   console.log('  F3: live rank/review/year/chapter/retirement/luck popups, main-face warning, bottom navigation and pawn rows checked');
+}
+
+// Read every text page as well as choice pages; item rows must fit just as prose did.
+async function checkTextPages(page, nextSelector, check) {
+  const next = page.locator(nextSelector);
+  const count = await next.count() ? Number((await next.textContent()).split(' / ')[1]) : 1;
+  assert.ok(count >= 1 && count < 100, 'bounded text pages');
+  for (let i = 0; i < count; i++) {
+    await check();
+    if (await next.count()) await next.click();
+  }
+}
+
+async function fix4Checks(page, load, check) {
+  const start = choose(newGame(11), 'start:self').state;
+  const read = name => checkTextPages(page, '[data-action=popup-text-next]', () => check(`F4 ${name}`));
+  for (const age of [7, 13, 16, 20]) {
+    const state = structuredClone(start); state.turn = 80;
+    state.family.kids = [{ born: 80 - age * 4, pts: 3, stage: [7, 13, 16, 20].indexOf(age) }];
+    await load(state); await read(`child ${age}`);
+    assert.match(await page.locator('.life2-popup-copy').textContent(), new RegExp(`하늘 · ${age}세`));
+    assert.equal(await page.locator('.life2-popup h2').textContent(), age === 20 ? '자녀 독립' : '자녀 교육');
+  }
+  const state = structuredClone(start); state.turn = 144; state.s.stamina = state.s.capStamina = 80;
+  state.board.ledger = { 생활비: -78 };
+  await load(state); await page.locator('[data-nav=phone]').click(); await page.locator('[data-tab=retire]').click();
+  await page.locator('[data-option="phone:retire"]').click(); await check('F4 retirement confirm');
+  assert.deepEqual(await page.evaluate(() => window.__life.state()), state);
+  await page.locator('[data-action=popup-confirm]').click();
+  assert.equal(await page.locator('[data-popup]').getAttribute('data-popup'), 'retirement'); await read('early retirement');
+  await page.locator('[data-action=popup-close]').click();
+  assert.equal(await page.locator('#app').getAttribute('data-screen'), 'ending');
+  console.log('  F4: four child milestones, retirement confirmation/card, labelled text pages checked');
 }
 
 // T18 isolated popup section: no changes to the existing map/movement fixtures.
@@ -404,7 +445,8 @@ async function popupChecks(page, base) {
     assert.equal(await popup.getAttribute('data-popup'), kind);
     const seen = [];
     do {
-      assert.deepEqual(await popup.evaluate(panel => {
+      await checkTextPages(page, '[data-action=popup-text-next]', async () => {
+        assert.deepEqual(await popup.evaluate(panel => {
         const issues = [], box = panel.getBoundingClientRect();
         if (innerHeight > innerWidth && !panel.hasAttribute('data-fullscreen') && box.height > innerHeight * .55 + 1) issues.push('sheet exceeds 55%');
         if (panel.querySelectorAll('[data-option]').length > 3) issues.push('more than three choices');
@@ -417,7 +459,8 @@ async function popupChecks(page, base) {
           if (parseFloat(css.fontSize) < 11) issues.push('text below 11px');
         }
         return [...new Set(issues)];
-      }), [], `${kind}: popup layout`);
+        }), [], `${kind}: popup layout`);
+      });
       seen.push(...await popup.locator('[data-option]').evaluateAll(nodes => nodes.map(node => node.dataset.option)));
       if (seen.length >= model.choices.length) break;
       await popup.locator('[data-action="popup-page-next"]').click();
@@ -467,7 +510,7 @@ async function popup2Checks(page, base) {
     const popup = page.locator('[data-popup]');
     assert.equal(await popup.getAttribute('data-popup'), kind);
     do {
-      await audit('[data-popup]');
+      await checkTextPages(page, '[data-action=popup-text-next]', () => audit('[data-popup]'));
       seen.push(...await popup.locator('[data-option]').evaluateAll(nodes => nodes.map(node => node.dataset.option)));
       if (seen.length >= model.choices.length) break;
       await popup.locator('[data-action="popup-page-next"]').click();
@@ -481,11 +524,13 @@ async function popup2Checks(page, base) {
       await popup.locator('[data-action="popup-text-next"]').click(); await audit('[data-popup]');
       await popup.locator('[data-action="popup-back"]').click();
     }
-    for (const tab of model.tabs ?? []) { await popup.locator(`[data-tab="${tab.id}"]`).click(); await audit('[data-popup]'); }
+    for (const tab of model.tabs ?? []) { await popup.locator(`[data-tab="${tab.id}"]`).click();
+      await checkTextPages(page, '[data-action=popup-text-next]', () => audit('[data-popup]')); }
     await page.keyboard.press('Escape'); assert.equal(await page.evaluate(() => window.__popup2Fixture.closed()), true);
   }
   for (let index = 0; index < 21; index++) {
-    await page.evaluate(index => window.__popup2Fixture.ending(index), index); await audit('.life2-ending-screen');
+    await page.evaluate(index => window.__popup2Fixture.ending(index), index);
+    await checkTextPages(page, '[data-action=ending-text-next]', () => audit('.life2-ending-screen'));
   }
   await page.evaluate(() => window.__popup2Fixture.collection());
   const seen = [];
@@ -586,6 +631,7 @@ async function main() {
         event.board.step = 'space'; event.board.dice = [1, 1];
         await load(event); await checkPages('event');
         await fix3Checks(page, load, check);
+        await fix4Checks(page, load, check);
         const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];
         assertPopupCoverage(popupKinds);
         await page.goto(`${base}?life=1&seed=11`);

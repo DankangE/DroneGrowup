@@ -3,7 +3,10 @@ import type { OptionView } from '../life/engine.ts';
 import type { GameState } from '../life/types.ts';
 import { PLACES, WORLD } from '../life/world.ts';
 import { button, el, reducedMotion } from '../ui/dom.ts';
-import { board } from './board.ts';
+import { board, KINDS } from './board.ts';
+import { POLISH as P } from './popups/polish-data.ts';
+import { POLISH_STYLE } from './popups/polish-style.ts';
+import { tileIcon } from './icons.ts';
 import { hud } from './hud.ts';
 import { wheel, WHEEL_STYLE } from './wheel.ts';
 import { destinationDetails, destinationName, pick, PICK_STYLE } from './pick.ts';
@@ -35,6 +38,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
   const collection = () => mergeLifeMeta(meta, loadLifeMeta());
   let ready = false, atTitle = false, notice = false, startedAt = performance.now();
   let pending: PendingPopup[] = [], menu: 'my-life' | 'phone' | undefined, dismissed = false;
+  let glowBefore: GameState | undefined;
   let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
   root.classList.add('life2');
   const skip = () => frame?.phase === 'spin' ? sequence?.next() : sequence?.finish();
@@ -55,7 +59,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     const source = menu === 'phone' ? 'phone' : 'board';
     if (sequence || (pending.length && source !== 'phone') || !options(state, source)
       .some(option => option.id === id && option.enabled)) return;
-    before = state;
+    before = state; glowBefore = state;
     const outcome = choose(state, id, source);
     state = outcome.state;
     if (state.phase === 'ended') meta = mergeLifeMeta(meta,
@@ -63,10 +67,12 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     else saveLifeRun(state);
     page = 0; dismissed = false;
     const cards: PendingPopup[] = resultPopups(before, state, outcome.result).map(model => ({ model }));
-    if (source === 'phone' && cards.length) cards[cards.length - 1].resume = 'phone';
+    if (source === 'phone' && cards.length && state.phase !== 'ended') cards[cards.length - 1].resume = 'phone';
     pending = [...cards, ...pending];
     menu = undefined;
     const frames = movementFrames(before.board.pos, outcome.result, id === 'spin');
+    const landing = WORLD.find(node => node.id === state.board.pos)!;
+    if (outcome.result.move && P.calloutKinds.includes(landing.kind)) frames.push({ phase: 'move', pos: landing.id, ms: P.calloutMs, callout: true });
     const done = () => { frame = undefined; before = undefined; sequence = undefined; render(true); };
     if (!frames.length || reducedMotion()) { done(); return; }
     sequence = playback(frames, next => { frame = next; render(true); }, done);
@@ -75,7 +81,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
   function render(focus = false) {
     if (!ready) return;
     if (atTitle) { showTitle(); return; }
-    if (!frame && state.phase === 'ended') {
+    if (!frame && state.phase === 'ended' && !pending.length) {
       pending = []; menu = undefined;
       mountEnding(root, state, {
         title: showTitle, restart,
@@ -90,11 +96,11 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
       : menu ? popupModel(state, { kind: menu, offered: [], summary: { netWorth: view.netWorth } })
       : pending[0]?.model ?? popupModel(state);
     const phase = frame?.phase ?? (state.phase === 'action' ? state.board.step : state.phase === 'ended' ? 'chapter' : 'event');
-    root.dataset.screen = state.phase === 'ended' ? 'ending' : 'play';
+    root.dataset.screen = 'play';
     root.dataset.phase = !dismissed && model ? model.phase : phase;
     const shell = el('main', 'life2-shell'), bands = hud(shown, view, offered, takeOption, frame ? undefined : next => {
       menu = next; dismissed = false; render(true);
-    });
+    }, frame ? undefined : glowBefore);
     const mode = frame?.phase ?? (!pending.length && !menu && offered.some(option => option.id === 'spin') ? 'ready' : 'idle');
     const center = wheel(state.board.dice, mode, () => sequence ? skip() : takeOption('spin'));
     bands.bottom.querySelector('.life2-spin, .life2-dice')!.replaceWith(center);
@@ -102,6 +108,11 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     if (frame?.phase === 'transfer') {
       map.querySelector<HTMLElement>('[data-map]')!.inert = true;
       map.append(transfer(frame.from!, frame.to!));
+    }
+    if (frame?.callout) {
+      const tile = WORLD.find(node => node.id === frame!.pos)!;
+      const callout = el('div', 'life2-tile-callout'); callout.dataset.tileCallout = tile.kind;
+      callout.setAttribute('role', 'status'); callout.append(tileIcon(tile.kind), el('strong', '', `${KINDS[tile.kind]} · ${PLACES[tile.place].name}`)); map.append(callout);
     }
     if (frame?.payment !== undefined) {
       const payment = el('output', 'life2-payment', `정산 ${frame.payment > 0 ? '+' : ''}${frame.payment}만`);
@@ -149,7 +160,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
     pager.append(previous, el('span', '', `${page + 1} / ${pages}`), next);
     panel.append(heading, list, pager);
     shell.append(bands.top, map, panel, bands.bottom);
-    const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE);
+    const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE + POLISH_STYLE);
     root.replaceChildren(style, shell);
     if (model && !dismissed) {
       mountPopup(panel, model, { choose: takeOption, returnFocus: heading, navigation: bands.bottom,
@@ -162,6 +173,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
         ...(menu === 'phone' && { phoneTab: phoneModel }),
       });
     } else if (focus) (frame ? center : heading).focus({ preventScroll: true });
+    if (!frame) glowBefore = undefined;
   }
   function phoneModel(tab: Parameters<typeof phoneChoices>[1] = 'all') {
     const offered = phoneChoices(options(state, 'phone'), tab);

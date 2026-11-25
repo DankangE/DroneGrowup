@@ -7,7 +7,7 @@ import { TRANSFER_MS } from './transfer.ts';
 export const STEP_MS = 250;
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 export type Frame = { phase: 'spin' | 'move' | 'transfer'; pos: string; ms: number;
-  from?: MapId; to?: MapId; payment?: number };
+  from?: MapId; to?: MapId; payment?: number; callout?: boolean };
 
 /** Presentation only: use the engine's actual route, stop and settlement total. */
 export function movementFrames(origin: string, result: Pick<Result, 'move' | 'upkeep'>, spin = false): Frame[] {

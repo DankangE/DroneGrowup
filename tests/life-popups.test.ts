@@ -58,7 +58,7 @@ test('space cards show exact engine forecasts, including branch deltas and locke
   for (const view of options(state)) {
     const card = model.choices.find(choice => choice.id === view.id)!, preview = forecast(state, view.id);
     assert.equal(card.enabled, view.enabled);
-    assert.equal(card.summary, choiceSummary(view, preview));
+    assert.equal(card.summary, !view.enabled && view.locks.length ? view.locks[0] : choiceSummary(view, preview));
     assert.ok(preview.branches.every(branch => card.details.some(line => line.startsWith(`${COPY.expected} · ${COPY[branch.id]}`))));
   }
   assert.ok(model.choices.some(choice => !choice.enabled));

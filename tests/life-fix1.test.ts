@@ -43,7 +43,8 @@ function click(root: TestNode, id: string) {
 function readCopy(root: TestNode) {
   let copy = '';
   for (let page = 0; page < 100; page++) {
-    copy += root.querySelector('.life2-popup-copy')!.querySelector('p')!.textContent;
+    const body = root.querySelector('.life2-popup-copy')!;
+    copy += body.querySelector('p')?.textContent ?? textOf(body.querySelector('dl')!);
     const next = action(root, 'popup-text-next');
     if (!next || next.textContent.split(' / ')[0] === next.textContent.split(' / ')[1]) return copy;
     next.fire('click');
@@ -125,7 +126,8 @@ for (const kind of ['rankup', 'jobfair'] as const) test(`F1 ${kind} quitting req
   assert.equal(panelAt(root).dataset.confirm, undefined);
   click(root, 'quit'); close(root); assert.deepEqual(api.state(), state);
   action(root, 'popup-reopen').fire('click'); click(root, 'quit'); action(root, 'popup-confirm').fire('click');
-  assert.deepEqual(api.state(), choose(state, 'quit').state); assert.equal(panelAt(root).dataset.popup, 'result');
+  assert.deepEqual(api.state(), choose(state, 'quit').state); assert.equal(panelAt(root).dataset.popup, 'review');
+  assert.equal(panelAt(root).attributes['aria-label'], '새 항로 준비');
 }));
 
 test('F1 pick uses career-aware engine paths, marks review stops and lands at that stop', () => app((root, api) => {

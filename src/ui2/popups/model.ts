@@ -1,3 +1,6 @@
+import { POLISH as P } from './polish-data.ts';
+import { careerRows, educationBody, graduateCost, humanCopy, stageView, visibleOptions } from './polish-model.ts';
+import type { DisplayRow, StageView } from './polish-model.ts';
 import { currentEvent, forecast, options } from '../../life/engine.ts';
 import type { Forecast, OptionView, Result } from '../../life/engine.ts';
 import { STAT_LABEL } from '../../life/life-data.ts';
@@ -16,11 +19,12 @@ export type PopupModel = {
   roll?: Result['roll'];
   tabs?: LifeTabModel[];
   presentation?: boolean;
+  rows?: DisplayRow[]; stage?: StageView; motion?: 'rankup' | 'demotion' | 'stage';
 };
 export type PopupContext = {
   kind?: PopupKind; offered?: readonly OptionView[]; previews?: Readonly<Record<string, Forecast>>;
   result?: Result; title?: string; lines?: readonly string[];
-  summary?: LifeSummaryView;
+  summary?: LifeSummaryView; before?: GameState; rows?: DisplayRow[]; stage?: StageView;
   destinations?: Readonly<Record<string, string>>;
 };
 
@@ -67,7 +71,7 @@ export function textPages(lines: readonly string[], limit: number = POPUP_RULES.
     const word = [...window.matchAll(/\s+/gu)].at(-1);
     const boundary = sentence ?? word;
     const end = boundary ? Array.from(window.slice(0, boundary.index! + boundary[0].length)).length : limit;
-    pages.push(rest.slice(0, end).join('')); rest = rest.slice(end);
+    pages.push(rest.slice(0, end).join('').replace(/ · $/, '')); rest = rest.slice(end);
   }
   pages.push(rest.join(''));
   return pages;
@@ -79,6 +83,8 @@ const deltas = (values: StatMap, status?: Status) => Object.entries(values)
   .map(([stat, value]) => COPY.delta(STAT_LABEL[stat as Stat], value!)).join(' · ');
 
 export function choiceSummary(option: OptionView, preview?: Forecast): string {
+  if (/^(phone:retire|early-retire|retire:early)$/.test(option.id)) return preview?.branches[0]?.deltas.money === undefined ? P.retireFace : P.retireBalance(preview.branches[0].deltas.money);
+  if (option.id === 'graduate:enroll') return graduateCost();
   const cost = preview?.cost ?? option.cost, tire = preview?.tire ?? option.tire;
   const chance = preview?.chance ?? option.roll?.chance;
   const money = preview?.branches.length === 1 ? preview.branches[0].deltas.money : undefined;
@@ -89,7 +95,8 @@ export function choiceSummary(option: OptionView, preview?: Forecast): string {
 }
 function choiceModel(option: OptionView, preview?: Forecast): PopupChoice {
   const summary = choiceSummary(option, preview);
-  const details = [option.title, option.desc, summary, ...option.locks];
+  const locks = option.locks.map(humanCopy);
+  const details = [option.title, option.desc, summary, ...locks];
   if (preview) for (const branch of preview.branches) {
     details.push(`${COPY.expected} · ${COPY[branch.id]}: ${deltas(branch.deltas, branch.status) || COPY.noChange}`);
     if (branch.status) details.push(LIFE_COPY.status[branch.status]);
@@ -98,7 +105,8 @@ function choiceModel(option: OptionView, preview?: Forecast): PopupChoice {
   }
   if (option.sure) details.push(option.sure.text);
   if (option.roll) details.push(`${COPY.success}: ${option.roll.success.text}`, `${COPY.fail}: ${option.roll.fail.text}`);
-  return { id: option.id, title: option.title, enabled: option.enabled, summary, details };
+  return { id: option.id, title: humanCopy(option.title), enabled: option.enabled, summary: !option.enabled && locks.length ? option.id === 'express:D-o0' && option.locks.some(lock => lock.includes('invite'))
+      ? P.zoneLock : locks[0] : summary, details: details.map(humanCopy) };
 }
 
 /** No eligibility, salary or review rules here: everything displayed comes from engine views/state. */
@@ -107,17 +115,18 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
   if (!kind) return undefined;
   const event = kind === 'event' ? currentEvent(state) : null, result = context.result;
   const place = event?.place ?? result?.place ?? WORLD.find(node => node.id === state.board.pos)!.place;
-  const title = context.title ?? result?.luck?.title ?? (kind === 'event' ? event?.title : kind === 'result' ? result?.title : undefined)
+  const education = kind === 'education' ? educationBody(state) : undefined;
+  const title = context.title ?? education?.title ?? result?.luck?.title ?? (kind === 'event' ? event?.title : kind === 'result' ? result?.title : undefined)
     ?? POPUP_DEFINITIONS[kind].title;
   const notice = kind === 'review' ? reviewNotice(state) : null;
-  const lines = [...(context.lines ?? (notice ? [notice.text] : event ? [event.text] : result ? [] : [PLACES[place].name]))];
+  const lines = [...(context.lines ?? (notice ? [notice.text] : event ? [event.text] : result ? [] : [education?.body ?? PLACES[place].name]))];
   if (kind === 'chapter' || kind === 'retirement') lines.push(...chapterLines(state, context.summary));
   if (kind === 'review' || kind === 'rankup' || kind === 'demotion') {
     lines.push(COPY.review(state.job.perf, state.job.tenure, state.job.warn));
   }
   if (result) {
-    lines.push(result.luck?.text ?? result.text, deltas(result.deltas, result.statusTo),
-      deltas(result.settle?.deltas ?? {}, result.statusTo), ...result.notes);
+    lines.push(result.luck?.text ?? result.text, ...(!context.rows ? [deltas(result.deltas, result.statusTo),
+      deltas(result.settle?.deltas ?? {}, result.statusTo)] : []), ...result.notes.filter(note => note !== result.luck?.text));
     if (result.roll) lines.push(result.roll.success ? COPY.success : COPY.fail, COPY.roll(result.roll.value, result.roll.chance));
     if (result.season) lines.push(`${result.season.from} → ${result.season.to}`, COPY.refill(result.season.refill));
     for (const line of result.upkeep?.lines ?? result.season?.accrual ?? []) lines.push(COPY.delta(line.label, line.amount));
@@ -125,11 +134,18 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
   // A caller supplying future option ids also supplies their previews, if available.
   // Never ask the current engine to resolve an id it does not know yet.
   const visible = kind === 'result' ? [] : kind === 'phone' ? phoneChoices(offered, 'all')
-    : [...offered].sort((a, b) => choiceOrder(a.id) - choiceOrder(b.id));
+    : visibleOptions(state, offered, kind === 'wedding').sort((a, b) => choiceOrder(a.id) - choiceOrder(b.id));
   const choices = visible.map(option => ({ ...choiceModel(option,
     context.previews?.[option.id] ?? (context.offered === undefined ? forecast(state, option.id) : undefined)),
     ...(context.destinations?.[option.id] && { destination: context.destinations[option.id] }) }));
-  return { kind, phase: POPUP_DEFINITIONS[kind].phase, title, lines: lines.filter(Boolean), choices, place, track: state.track,
+  if (kind === 'review') for (const choice of choices) if (choice.id === 'job:none') {
+    choice.title = P.acknowledge; choice.summary = P.acknowledged; choice.details = [P.acknowledge, P.acknowledged];
+  }
+  const card = FULLSCREEN_POPUPS.includes(kind);
+  return { kind, phase: POPUP_DEFINITIONS[kind].phase, title: humanCopy(title), lines: [...new Set(lines.filter(Boolean).map(humanCopy))], choices, place, track: state.track ?? context.before?.track ?? state.job.tracks.at(-1) ?? null,
+    ...(card && { rows: context.rows ?? careerRows(state, context.before) }),
+    ...(!card && context.rows && { rows: context.rows }),
+    ...((kind === 'chapter' || context.stage) && { stage: context.stage ?? stageView(state) }),
     fullscreen: FULLSCREEN_POPUPS.includes(kind), notification: kind === 'result' && !result?.roll,
     ...(kind === 'my-life' && { tabs: lifeTabs(state, context.summary) }),
     ...(result?.roll && { roll: { ...result.roll } }) };

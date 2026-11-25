@@ -7,7 +7,9 @@ import { ENDINGS2, ENDING_COPY as E, ENDING_STYLE } from './ending-data.ts';
 import type { EndingCopy } from './ending-data.ts';
 import { chapterLines } from './life-model.ts';
 import type { LifeSummaryView } from './life-model.ts';
-import { choicePage, textPages } from './model.ts';
+import { choicePage } from './model.ts';
+import { featLabels, itemPages } from './polish-model.ts';
+import { POLISH as P } from './polish-data.ts';
 
 export type EndingSummary = LifeSummaryView & { grade?: string; featScore?: number };
 export type EndingCollection = { gallery: readonly string[]; bestByEnding?: Readonly<Record<string, number>> };
@@ -16,7 +18,7 @@ export type EndingActions = { title: () => void; restart: () => void; collection
 /** The selected ending and score are authoritative state fields, even for unusual fixtures. */
 export function endingModel(state: GameState, summary: EndingSummary = {}) {
   const ending = ENDINGS2.find(row => row.id === state.ending);
-  const details = { ...settlementSummary(state), ...summary };
+  const details = { ...settlementSummary(state), feats: featLabels(state), ...summary };
   return { id: state.ending, title: ending?.title ?? state.ending ?? E.unknown, ending,
     lines: [E.score(state.score), E.grade(details.grade), E.feats(details.featScore),
       ...(ending ? [ending.text] : []), ...chapterLines(state, details)] };
@@ -37,7 +39,7 @@ function art(ending: EndingCopy): HTMLElement {
 }
 
 function pagedCopy(lines: readonly string[]) {
-  const holder = el('div', 'life2-ending-copy'), pages = textPages(lines); let page = 0;
+  const holder = el('div', 'life2-ending-copy'), pages = itemPages(lines, line => line.length, P.endingLimit).map(page => page.join('\n')); let page = 0;
   const text = el('p', '', pages[0]); text.setAttribute('aria-live', 'polite'); holder.append(text);
   if (pages.length > 1) {
     const next = button(COPY.pages(page, pages.length), '', () => {
@@ -89,7 +91,9 @@ export function mountEndingCollection(host: HTMLElement, meta: EndingCollection,
         const control = button('', 'life2-ending-card', () => { selected = ending.id; render(); });
         control.dataset.pick = ending.id; control.dataset.ending = ending.id;
         control.dataset.unlocked = String(ending.unlocked);
-        control.append(el('strong', '', ending.title), el('span', '', ending.unlocked ? E.discovered : E.locked));
+        if (ending.unlocked) control.append(art(ending));
+        const label = el('div'); label.append(el('strong', '', ending.title), el('span', '', ending.unlocked ? E.discovered : E.locked));
+        control.append(label);
         cards.append(control);
       }
       const pager = el('nav', 'life2-ending-pager');

@@ -15,6 +15,7 @@ import { NEW_PLACE_TILES } from '../src/ui2/place-tiles.ts';
 import { JOB_NAMES, NEW_JOB_PORTRAITS } from '../src/ui2/job-portraits.ts';
 import { jobAsset, jobPortrait, LEGACY_JOB_PORTRAITS, LEGACY_PLACE_SCENES, placeArt, placeAsset } from '../src/ui2/art.ts';
 import type { VectorArt } from '../src/ui2/art-svg.ts';
+import { MOTION_ART } from '../src/ui2/motion-art.ts';
 import { vectorArt } from '../src/ui2/art-svg.ts';
 
 const path = (name: string) => new URL(`../public/art/${name}.webp`, import.meta.url);
@@ -217,5 +218,21 @@ test('all six boards use kind icons while preserving all 212 tile names and pawn
     const pawns = tiles.flatMap(tile => tile.children.filter(node => node.dataset.pawn));
     assert.equal(pawns.length, 1);
     assert.equal(pawns[0].dataset.pawn, state.board.pos);
+  }
+}));
+
+
+test('F4 drone and promotion rays use distinct, bounded original path data', () => {
+  assert.deepEqual(Object.keys(MOTION_ART), ['drone', 'rays']);
+  assert.notDeepEqual(MOTION_ART.drone.paths, MOTION_ART.rays.paths);
+  for (const [id, art] of Object.entries(MOTION_ART)) checkDrawing(id, art, 4_000);
+});
+
+test('F4 motion assets render accessible local SVGs without external resources', () => withArtDOM(() => {
+  for (const [id, art] of Object.entries(MOTION_ART)) {
+    const node = drawn(vectorArt(art, id === 'drone' ? '인생 비행 항로' : '승급', `life2-${id}`));
+    assert.equal(node.attributes.role, 'img'); assert.ok(node.attributes['aria-label']);
+    assert.equal(node.children.length, art.paths.length);
+    assert.ok(node.children.every(child => child.tagName === 'path' && !child.attributes.href));
   }
 }));
