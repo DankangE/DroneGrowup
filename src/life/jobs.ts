@@ -3,7 +3,7 @@ import { FLAG_LABEL, RULES } from './data.ts';
 import { LIFE_RULES, STAT_LABEL, STAT_MAX, TEXT } from './life-data.ts';
 import { ECONOMY_KEYS, ECONOMY_RULES } from './economy.ts';
 import { randInt } from './move.ts';
-import { JOB_CHOICES, JOB_RULES, JOB_TEXT, SPECIAL_RULES as S, SPECIAL_TEXT as ST, START_CHOICES, TRACKS } from './tracks.ts';
+import { DIRECTOR_RULES as D, JOB_CHOICES, JOB_RULES, JOB_TEXT, SPECIAL_RULES as S, SPECIAL_TEXT as ST, START_CHOICES, TRACKS } from './tracks.ts';
 import { MAPS, WORLD } from './world.ts';
 import { CAREER_KEYS as K, CAREER_RULES as C, CAREER_TEXT as CT, careerAge, careerIncome, careerTrack,
   jobConditionLocks, promotionView, rankLocks, retirementView as retirementEligibility,
@@ -309,7 +309,7 @@ export function startingAction(state: GameState, action: ActionDef, tile: boolea
 }
 
 function clearCareer(state: GameState): void {
-  for (const key of [K.retry, K.bonus, K.idle, K.worked, K.deferred, JOB_RULES.retirementBase]) delete state.timers[key];
+  for (const key of [K.retry, K.bonus, K.idle, K.worked, K.deferred, K.chairStarted, JOB_RULES.retirementBase]) delete state.timers[key];
   state.flags = state.flags.filter(flag => flag !== K.rehire);
 }
 
@@ -321,6 +321,19 @@ function changeRank(state: GameState, rank: number): void {
   if (state.track === 'instructor' && rank >= JOB_RULES.careerRank && !state.flags.includes('examiner')) {
     state.flags.push('examiner');
   }
+}
+
+/** Called only for a successful election roll; eligibility alone never changes office. */
+export function electionWin(prev: GameState, action: string): GameState {
+  const state = structuredClone(prev);
+  if (careerTrack(state)?.id !== D.track) return state;
+  if (action === D.viceAction) changeRank(state, D.viceRank);
+  if (action === D.chairAction) {
+    changeRank(state, D.chairRank);
+    // Running again during the same term cannot extend it.
+    state.timers[K.chairStarted] ??= state.turn;
+  }
+  return state;
 }
 
 export type PerformanceSource = keyof typeof C.performance;
@@ -431,6 +444,16 @@ export function advanceCareer(prev: GameState): GameState {
     if (state.s.stamina < C.exhaustedBelow) state = performance(state, C.exhaustedPerf);
   }
   state = yearEndReview(state);
+  const termStart = state.timers[K.chairStarted];
+  if (careerTrack(state)?.id === D.track && termStart !== undefined && state.turn - termStart >= D.termSeasons) {
+    state = quit(state);
+    state.status = 'retired'; state.timers[K.pension] = D.pension;
+    delete state.timers[K.benefitUntil]; delete state.timers[JOB_RULES.popup];
+    delete state.timers[K.notice]; delete state.timers[K.noticeAt];
+    if (!state.flags.includes(K.honorary)) state.flags.push(K.honorary);
+    state.log.push({ turn: state.turn, text: CT.honoraryDone, tone: 'info' });
+    state.log = state.log.slice(-LIFE_RULES.logMax);
+  }
   const retiring = retirementView(state);
   if (retiring.due) {
     if (careerTrack(state)?.salaried) state.timers[JOB_RULES.retirementBase] ??= retiring.salary;

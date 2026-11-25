@@ -11,14 +11,14 @@ const { outputText } = transpileModule(source, {
 });
 
 for (const [query, seed, debug] of [
-  ['', 42, false],
+  ['', undefined, false],
   ['?seed=11', 11, false],
   ['?life=1&seed=11', 11, false],
   ['?life=0&seed=7&debug=1', 7, true],
   ['?life=1&seed=0&debug=1', 0, true],
-  ['?seed=-1', 42, false],
-  ['?seed=1.5', 42, false],
-  ['?seed=9007199254740992', 42, false],
+  ['?seed=-1', undefined, false],
+  ['?seed=1.5', undefined, false],
+  ['?seed=9007199254740992', undefined, false],
 ] as const) {
   test(`entry ${query || '/'} boots only the life board with the requested seed/debug mode`, () => {
     const root = {}, calls: unknown[][] = [];

@@ -1,7 +1,7 @@
 // T05 read-only career rules and cards. Tables live here to keep this ticket's three-file boundary.
 import { FLAG_LABEL } from './data.ts';
 import { LIFE_RULES, STAT_LABEL, TEXT } from './life-data.ts';
-import { JOB_RULES, JOB_TEXT, TRACKS } from './tracks.ts';
+import { DIRECTOR_RULES, JOB_RULES, JOB_TEXT, TRACKS } from './tracks.ts';
 import { WORLD } from './world.ts';
 import type { Cond, GameState, Stat, StatMap, TrackDef, TrackId, WorldNode } from './types.ts';
 
@@ -20,6 +20,7 @@ export const CAREER_KEYS = {
   season: 'career_season', reviewed: 'career_reviewed', benefitUntil: 'career_benefit_until',
   pension: 'career_pension', rehire: 'career_rehire', switched: 'career_switched', coach: 'racer_coach',
   deferred: 'career_retirement_deferred', notice: 'career_review_notice', noticeAt: 'career_review_notice_at',
+  chairStarted: 'career_chair_started', honorary: 'honorary_chairman',
 } as const;
 export const CAREER_TEXT = {
   promo: '승급 심사', passed: '승급 심사를 통과했다.', failed: '승급 심사에 떨어졌다.',
@@ -45,6 +46,8 @@ export const CAREER_TEXT = {
   benefitLabel: '실업 급여', pensionLabel: '연금', noRank: '직급 없음',
   continue: '그냥 지나간다', reviewed: '인사평가 내용을 확인했다.',
   deferRetirement: '이번 계절은 정년 결정을 미루고 그냥 지나간다.',
+  election: '협회 직급은 선거에 당선되어야 올라갑니다.', honorary: '명예회장',
+  honoraryDone: '총협회장 임기를 마치고 명예회장으로 물러났다. 이제 계절마다 연금을 받는다.',
 } as const;
 
 const entries = (map?: StatMap) => Object.entries(map ?? {}) as [Stat, number][];
@@ -127,6 +130,7 @@ export function promotionView(state: GameState, node: WorldNode = WORLD.find(row
     }
     if (track.maps !== 'any' && !track.maps.includes(node.map)) locks.push(CAREER_TEXT.map);
     if (node.kind !== 'rankup') locks.push(CAREER_TEXT.tile);
+    if (track.id === DIRECTOR_RULES.track) locks.push(CAREER_TEXT.election);
     if (state.flags.includes(CAREER_KEYS.rehire)) locks.push(CAREER_TEXT.rehire);
     if (retirementView(state).due) locks.push(CAREER_TEXT.retirement);
     const wait = (state.timers[CAREER_KEYS.retry] ?? 0) - state.turn;
@@ -147,7 +151,8 @@ export function review(state: GameState): Review {
   if (!track || state.phase === 'ended') return result;
   result.locks = rankLocks(state, track, state.job.rank);
   if (!track.salaried) {
-    let rank = track.ranks.length - 1;
+    // Association offices are elected; annual review can maintain/demote but never elect.
+    let rank = track.id === DIRECTOR_RULES.track ? state.job.rank : track.ranks.length - 1;
     while (rank > JOB_RULES.entryRank && rankLocks(state, track, rank).length) rank--;
     if (rank > state.job.rank) return { ...result, rank, outcome: 'promotion', clearWarning: true };
     if (result.locks.length) return { ...result, outcome: state.job.warn ? 'demotion' : 'warning',
@@ -169,7 +174,7 @@ export function review(state: GameState): Review {
 export function specialView(state: GameState) {
   const track = careerTrack(state), next = track?.ranks[state.job.rank + 1];
   const locks = track && next ? rankLocks(state, track, state.job.rank + 1) : [];
-  return { enabled: !!next && state.phase !== 'ended' && !state.flags.includes(CAREER_KEYS.rehire)
+  return { enabled: !!next && track?.id !== DIRECTOR_RULES.track && state.phase !== 'ended' && !state.flags.includes(CAREER_KEYS.rehire)
     && !retirementView(state).due, rank: state.job.rank + 1,
     title: next?.title ?? CAREER_TEXT.top, salary: next?.salary ?? 0, locks, maintenance: CAREER_TEXT.maintenance(locks) };
 }

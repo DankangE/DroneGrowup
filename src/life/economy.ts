@@ -2,7 +2,7 @@ import { josa } from './text.ts';
 // T06: accounting and service choices. Local tables avoid edits to parallel tickets' data files.
 import { ITEMS, RULES } from './data.ts';
 import type { ItemKind, OptionKind, UpkeepLine } from './base-types.ts';
-import { careerAge, careerIncome, careerSalary, careerTrack, CAREER_TEXT } from './career2.ts';
+import { careerAge, careerIncome, careerSalary, careerTrack, CAREER_KEYS, CAREER_TEXT } from './career2.ts';
 import { HOMES, HOME_RULES, LIFE_RULES } from './life-data.ts';
 import { homeValue, rentalIncome } from './home.ts';
 import { JOB_RULES } from './tracks.ts';
@@ -26,7 +26,7 @@ export const ECONOMY_KEYS = {
   shopIncome: 'economy_shop_income',
 } as const;
 export const ECONOMY_TEXT = {
-  salary: '급여', allowance: '용돈', living: '생활비', housing: '주거비', lodging: '숙박비',
+  salary: '급여', allowance: '용돈', deliveryAllowance: '드론 배송 수당', living: '생활비', housing: '주거비', lodging: '숙박비',
   spouse: '배우자 생활비', dual: '맞벌이 수입', child: '양육비', education: '자녀 교육비',
   vehicle: '차량 유지비', tuition: '등록금', graduate: '대학원 등록금', interest: '대출 이자',
   rent: '임대 수입', shop: '가게 수입', contracts: '고정 계약 수입', sales: '계약 매출',
@@ -107,6 +107,7 @@ export function upkeepLines(state: GameState): UpkeepLine[] {
   line(T.rent, rentalIncome(state));
   line(T.shop, state.timers[ECONOMY_KEYS.shopIncome] ?? 0);
   if (state.status === 'working') {
+    if (state.track === 'delivery' && state.flags.includes('licensed')) line(T.deliveryAllowance, JOB_RULES.deliveryAllowance);
     if (state.track === 'solo') line(T.contracts, s.contracts * RULES.solo.contractPay);
     if (state.track === 'company') {
       const c = RULES.company;
@@ -115,7 +116,8 @@ export function upkeepLines(state: GameState): UpkeepLine[] {
     }
     if (state.track === 'academy') {
       const a = RULES.academy;
-      line(T.lessons, Math.min(s.students, a.baseSeats + s.staff * a.seatsPerStaff) * a.tuition);
+      const tuition = Math.min(s.students, a.baseSeats + s.staff * a.seatsPerStaff) * a.tuition;
+      line(T.lessons, pct(tuition, state.flags.includes('accredited') ? a.accreditedTuitionPct : P));
       line(T.teachers, -s.staff * a.pay); line(T.campus, -(a.overhead + s.level * a.overheadPerLevel));
     }
   }
@@ -187,7 +189,7 @@ export type EconomyChoice = { id: string; kind: OptionKind; place: PlaceId; choi
 /** Phone choices are a separate view so opening it never changes the board/popup continuation. */
 export function economyChoices(state: GameState, phone = false): EconomyChoice[] {
   if (state.phase === 'ended') return [];
-  const node = nodeAt(state), street = state.phase === 'action' && state.board.step === 'space' && node.kind === 'shop';
+  const node = nodeAt(state), street = !phone && state.phase === 'action' && state.board.step === 'space' && node.kind === 'shop';
   const out: EconomyChoice[] = [];
   const add = (id: string, kind: OptionKind, choice: Choice, free: boolean, locks?: string[]) =>
     out.push({ id, kind, place: node.place, choice, free, locks });
@@ -231,7 +233,8 @@ export function applyEconomyChoice(prev: GameState, id: string): GameState {
 export function economyView(state: GameState) {
   const track = careerTrack(state), lines = upkeepLines(state);
   return { creditLimit: creditLimit(state), netWorth: netWorth(state),
-    stageName: track?.name ?? T.status[state.status], rankName: track?.ranks[state.job.rank].title ?? '',
+    stageName: track?.name ?? (state.status === 'retired' && state.flags.includes(CAREER_KEYS.honorary)
+      ? CAREER_TEXT.honorary : T.status[state.status]), rankName: track?.ranks[state.job.rank].title ?? '',
     items: Object.fromEntries(R.items.map(kind => [kind, { level: state.s[kind],
       name: ITEMS[kind].levels[state.s[kind] - 1]?.name ?? ITEMS[kind].none }])) as Record<ItemKind, { level: number; name: string }>,
     upkeep: { lines, total: lines.reduce((sum, line) => sum + line.amount, 0) } };
