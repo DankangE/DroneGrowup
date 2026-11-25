@@ -13,8 +13,9 @@ import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromo
   jobChoices, performance, review, startingAction } from './jobs.ts';
 import { applyHomeChoice, estateOffers, homeRecovery, yearEndHome } from './home.ts';
 import type { EstateOffer } from './home.ts';
+import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery } from './family.ts';
 import { JOB_RULES, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
-import { BOARD_CHOICES, CAREER_ACTIONS, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
+import { BOARD_CHOICES, CAREER_ACTIONS, FAMILY_RULES, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT } from './life-data.ts';
 import { applyMove, randInt, reachable as reachableMoves, rollDice } from './move.ts';
 import type { Move } from './move.ts';
@@ -43,7 +44,7 @@ export type Forecast = Omit<V1Forecast, 'branches'> & {
     deltas: StatMap; status?: Status; track?: TrackId | null; end?: EndingId;
   })[];
 };
-export type Derived = V1Derived & { period: string; remainingSeasons: number; capStamina: number };
+export type Derived = V1Derived & { period: string; remainingSeasons: number; capStamina: number; familyAchievementPoints: number };
 
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 const nodeAt = (state: GameState) => BY_ID.get(state.board.pos)!;
@@ -70,7 +71,7 @@ export function derived(state: GameState): Derived {
   return { ...economyView(state), age, season: seasonAt(state.turn),
     seasonName: LIFE_RULES.seasons[seasonAt(state.turn)], dateLabel: dateLabel(state.turn), period: period.name,
     remainingSeasons: Math.max(0, LIFE_RULES.maxTurns - state.turn),
-    capStamina: Math.min(ageCap(state.turn), state.s.capStamina) };
+    capStamina: Math.min(ageCap(state.turn), state.s.capStamina), familyAchievementPoints: familyAchievementPoints(state) };
 }
 
 /** Empty extension points. Called with the new turn, including the terminal 70-year-old spring. */
@@ -134,7 +135,7 @@ function outcome(state: GameState, effect: Effect, flight = false): OutcomeView 
 }
 
 type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean; free?: boolean;
-  jobLocks?: string[]; home?: EstateOffer };
+  jobLocks?: string[]; home?: EstateOffer; family?: boolean };
 function view(state: GameState, id: string, r: Resolved): OptionView {
   const { choice, kind, place, flight } = r;
   const { locks, missing } = unmet(state, choice.need);
@@ -172,6 +173,13 @@ function resolve(state: GameState): Map<string, Resolved> {
     choices.set(id, { kind: 'board', place: node.place, choice, flight: false, jobLocks: locks });
   }
   if (jobs.exclusive) return choices;
+  const family = familyChoices(state);
+  if (family.exclusive) choices.clear();
+  for (const { id, choice, locks } of family.choices) {
+    choices.set(id, { kind: 'action', place: node.place, choice, flight: false,
+      jobLocks: locks, family: true, free: family.exclusive });
+  }
+  if (family.exclusive) return choices;
   for (const home of estateOffers(state)) {
     choices.set(home.id, { kind: 'action', place: node.place, choice: home.choice,
       flight: false, jobLocks: home.locked, home });
@@ -262,13 +270,14 @@ function endSeason(state: GameState, result: Result, runHooks: boolean): GameSta
   if (state.s.overdue) result.notes.push(ECONOMY_TEXT.overdue(state.s.overdue));
   else if (beforeCredit && state.log.at(-1)?.turn === state.turn
     && state.log.at(-1)?.text === ECONOMY_TEXT.liquidation) result.notes.push(ECONOMY_TEXT.liquidation);
+  state = advanceFamily(state);
   if (runHooks && seasonAt(state.turn) === LIFE_RULES.spring) {
     state = HOOKS.yearEnd(state);
     if (ageAt(state.turn) % LIFE_RULES.lifeEventYears === 0) state = HOOKS.lifeEvent(state);
   }
   state.s.capStamina = Math.min(state.s.capStamina, ageCap(state.turn));
   const beforeRefill = state.s.stamina;
-  setStat(state, 'stamina', beforeRefill + homeRecovery(state).recovery);
+  setStat(state, 'stamina', beforeRefill + homeRecovery(state).recovery + familyRecovery(state));
   state.s.acts = 0;
   state.phase = 'action'; state.eventId = null;
   state.board.step = 'spin'; state.board.dice = [];
@@ -347,6 +356,7 @@ function applyEffect(state: GameState, effect: Effect, add: StatMap): string | u
   for (const [stat, value] of entries(effect.set)) setStat(state, stat, value);
   const flag = effect.flag && !state.flags.includes(effect.flag) ? effect.flag : undefined;
   if (flag) state.flags.push(flag);
+  if (effect.flag === FAMILY_RULES.partner && state.family.partnerAt === null) state.family.partnerAt = state.turn;
   if (effect.status) state.status = effect.status;
   if (effect.track !== undefined) state.track = effect.track;
   // Imported v1 achievement endings cannot shorten the T03 lifetime either.
@@ -386,6 +396,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   }
   if (v.id.startsWith('lifestyle:')) state = applyEconomyChoice(state, v.id);
   if (r.home) state = applyHomeChoice(state, r.home);
+  if (r.family) state = applyFamilyChoice(state, v.id, branch === 'sure' || success);
   if (flag) result.flag = flag;
   if (!v.free && (r.kind !== 'board' || v.id === 'skip')) state.s.acts++;
   result.deltas = diff(before, state.s);
