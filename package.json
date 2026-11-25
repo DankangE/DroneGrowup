@@ -16,7 +16,7 @@
     "playtest": "node scripts/playtest.mjs",
     "playtest:platform": "node scripts/playtest-platform.mjs",
     "layout": "node scripts/layout-check.mjs",
-    "simulate:life": "echo 'TODO: scripts/simulate-life.ts (T14)'",
+    "simulate:life": "node scripts/simulate-life.ts",
     "cashflow:life": "node scripts/life-cashflow.ts",
     "dominance:life": "node scripts/dominance-life.ts",
     "outcomes:life": "echo 'TODO: scripts/outcome-check-life.ts (T15)'",
