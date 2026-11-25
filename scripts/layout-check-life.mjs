@@ -291,6 +291,62 @@ async function popupChecks(page, base) {
   console.log('  T18: 11 popup kinds, three choices per page, portrait sheets <=55%, keyboard exit checked');
 }
 
+// T19 isolated popup group: fixture-only engine views, plus the separate ending/gallery screens.
+async function popup2Checks(page, base) {
+  await page.goto(`${base}src/ui2/popups/layout.html`);
+  await page.waitForFunction(() => window.__popup2Fixture);
+  const audit = async selector => assert.deepEqual(await page.locator(selector).evaluate(panel => {
+    const issues = [], box = panel.getBoundingClientRect();
+    if (panel.dataset.popup && innerHeight > innerWidth && !panel.hasAttribute('data-fullscreen') && box.height > innerHeight * .55 + 1) issues.push('sheet exceeds 55%');
+    if (panel.querySelectorAll('[data-option]').length > 3) issues.push('more than three choices');
+    for (const node of [panel, ...panel.querySelectorAll('*')]) {
+      if (node.closest('svg')) continue;
+      const rect = node.getBoundingClientRect(), css = getComputedStyle(node);
+      if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) issues.push('content outside panel');
+      if (node.matches('button') && (rect.width < 44 || rect.height < 44)) issues.push('tap target below 44px');
+      if (['auto', 'scroll'].includes(css.overflowY) || node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push('content overflows');
+      if (parseFloat(css.fontSize) < 11) issues.push('text below 11px');
+    }
+    return [...new Set(issues)];
+  }), [], `${selector}: T19 layout`);
+  for (const kind of await page.evaluate(() => window.__popup2Fixture.kinds)) {
+    const model = await page.evaluate(kind => window.__popup2Fixture.show(kind), kind), seen = [];
+    const popup = page.locator('[data-popup]');
+    assert.equal(await popup.getAttribute('data-popup'), kind);
+    do {
+      await audit('[data-popup]');
+      seen.push(...await popup.locator('[data-option]').evaluateAll(nodes => nodes.map(node => node.dataset.option)));
+      if (seen.length >= model.choices.length) break;
+      await popup.locator('[data-action="popup-page-next"]').click();
+    } while (seen.length < model.choices.length);
+    assert.deepEqual(seen, model.choices.map(choice => choice.id));
+    await page.evaluate(kind => window.__popup2Fixture.show(kind), kind);
+    if (model.choices.length) {
+      await popup.locator('[data-option]').first().press('Enter');
+      assert.equal(await page.evaluate(() => window.__popup2Fixture.taken()), model.choices[0].id);
+      await popup.locator('[data-action="popup-details"]').first().click(); await audit('[data-popup]');
+      await popup.locator('[data-action="popup-text-next"]').click(); await audit('[data-popup]');
+      await popup.locator('[data-action="popup-back"]').click();
+    }
+    for (const tab of model.tabs ?? []) { await popup.locator(`[data-tab="${tab.id}"]`).click(); await audit('[data-popup]'); }
+    await page.keyboard.press('Escape'); assert.equal(await page.evaluate(() => window.__popup2Fixture.closed()), true);
+  }
+  for (let index = 0; index < 21; index++) {
+    await page.evaluate(index => window.__popup2Fixture.ending(index), index); await audit('.life2-ending-screen');
+  }
+  await page.evaluate(() => window.__popup2Fixture.collection());
+  const seen = [];
+  for (let index = 0; index < 7; index++) {
+    await audit('.life2-ending-screen');
+    seen.push(...await page.locator('[data-pick]').evaluateAll(nodes => nodes.map(node => node.dataset.pick)));
+    await page.locator('[data-pick]').first().click(); await audit('.life2-ending-screen');
+    await page.locator('[data-nav="gallery-back"]').click();
+    if (index < 6) await page.locator('[data-action="gallery-page-next"]').click();
+  }
+  assert.equal(new Set(seen).size, 21);
+  console.log('  T19: 11 popup kinds, five life tabs, 21 endings and collection pages checked');
+}
+
 async function main() {
   const shots = process.env.LAYOUT_SHOTS ? resolve(root, process.env.LAYOUT_SHOTS) : null;
   if (shots) mkdirSync(shots, { recursive: true });
@@ -374,6 +430,7 @@ async function main() {
         event.board.step = 'space'; event.board.dice = [1, 1];
         await load(event); await checkPages('event');
         await popupChecks(page, base);
+        await popup2Checks(page, base);
         await page.goto(`${base}?life=1&seed=11`);
         await page.locator('[data-map=A]').waitFor();
         assert.equal(await page.evaluate(() => window.__life === undefined), true, 'state loader is debug-only');

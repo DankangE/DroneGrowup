@@ -3,18 +3,23 @@ import type { Forecast, OptionView, Result } from '../../life/engine.ts';
 import { STAT_LABEL } from '../../life/life-data.ts';
 import type { GameState, PlaceId, Stat, StatMap, TrackId } from '../../life/types.ts';
 import { PLACES, WORLD } from '../../life/world.ts';
-import { COPY, POPUPS, POPUP_RULES } from './data.ts';
+import { COPY, FULLSCREEN_POPUPS, POPUP_DEFINITIONS, POPUP_RULES } from './data.ts';
 import type { PhoneTab, PopupKind } from './data.ts';
+import { chapterLines, lifeTabs } from './life-model.ts';
+import type { LifeSummaryView, LifeTabModel } from './life-model.ts';
 
-export type PopupChoice = { id: string; title: string; enabled: boolean; summary: string; details: string[] };
+export type PopupChoice = { id: string; title: string; enabled: boolean; summary: string; details: string[]; destination?: string };
 export type PopupModel = {
   kind: PopupKind; phase: string; title: string; lines: string[]; choices: PopupChoice[];
   place: PlaceId; track: TrackId | null; fullscreen: boolean; notification: boolean;
   roll?: Result['roll'];
+  tabs?: LifeTabModel[];
 };
 export type PopupContext = {
   kind?: PopupKind; offered?: readonly OptionView[]; previews?: Readonly<Record<string, Forecast>>;
   result?: Result; title?: string; lines?: readonly string[];
+  summary?: LifeSummaryView;
+  destinations?: Readonly<Record<string, string>>;
 };
 
 /** Presentation routing only. Unknown ids remain ordinary engine choices. */
@@ -22,7 +27,22 @@ export function popupKind(state: GameState, offered: readonly OptionView[]): Pop
   if (state.phase === 'ended') return undefined;
   if (offered.some(option => option.id.startsWith('start:'))) return 'start';
   if (offered.some(option => option.id.startsWith('job:'))) return 'job';
+  if (offered.some(option => /^retire:(pension|rehire|switch)$/.test(option.id))) return 'retirement';
+  if (offered.some(option => /^wed:/.test(option.id))) return 'wedding';
+  if (offered.some(option => /^(edu|gift):/.test(option.id))) return 'education';
+  if (offered.some(option => /^home:/.test(option.id))) return 'estate';
+  if (offered.some(option => /^biz:/.test(option.id))) return 'biz';
+  if (offered.some(option => /^fund:/.test(option.id))) return 'fund';
+  if (offered.some(option => /^(buy|sell):/.test(option.id))) return 'shop';
   if (state.phase === 'event') return 'event';
+  // Luck/express ids are not specified yet: route by the tile, keep all offered ids unchanged.
+  if (state.board.step === 'space') {
+    const kind = WORLD.find(node => node.id === state.board.pos)?.kind;
+    if (kind === 'luck') return 'luck';
+    if (kind === 'station') return 'transfer';
+    if (kind === 'shop' || kind === 'estate' || kind === 'biz') return kind;
+    if (kind === 'invest') return 'fund';
+  }
   if (state.board.step === 'space') return 'space';
   if (state.board.step === 'bonus') return 'bonus';
   return undefined;
@@ -66,8 +86,9 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
   const event = kind === 'event' ? currentEvent(state) : null, result = context.result;
   const place = event?.place ?? result?.place ?? WORLD.find(node => node.id === state.board.pos)!.place;
   const title = context.title ?? (kind === 'event' ? event?.title : kind === 'result' ? result?.title : undefined)
-    ?? POPUPS[kind].title;
+    ?? POPUP_DEFINITIONS[kind].title;
   const lines = [...(context.lines ?? (event ? [event.text] : [PLACES[place].name]))];
+  if (kind === 'chapter' || kind === 'retirement') lines.push(...chapterLines(state, context.summary));
   if (kind === 'review' || kind === 'rankup' || kind === 'demotion') {
     lines.push(COPY.review(state.job.perf, state.job.tenure, state.job.warn));
   }
@@ -80,10 +101,12 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
   // A caller supplying future option ids also supplies their previews, if available.
   // Never ask the current engine to resolve an id it does not know yet.
   const visible = kind === 'result' ? [] : kind === 'phone' ? phoneChoices(offered, 'all') : offered;
-  const choices = visible.map(option => choiceModel(option,
-    context.previews?.[option.id] ?? (context.offered === undefined ? forecast(state, option.id) : undefined)));
-  return { kind, phase: POPUPS[kind].phase, title, lines: lines.filter(Boolean), choices, place, track: state.track,
-    fullscreen: kind === 'rankup' || kind === 'demotion', notification: kind === 'result' && !result?.roll,
+  const choices = visible.map(option => ({ ...choiceModel(option,
+    context.previews?.[option.id] ?? (context.offered === undefined ? forecast(state, option.id) : undefined)),
+    ...(context.destinations?.[option.id] && { destination: context.destinations[option.id] }) }));
+  return { kind, phase: POPUP_DEFINITIONS[kind].phase, title, lines: lines.filter(Boolean), choices, place, track: state.track,
+    fullscreen: FULLSCREEN_POPUPS.includes(kind), notification: kind === 'result' && !result?.roll,
+    ...(kind === 'my-life' && { tabs: lifeTabs(state, context.summary) }),
     ...(result?.roll && { roll: { ...result.roll } }) };
 }
 
@@ -91,7 +114,7 @@ export function phoneChoices(offered: readonly OptionView[], tab: PhoneTab): Opt
   const category = (option: OptionView): PhoneTab | undefined => {
     if (option.kind === 'shop' || /^(buy|sell):/.test(option.id)) return 'shop';
     if (option.kind === 'repair' || option.id === 'repair') return 'repair';
-    if (option.kind === 'bank' || /^(loan|repay):/.test(option.id)) return 'bank';
+    if (option.kind === 'bank' || /^(loan|repay|fund):/.test(option.id)) return 'bank';
     if (/^(phone:retire|early-retire|retire:early)$/.test(option.id)) return 'retire';
     return undefined;
   };
