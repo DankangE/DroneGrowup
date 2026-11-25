@@ -12,7 +12,7 @@ import { SPIN_MS } from '../src/ui2/wheel.ts';
 import { TRANSFER_MS } from '../src/ui2/transfer.ts';
 
 function fixture(pos: string, dice: [number, number]) {
-  const state = newGame(1);
+  const state = choose(newGame(1), 'start:school').state;
   state.board.pos = pos; state.board.dice = dice; state.board.step = 'pick';
   return state;
 }
@@ -23,11 +23,11 @@ function frozen<T>(value: T): T {
 }
 
 test('two different dice expose the engine destinations; a double with one destination bypasses pick', () => {
-  const multiple = choose(newGame(1), 'spin');
+  const multiple = choose(choose(newGame(1), 'start:school').state, 'spin');
   assert.deepEqual(multiple.state.board.dice, [4, 1]);
   assert.equal(multiple.state.board.step, 'pick');
   assert.deepEqual(movementFrames('A-o0', multiple.result, true), [{ phase: 'spin', pos: 'A-o0', ms: 700 }]);
-  const single = choose(newGame(11), 'spin');
+  const single = choose(choose(newGame(11), 'start:school').state, 'spin');
   assert.deepEqual(single.state.board.dice, [4, 4]);
   assert.equal(single.state.board.step, 'space');
   assert.ok(!options(single.state).some(option => option.id.startsWith('go:')));

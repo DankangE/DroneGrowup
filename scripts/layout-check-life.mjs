@@ -96,11 +96,20 @@ async function movementChecks(page, load, check) {
   const actual = () => page.evaluate(() => window.__life.state());
   const press = (selector, key) => keyboardActivate(page, page.locator(selector), key);
   const keys = pagingChecks(page, check, control => keyboardActivate(page, control));
+  const startRun = async seed => {
+    const run = newGame(seed); await load(run);
+    await keys.checkPages('keyboard start choices');
+    await keys.clickChoice('start:school');
+    const started = choose(run, 'start:school').state;
+    assert.deepEqual(await actual(), started, 'keyboard start choice matches engine');
+    return started;
+  };
   const fixture = (pos, dice) => {
-    const run = newGame(1); run.board.pos = pos; run.board.dice = dice; run.board.step = 'pick'; return run;
+    const run = choose(newGame(1), 'start:school').state;
+    run.board.pos = pos; run.board.dice = dice; run.board.step = 'pick'; return run;
   };
   // This entire season, including the destination tile and paged actions, uses only keys.
-  let expected = newGame(1); await load(expected);
+  let expected = await startRun(1);
   assert.equal(await page.locator('[data-die]').count(), 2);
   await keys.clickChoice('spin'); expected = choose(expected, 'spin').state;
   assert.equal(await phase(), 'pick');
@@ -123,15 +132,15 @@ async function movementChecks(page, load, check) {
   }
   assert.equal(expected.turn, 1, 'keyboard alone completes a season');
   await check('keyboard next season');
-  await load(newGame(11)); await keys.clickChoice('spin');
-  assert.deepEqual(await actual(), choose(newGame(11), 'spin').state);
+  const single = await startRun(11); await keys.clickChoice('spin');
+  assert.deepEqual(await actual(), choose(single, 'spin').state);
   assert.equal(await phase(), 'space', 'reduced motion is instant; one destination never shows pick');
   assert.equal(await page.locator('[data-dest]').count(), 0);
 
   // Freeze browser timers so exact boundaries are reliable even on slow CI workers.
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.clock.install({ time: 0 }); await page.clock.pauseAt(1000);
-  await load(newGame(1)); await press('[data-option="spin"]');
+  await startRun(1); await press('[data-option="spin"]');
   assert.equal(await phase(), 'spin'); await check('rolling wheels');
   await page.clock.runFor(699); assert.equal(await phase(), 'spin');
   await page.clock.runFor(1); assert.equal(await phase(), 'pick'); await check('pick after 700ms');
@@ -140,7 +149,7 @@ async function movementChecks(page, load, check) {
   assert.equal(await page.locator('[data-path-preview]').getAttribute('data-path-preview'), 'A-o4');
   assert.equal(await page.locator('[data-path-preview] line').count(), 4);
 
-  await load(newGame(11));
+  const earlyStopped = await startRun(11);
   await page.evaluate(() => {
     window.__lifePhases = [];
     window.__lifePhaseObserver = new MutationObserver(records => window.__lifePhases.push(...records.map(record => record.oldValue)));
@@ -152,7 +161,7 @@ async function movementChecks(page, load, check) {
   assert.equal(await pawn(), 'A-o4');
   assert.equal(await page.evaluate(() => { window.__lifePhaseObserver.disconnect(); return window.__lifePhases.includes('pick'); }), false);
   await page.clock.runFor(2000);
-  assert.deepEqual(await actual(), choose(newGame(11), 'spin').state, 'skip never rolls or applies movement twice');
+  assert.deepEqual(await actual(), choose(earlyStopped, 'spin').state, 'skip never rolls or applies movement twice');
 
   const paid = fixture('A-o10', [2, 2]); paid.board.ledger = { wage: 125, expense: -20 };
   await load(paid); await press('[data-space="A-o12"][data-dest]');
@@ -187,7 +196,7 @@ async function movementChecks(page, load, check) {
     assert.equal(await pawn(), 'B-o1', 'skip and reduced-motion changes finish immediately');
   }
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await load(newGame(1)); await press('[data-option="spin"]');
+  await startRun(1); await press('[data-option="spin"]');
   await load(newGame(42)); await page.clock.runFor(2000);
   assert.deepEqual(await actual(), newGame(42), 'loading cancels stale animation callbacks');
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -267,8 +276,12 @@ async function main() {
         assert.deepEqual(await page.evaluate(() => window.__life.state()), newGame(11), 'life=1 starts exactly newGame(seed)');
         assert.equal(await page.evaluate(() => window.__game === undefined), true, 'v1 is not mounted');
         assert.equal(await page.locator('#app').getAttribute('data-screen'), 'play');
+        await checkPages('start choices');
+        await clickChoice('start:school');
+        const started = choose(newGame(11), 'start:school').state;
+        assert.deepEqual(await page.evaluate(() => window.__life.state()), started, 'start choice calls the engine');
         for (const map of Object.keys(MAPS)) {
-          const run = newGame(11); run.board.pos = `${map}-o0`;
+          const run = structuredClone(started); run.board.pos = `${map}-o0`;
           await load(run);
           assert.equal(await page.locator('[data-map]').getAttribute('data-map'), map);
           assert.deepEqual((await page.locator('[data-space]').evaluateAll(nodes => nodes.map(node => node.dataset.space))).sort(),
@@ -300,14 +313,14 @@ async function main() {
           assert.equal(expected.turn, 1, 'plain buttons finish a season'); seasons++;
           await check(`${map} next season`);
           for (const step of ['pick', 'space', 'bonus']) {
-            const fixture = newGame(11);
+            const fixture = structuredClone(started);
             fixture.board.pos = step === 'pick' ? `${map}-o0` : WORLD.find(node => node.map === map && node.kind === 'train').id;
             fixture.board.step = step; fixture.board.dice = step === 'pick' ? [6, 6] : [1, 1];
             await load(fixture); await checkPages(`${map} ${step} menu`);
           }
         }
         await movementChecks(page, load, check); seasons++;
-        const event = newGame(11); event.phase = 'event'; event.eventId = EVENTS[0].id;
+        const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
         event.board.step = 'space'; event.board.dice = [1, 1];
         await load(event); await checkPages('event');
         await page.goto(`${base}?life=1&seed=11`);

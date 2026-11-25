@@ -7,6 +7,8 @@ import type { BranchId, Derived as V1Derived, Forecast as V1Forecast, GameState 
   Result as V1Result, Stage } from '../game/types.ts';
 import { CONTEST_EVENTS } from '../game/data.ts';
 import { ACTIONS, EVENTS } from './compat.ts';
+import { advanceStudies, afterStartPass, applyJobChoice, isJobChoice, jobChoices, startingAction } from './jobs.ts';
+import { JOB_RULES } from './tracks.ts';
 import { ACCOUNTING_BOARD, BOARD_CHOICES, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT } from './life-data.ts';
 import { applyMove, randInt, reachable, rollDice } from './move.ts';
@@ -14,6 +16,7 @@ import type { Move } from './move.ts';
 import { PLACES, WORLD } from './world.ts';
 import type { Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
 export { restore } from './restore.ts';
+export { jobOffers } from './jobs.ts';
 
 // Retain the v1 view contracts while widening their vocabulary to v2 places and stats.
 type OutcomeView = Omit<V1OutcomeView, 'add' | 'stage' | 'end'> & {
@@ -48,11 +51,12 @@ const ledgerSum = (state: GameState) => Object.values(state.board.ledger).reduce
 export function newGame(seed: number): GameState {
   const state = structuredClone(INITIAL_STATE);
   state.seed = state.rng = (Math.floor(Number(seed)) >>> 0) || LIFE_RULES.defaultSeed;
+  state.s.money = JOB_RULES.startMoney;
   return state;
 }
 
 // Accounting only: reuse v1 salaries, upkeep, credit and item valuation unchanged.
-// Tracks not present in v1 retain the student baseline until T04 supplies their table.
+// T06 will replace these compatibility amounts with the v2 track/economy tables.
 function accountingState(state: GameState): V1State {
   const stage: Stage = state.status === 'working' && state.track && Object.hasOwn(STAGES, state.track)
     ? state.track as Stage : 'student';
@@ -128,17 +132,21 @@ function outcome(state: GameState, effect: Effect, payPct: number): OutcomeView 
     ...(effect.track !== undefined && effect.track !== state.track && { track: effect.track }) };
 }
 
-type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean };
+type Resolved = { kind: OptionKind; place: PlaceId; choice: Choice; flight: boolean; jobLocks?: string[] };
 function view(state: GameState, id: string, r: Resolved): OptionView {
   const { choice, kind, place, flight } = r;
   const { locks, missing } = unmet(state, choice.need);
+  locks.push(...(r.jobLocks ?? []));
   const cost = choice.cost ?? 0, tire = choice.tire ?? 0;
-  if (state.s.money < cost) { locks.push(TEXT.moneyLock(cost)); missing.push({ stat: 'money', need: cost }); }
+  if (state.s.money < cost) {
+    if (!locks.includes(TEXT.moneyLock(cost))) locks.push(TEXT.moneyLock(cost));
+    missing.push({ stat: 'money', need: cost });
+  }
   if (state.s.stamina < tire) { locks.push(TEXT.tireLock(tire, state.s.stamina)); missing.push({ stat: 'stamina', need: tire }); }
   const option: OptionView = { id, kind, place, title: choice.title, desc: choice.desc, free: false,
     cost, tire, enabled: !locks.length, locks, missing };
   if (choice.roll) {
-    const staminaPct = staminaBonus(state);
+    const staminaPct = r.jobLocks ? 0 : staminaBonus(state);
     let chance = choice.roll.base + staminaPct;
     for (const mod of choice.roll.mods ?? []) {
       chance += clamp(Math.floor((state.s[mod.stat] - mod.over) / mod.per) * mod.pct, 0, mod.cap);
@@ -157,6 +165,11 @@ function resolve(state: GameState): Map<string, Resolved> {
   if (state.phase === 'ended') return choices;
   const node = nodeAt(state);
   const board = (id: string, choice: Choice) => choices.set(id, { kind: 'board', place: node.place, choice, flight: false });
+  const jobs = jobChoices(state);
+  for (const { id, choice, locks } of jobs.choices) {
+    choices.set(id, { kind: 'board', place: node.place, choice, flight: false, jobLocks: locks });
+  }
+  if (jobs.exclusive) return choices;
   if (state.phase === 'event') {
     currentEvent(state)?.choices.forEach((choice, index) => choices.set(`ev:${index}`,
       { kind: 'event', place: currentEvent(state)!.place, choice, flight: false }));
@@ -175,7 +188,8 @@ function resolve(state: GameState): Map<string, Resolved> {
   } else {
     const tile = state.board.step === 'space';
     // Match v1 SPACE_MENU: tile menus use kind + when; extras use the actual place + when.
-    for (const action of ACTIONS) {
+    for (const original of ACTIONS) {
+      const action = startingAction(state, original, tile);
       if (!(tile ? SPACE_MENU[node.kind]?.includes(action.id) : action.place === node.place)
         || !met(state, action.when) || (!tile && state.s.stamina < (action.tire ?? 0))) continue;
       choices.set(`act:${action.id}`, { kind: action.flight ? 'job' : 'action', place: action.place,
@@ -227,6 +241,7 @@ function endSeason(state: GameState, result: Result, runHooks: boolean): GameSta
   state.s.overdue = over ? state.s.overdue + 1 : 0;
   if (over) result.notes.push(TEXT.overdue(state.s.overdue));
   state.turn++;
+  state = advanceStudies(state);
   if (runHooks && seasonAt(state.turn) === LIFE_RULES.spring) {
     state = HOOKS.yearEnd(state);
     if (ageAt(state.turn) % LIFE_RULES.lifeEventYears === 0) state = HOOKS.lifeEvent(state);
@@ -289,9 +304,10 @@ function travel(state: GameState, destination: string, result: Result): GameStat
   for (const kind of SETTLEMENT_KINDS) {
     for (const _node of applied.move.passed[kind as 'pay' | 'start']) payLedger(state, result);
   }
-  // lapAt is kept for the later start-tile bonus; no allowance or job offer is granted in T03.
+  // The start allowance remains T06; offers overlay the completed landing and resume it afterwards.
   for (const id of applied.move.passed.start) state.board.lapAt[BY_ID.get(id)!.map] = state.turn;
   land(state, result);
+  if (applied.move.passed.start.length) state = afterStartPass(state);
   return state;
 }
 
@@ -315,7 +331,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   const result: Result = { optionId: v.id, title: v.title, place: v.place, free: v.free, text: effect.text,
     deltas: {}, crashed, notes: [], statusFrom: state.status, statusTo: state.status, trackFrom: state.track, trackTo: state.track };
   state.s.money -= v.cost; state.s.stamina = Math.max(0, state.s.stamina - v.tire);
-  if (branch !== 'sure') {
+  if (branch !== 'sure' && !r.jobLocks) {
     setStat(state, success ? 'wins' : 'losses', state.s[success ? 'wins' : 'losses'] + 1);
     if (r.flight) {
       const f = RULES.flight;
@@ -327,13 +343,17 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
       } else if (!success) setStat(state, 'cond', state.s.cond - f.failWear);
     }
   }
-  const flag = applyEffect(state, effect, outcome.add);
+  const job = isJobChoice(v.id);
+  const flag = applyEffect(state, job ? { ...effect, status: undefined, track: undefined } : effect, outcome.add);
+  if (job) state = applyJobChoice(state, v.id, branch === 'sure' || success);
   if (flag) result.flag = flag;
   if (r.kind !== 'board' || v.id === 'skip') state.s.acts++;
   result.deltas = diff(before, state.s);
   const afterOption = { ...state.s };
   state.log.push({ turn: state.turn, text: TEXT.log(v.title, result.text), tone: branch === 'sure' ? 'info' : success ? 'good' : 'bad' });
-  if (v.id === 'spin') {
+  if (job) {
+    // jobs.ts owns popup continuation; entry never consumes the extra action or a season.
+  } else if (v.id === 'spin') {
     rollDice(state); state.board.step = 'pick';
     const moves = reachable(state);
     if (moves.length === 1) state = travel(state, moves[0].node, result);
