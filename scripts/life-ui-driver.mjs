@@ -5,7 +5,7 @@ import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { choose, derived, forecast, newGame, options, reachable } from '../src/life/engine.ts';
+import { choose, derived, forecast, newGame, options, reachable } from '../src/life/flow.ts';
 import { rankChange } from '../src/life/career2.ts';
 import { WORLD } from '../src/life/world.ts';
 import { audit, keyboardActivate, pagingChecks } from './layout-check-life.mjs';
@@ -125,7 +125,7 @@ export function browserDriver(page, { keyboard = false, timed = false, auditPage
   const check = async name => {
     assert.deepEqual(await page.evaluate(audit), [], name);
     if (!expectedResult || !name.startsWith('after ')) return;
-    const wheel = page.locator('[data-popup="result"] [data-result-wheel]');
+    const wheel = page.locator('[data-result-wheel]');
     assert.equal(await wheel.count(), Number(!!expectedResult.roll), 'roll result is displayed exactly when rolled');
     if (expectedResult.roll) {
       const { value, chance } = expectedResult.roll;
@@ -153,6 +153,10 @@ export function browserDriver(page, { keyboard = false, timed = false, auditPage
       else await paging.clickChoice(id);
       assert.deepEqual(await readState(page), next.state, `after ${id} on turn ${state.turn}: UI equals engine`);
       await checkLifeView(page, next.state);
+      if (next.state.phase === 'action' && next.state.board.step === 'bonus') {
+        assert.notDeepEqual(options(next.state).filter(row => row.enabled).map(row => row.id), ['end'],
+          'interactive flow never exposes an empty extra-action confirmation');
+      }
       return next.state;
     },
   };

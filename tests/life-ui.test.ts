@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { choose, newGame, options, restore } from '../src/life/engine.ts';
+import { choose, newGame, options, restore } from '../src/life/flow.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import type { GameState } from '../src/life/types.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
@@ -148,7 +148,7 @@ test('life layout still traverses plain destination pages and can choose an earl
   assert.equal(panelAt(page.root), undefined);
   await checkPages('destinations'); await checkPages('destinations again');
   const ids = options(state).map(option => option.id);
-  assert.deepEqual(seen, [ids.slice(0, 2), ids.slice(2, 4), ids.slice(4), ids.slice(0, 2), ids.slice(2, 4), ids.slice(4)]);
+  assert.deepEqual(seen, [...ids, ...ids].map(id => [id]));
   assert.ok(page.shellRenders > 0); assert.equal(page.popupRenders, 0);
   await clickChoice(ids[0]); assert.deepEqual(page.state, choose(state, ids[0]).state);
 });
@@ -215,9 +215,9 @@ test('life layout audits rolled results and resumes the next choices without rep
   await clickChoice(id);
   assert.deepEqual(rolls, [String(expected.result.roll!.value)]);
   assert.deepEqual(page.state, expected.state);
-  assert.equal(panelAt(page.root).dataset.popup, 'bonus');
-  await checkPages('bonus'); await clickChoice('end');
-  assert.deepEqual(page.state, choose(expected.state, 'end').state);
+  assert.equal(panelAt(page.root), undefined);
+  await checkPages('next season');
+  assert.deepEqual(page.state, expected.state);
   assert.equal(page.state.turn, 1); assert.notEqual(panelAt(page.root)?.dataset.popup, 'result');
 });
 

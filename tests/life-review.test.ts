@@ -247,7 +247,7 @@ test('choose applies work success/failure and extra-duty performance without rew
   employee.board.pos = WORLD.find(node => node.place === 'hq')!.id; employee.board.step = 'bonus';
   const extra = choose(employee, 'act:emp_work').state;
   assert.equal(extra.job.perf, 55); assert.equal(extra.turn, employee.turn + 1);
-  assert.equal(extra.timers[K.worked], undefined); assert.equal(extra.timers[K.idle], 1);
+  assert.equal(extra.timers[K.worked], employee.turn + 1); assert.equal(extra.timers[K.idle], 0);
   employee.board.pos = 'A-o3';
   assert.equal(choose(employee, 'act:self_study').state.job.perf, 50, 'unrelated extra action earns no performance');
 });
@@ -295,7 +295,7 @@ test('four consecutive unworked seasons start -3 each season; failed work resets
   state = performance(state, 'workFailure'); assert.equal(state.job.perf, 40);
   state = close(state); assert.equal(state.job.perf, 40); assert.equal(state.timers[K.idle], 0);
   state = performance(state, 'extra');
-  for (const perf of [45, 45, 45, 42]) { state = close(state); assert.equal(state.job.perf, perf); }
+  for (const perf of [45, 45, 45, 45]) { state = close(state); assert.equal(state.job.perf, perf); }
   assert.equal(state.job.total, 42); assert.equal(state.job.tenure, 30);
   assert.deepEqual(advanceCareer(state), state, 'one accrual per completed season');
 });

@@ -128,8 +128,9 @@ export function endingFor(prev: GameState): EndingDef {
 /** Read-only scoring also supplies the UI's grade and achievement names. */
 export function settlementSummary(state: GameState) {
   const netWorth = finalNetWorth(state), achievements = achievementScore(state);
-  const score = Math.max(0, netWorth) + state.s.happy * R.happyPoints + achievements.capped;
-  return { netWorth, score, grade: R.grades.find(row => score >= row.min)!.grade,
+  const composition = { wealth: Math.max(0, netWorth), happiness: state.s.happy * R.happyPoints, achievements: achievements.capped };
+  const score = composition.wealth + composition.happiness + composition.achievements;
+  return { netWorth, score, composition, grade: R.grades.find(row => score >= row.min)!.grade,
     featScore: achievements.capped, feats: achievements.rows.map(row => row.title) };
 }
 

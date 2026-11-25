@@ -1,3 +1,4 @@
+import { josa } from './text.ts';
 // Life calendar, defaults and copy; shared catalog values are in data.ts.
 import { ENDINGS, RULES, SPACE_MENU as V1_SPACE_MENU, STAT_LABEL as V1_STAT_LABEL,
   STAT_MAX as V1_STAT_MAX } from './data.ts';
@@ -78,7 +79,7 @@ export const HOME_RULES = {
 export const HOME_TEXT = {
   rent: (name: string) => `${name} 구하기`, buy: (name: string) => `${name} 사기`,
   mortgage: (name: string) => `${name} 사기 · 담보 대출 50%`,
-  sell: (name: string) => `${name} 팔기 / 계약 끝내기`, move: (name: string) => `${name}으로 이사`,
+  sell: (name: string) => `${name} 팔기 / 계약 끝내기`, move: (name: string) => `${josa(name, '으로/로')} 이사`,
   details: (price: number, moving: number, refund: number, loan: number, income: number) =>
     `값 ${price}만원 · 이사 ${moving}만원 · 보증금 반환 ${refund}만원 · 담보 대출 ${loan}만원 · 임대 수입 계절당 ${income}만원.`,
   occupied: '거주할 집을 마련했다.', rented: '추가 주택을 세놓았다.', sold: '집을 팔거나 임대 계약을 끝냈다.',
@@ -114,7 +115,9 @@ export const FAMILY_RULES = {
   independentAge: 20, independentStage: 4, schoolFee: 20, schoolPoints: 1,
   specialPoints: 2, extraPoints: 1, educationChance: 60, maxPoints: 9,
   focusRecovery: 3, singlePct: 150, exhaustedBelow: 20, resortMap: 'F',
-  datePlaces: ['culture', 'waterfront_park'] as readonly string[],
+  localMap: 'A', localPlace: 'park',
+  localEvents: ['blind_date', 'proposal', 'baby_news'] as readonly string[],
+  datePlaces: ['park', 'culture', 'waterfront_park'] as readonly string[],
   weddingPlaces: ['wedding', 'resort'] as readonly string[], babyPlace: 'hospital',
   feat: (kid: number) => `kid_independent:${kid}`,
 } as const;
@@ -132,10 +135,15 @@ export const LEISURE = [
     places: ['waterfront_park', 'resort'] },
 ] as const;
 export const FAMILY_TEXT = {
-  date: '소개팅', dateDesc: '비용 30만원. 기본 45%, 평판 15마다 +1%p(최대 +20).',
+  localEvent: { blind_date: '드론 동호회의 만남 주선', proposal: '함께 날 미래 이야기', baby_news: '우리 집 작은 비행사 소식' } as Record<string, string>,
+  localDesc: '드론을 접고 함께 날 미래를 이야기해요. 다음 카드에서 마음을 정할 수 있어요.',
+  visit: (map: string, place: string) => `${map} · ${josa(place, '으로/로')} 이동`,
+  visitDesc: (reason: string, fare: number) => `${reason} 이번 계절의 룰렛 대신 바로 이동한다. 교통비 ${fare}만원.`,
+  visitReasons: { date: '드론 산책 모임에서 인연을 만나 보세요.', wedding: '함께 날 약속을 할 때예요. 예식장 거리에 결혼식이 열려 있어요.', baby: '작은 비행사를 맞이할 자리가 생겼어요. 종합 병원에서 가족 소식을 확인하세요.' },
+  date: '드론 산책 소개팅', dateDesc: '비용 30만원. 기본 45%, 평판 15마다 +1%p(최대 +20).',
   partner: '새로운 인연을 만났다.', missed: '서로의 다음 인연을 응원했다.',
   wedding: '결혼식을 올렸다.', weddingDesc: (cost: number, happy: number) => `비용 ${cost}만원 · 행복 +${happy}.`,
-  wait: '인연이 생긴 뒤 4계절이 지나야 합니다.', home: '결혼하려면 등급 2 이상의 집이 필요합니다.',
+  wait: '인연이 생긴 뒤 4계절이 지나야 합니다.', home: '전세 빌라 이상의 보금자리가 필요합니다. 부동산 칸에서 구할 수 있어요.',
   dual: ['가정 중심', '맞벌이'], dualDesc: ['연말 행복 +2 · 계절 회복 +3.', '계절 수입 +80부터.'],
   dualDone: '부부의 생활 방식을 정했다.', baby: '아이 맞이하기', babyDone: '새 식구를 맞이했다.',
   babyDesc: '비용 150만원 · 행복 +30.', married: '기혼일 때 가능합니다.',
@@ -260,7 +268,7 @@ export const ASSET_TEXT = {
   shop: (cost: number, income: number) => `${cost}만원. 이번 계절 수입 ${income}만원.`,
   capacity: '가게는 최대 4곳까지 보유할 수 있습니다.', level: '이미 최대 3단계입니다.',
   deposit: (n: number) => `펀드에 ${n}만원 넣기`, withdraw: (n: number) => `펀드에서 ${n}만원 빼기`,
-  kind: (name: string) => `${name}으로 변경`, deposited: '펀드에 돈을 넣었다.', withdrawn: '펀드에서 돈을 뺐다.', changed: '펀드 유형을 바꾸었다.',
+  kind: (name: string) => `${josa(name, '으로/로')} 변경`, deposited: '펀드에 돈을 넣었다.', withdrawn: '펀드에서 돈을 뺐다.', changed: '펀드 유형을 바꾸었다.',
   fundFee: (fee: number) => `수수료 ${fee}만원.`, fundShort: '펀드 잔액이 부족합니다.',
   fundYear: (name: string, delta: number) => `${name} 연말 수익 ${delta}만원.`,
   shortcut: (name: string) => `${name} 칸으로 지름길`, shortcutDone: '지름길로 이동했다.',

@@ -46,7 +46,7 @@ export function board(state: GameState, position = state.board.pos): HTMLElement
     tile.style.gridRow = String(cell.row);
     tile.title = `${PLACES[node.place].name} · ${label}`;
     tile.setAttribute('aria-label', tile.title);
-    tile.append(tileIcon(node.kind), el('span', 'life2-tile-label', label));
+    tile.append(tileIcon(node.kind, node.place), el('span', 'life2-tile-label', label));
     if (node.id === current.id) {
       tile.setAttribute('aria-current', 'location');
       const pawn = svg('svg', { viewBox: '0 0 20 24', class: 'life2-pawn', role: 'img', 'aria-label': '내 위치' });

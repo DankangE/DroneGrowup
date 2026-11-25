@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { choose, derived, forecast, newGame, options } from '../src/life/engine.ts';
+import { choose, derived, forecast, newGame, options } from '../src/life/flow.ts';
 import { EVENT_KEYS } from '../src/life/events-a.ts';
 import type { GameState } from '../src/life/types.ts';
 import { WORLD } from '../src/life/world.ts';
@@ -62,7 +62,7 @@ test('F3: a successful engine promotion mounts the fullscreen rank card with the
     const rankPages = Number(action(root, 'popup-text-next')?.textContent.split(' / ')[1] ?? 1);
     for (let i = 1; i < rankPages; i++) { action(root, 'popup-text-next').fire('click'); rankText += textOf(panelAt(root)); }
     assert.match(rankText, /알바 → 정직원/); assert.deepEqual(api.state(), expected.state);
-    action(root, 'popup-close').fire('click'); assert.equal(panelAt(root).dataset.popup, 'bonus');
+    dismissPresentations(root); assert.notEqual(panelAt(root)?.dataset.popup, 'bonus');
     assert.deepEqual(api.state(), expected.state);
   });
 });
@@ -135,7 +135,7 @@ for (const id of ['go:A-o12', 'spin']) test(`F3: no-choice luck after ${id} show
   state.board.pos = id === 'spin' ? 'A-o8' : 'A-o11';
   state.board.step = id === 'spin' ? 'spin' : 'pick'; state.board.dice = id === 'spin' ? [] : [1, 1];
   const expected = choose(state, id); assert.ok(expected.result.luck);
-  assert.equal(expected.state.board.step, 'bonus');
+  assert.equal(expected.state.board.step, 'spin'); assert.equal(expected.state.turn, state.turn + 1);
   inApp(state, (root, api) => {
     if (id === 'spin') root.querySelector('.life2-wheel')!.fire('click'); else pick(root, id);
     assert.equal(panelAt(root).dataset.popup, 'luck');
@@ -143,8 +143,7 @@ for (const id of ['go:A-o12', 'spin']) test(`F3: no-choice luck after ${id} show
     assert.match(textOf(root), new RegExp(expected.result.luck!.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.deepEqual(api.state(), expected.state);
     action(root, 'popup-close').fire('click');
-    if (expected.result.upkeep) { assert.equal(panelAt(root).dataset.popup, 'result'); action(root, 'popup-close').fire('click'); }
-    assert.equal(panelAt(root).dataset.popup, 'bonus');
+    assert.equal(panelAt(root), undefined);
     assert.deepEqual(api.state(), expected.state);
   });
 });
@@ -232,8 +231,8 @@ function withSheetBoxes(run: (boxes: { hudBottom: number; bottomTop: number; paw
       if (node.matches('[aria-current=location]')) return { top: boxes.pawnTop, bottom: boxes.pawnBottom };
       if (node.matches('.life2-hud')) return { top: 6, bottom: boxes.hudBottom };
       if (node.matches('.life2-bottom')) return { top: boxes.bottomTop, bottom: boxes.bottomTop + 44 };
-      const top = Number.parseFloat(css.get('top') ?? '320');
-      return { top, bottom: top + boxes.height, height: boxes.height };
+      const top = Number.parseFloat(css.get('top') ?? '320'), height = Number.parseFloat(css.get('height') ?? String(boxes.height));
+      return { top, bottom: top + height, height };
     } });
     return node;
   };
@@ -269,9 +268,9 @@ test('F3: a three-choice start sheet clears the actual ninth row at 360x740, inc
   });
 });
 
-test('F3: sheet paging remeasures the available edges and keeps navigation clear when neither edge fits', () => {
+test('F3/F5: sheet paging remeasures both edges and shrinks to keep the pawn and navigation clear', () => {
   withSheetBoxes((boxes, styles) => {
-    const browser = { innerWidth: 360, matchMedia: () => ({ matches: true, addEventListener() {} }) } as unknown as Window;
+    const browser = { innerWidth: 360, innerHeight: 740, matchMedia: () => ({ matches: true, addEventListener() {} }) } as unknown as Window;
     inApp(newGame(1), root => {
       assert.equal(panelAt(root).dataset.dock, 'top');
       // Exactly six pixels on each side of the sheet is enough.
@@ -283,11 +282,12 @@ test('F3: sheet paging remeasures the available edges and keeps navigation clear
       action(root, 'popup-back').fire('click');
       assert.equal(panelAt(root).dataset.dock, 'bottom');
       assert.equal(styles.get(panelAt(root))!.get('top'), '320px');
-      // Neither side can hold a full sheet; it still ends 6px above the actual navigation.
+      // Neither side holds the original sheet: compact paging fits below the pawn.
       Object.assign(boxes, { pawnTop: 350, pawnBottom: 394, bottomTop: 700 });
       action(root, 'popup-details').fire('click');
       assert.equal(panelAt(root).dataset.dock, 'bottom');
-      assert.equal(styles.get(panelAt(root))!.get('top'), '334px');
+      assert.equal(styles.get(panelAt(root))!.get('top'), '400px');
+      assert.equal(styles.get(panelAt(root))!.get('height'), '294px');
     }, browser);
   });
 });

@@ -18,7 +18,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { choose, newGame, restore } from '../src/life/engine.ts';
+import { choose, newGame, restore } from '../src/life/flow.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // node_modules may be shared with another worktree; build artifacts belong to this one.

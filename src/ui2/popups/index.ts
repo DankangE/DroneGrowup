@@ -1,10 +1,11 @@
+import { tileIcon } from '../icons.ts';
 import { button, el } from '../../ui/dom.ts';
 import { jobPortrait, placeArt } from '../art.ts';
 import { COPY, PHONE_TABS, POPUP_RULES } from './data.ts';
 import type { LifeTab, PhoneTab } from './data.ts';
 import { choicePage, shortTitle, textPages } from './model.ts';
 import type { PopupModel } from './model.ts';
-import { placePopupSheet } from './presentation.ts';
+import { placePopupSheet, sheetSpace } from './presentation.ts';
 import { cardHero, displayRows, stageBanner } from './card-view.ts';
 import { itemPages, labelledRows } from './polish-model.ts';
 import { POLISH as P } from './polish-data.ts';
@@ -29,6 +30,9 @@ export type PopupActions = {
  */
 export function mountPopup(host: HTMLElement, initial: PopupModel, actions: PopupActions) {
   host.classList.add('life2-popup-host');
+  // Apply the popup shell geometry before measuring compact mode, so the first
+  // page and later pages use the same available space and choice page size.
+  const style = el('style', '', POPUP_STYLE + POLISH_STYLE); host.append(style);
   let model = initial, page = 0, copyPage = 0, detail: string[] | undefined, tab: PhoneTab = 'all';
   let lifeTab: LifeTab = 'ability', confirming: string | undefined, motionSkipped = false;
   const stopMotion = () => { if (!panel?.dataset.animating) return false; delete panel.dataset.animating; motionSkipped = true; return true; };
@@ -39,7 +43,9 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     closed = true; actions.navigation?.removeEventListener?.('keydown', handleKeys); host.replaceChildren(); previousFocus?.focus({ preventScroll: true }); actions.dismiss();
   }
   function render(focus = true) {
-    panel = el('section', 'life2-popup'); panel.dataset.popup = model.kind; panel.dataset.phase = model.phase;
+    const compact = !model.fullscreen && (sheetSpace(host) ?? Infinity) < 390;
+    panel = el('section', 'life2-popup');
+    if (compact) panel.dataset.compact = ''; panel.dataset.popup = model.kind; panel.dataset.phase = model.phase;
     panel.setAttribute('role', model.notification ? 'status' : 'dialog');
     panel.setAttribute('aria-label', model.title);
     if (model.fullscreen) panel.dataset.fullscreen = '';
@@ -69,9 +75,9 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
       ? [...(model.rows ?? []), ...labelledRows(model.lines)] : [...labelledRows(model.lines), ...(model.rows ?? [])];
     const rowPages = itemPages(rows.flatMap(row => textPages([row.value], P.rowLimit)
       .map(value => ({ ...row, value }))), row => row.label.length + row.value.length,
-      card ? 150 : model.roll ? 70 : P.rowLimit, model.roll ? 1 : card && !reading ? 2 : P.rowCount);
+      card ? 150 : model.roll ? 70 : P.rowLimit, model.roll || compact ? 1 : card && !reading ? 2 : P.rowCount);
     const pages = structured ? rowPages : textPages(confirming ? [confirming === 'quit' ? COPY.quitQuestion : P.retireQuestion]
-      : detail ?? model.lines, model.notification || (reading && model.roll) ? POPUP_RULES.resultPage
+      : detail ?? model.lines, compact ? reading || detail || confirming ? 90 : 24 : model.notification || (reading && model.roll) ? POPUP_RULES.resultPage
         : reading || detail ? POPUP_RULES.readingPage : P.choiceTextPage);
     copyPage = Math.min(copyPage, pages.length - 1);
     if (!detail && !confirming) {
@@ -79,7 +85,8 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
         const wheel = el('output', '', String(model.roll.value)); wheel.dataset.resultWheel = '';
         wheel.setAttribute('aria-label', `${model.roll.success ? COPY.success : COPY.fail} · ${COPY.roll(model.roll.value, model.roll.chance)}`);
         copy.append(wheel);
-      } else if (!reading && !card) copy.append(model.track && ['job', 'review'].includes(model.kind)
+      } else if (model.kind === 'luck') copy.append(tileIcon('luck'));
+      else if (!reading && !card) copy.append(model.track && ['job', 'review'].includes(model.kind)
         ? jobPortrait(model.track) : placeArt(model.place));
     }
     if (structured) copy.append(displayRows(rowPages[copyPage]));
@@ -102,7 +109,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     } else if (detail) {
       footer.append(button(COPY.back, '', () => { detail = undefined; copyPage = 0; render(); }, 'popup-back'));
     } else if (!model.notification) {
-      const choices = choicePage(model.choices, page); page = choices.page;
+      const choices = choicePage(model.choices, page, compact ? 1 : POPUP_RULES.pageSize); page = choices.page;
       const list = el('div', 'life2-popup-list');
       for (const option of choices.items) {
         const row = el('div', 'life2-popup-row');
@@ -156,7 +163,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     }
     if (!model.notification) panel.append(footer);
     panel.addEventListener('keydown', handleKeys);
-    host.replaceChildren(el('style', '', POPUP_STYLE + POLISH_STYLE), panel);
+    host.replaceChildren(style, panel);
     placePopupSheet(host, panel);
     if (focus && !model.notification) (panel.querySelector('h2') ?? panel.querySelector('button'))?.focus({ preventScroll: true });
   }

@@ -20,7 +20,8 @@ export function endingModel(state: GameState, summary: EndingSummary = {}) {
   const ending = ENDINGS2.find(row => row.id === state.ending);
   const details = { ...settlementSummary(state), feats: featLabels(state), ...summary };
   return { id: state.ending, title: ending?.title ?? state.ending ?? E.unknown, ending,
-    lines: [E.score(state.score), E.grade(details.grade), E.feats(details.featScore),
+    lines: [E.score(state.score), E.grade(details.grade),
+      E.composition(details.composition.wealth, details.composition.happiness, details.composition.achievements), E.scoreRule, E.feats(details.featScore),
       ...(ending ? [ending.text] : []), ...chapterLines(state, details)] };
 }
 

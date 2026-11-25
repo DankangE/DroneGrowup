@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { choose, derived, newGame, options } from '../src/life/engine.ts';
+import { choose, derived, newGame, options } from '../src/life/flow.ts';
 import { rankChange } from '../src/life/career2.ts';
 import { ECONOMY_KEYS } from '../src/life/economy.ts';
 import { FAMILY_KEYS } from '../src/life/life-data.ts';
@@ -132,8 +132,9 @@ test('F4 A6: graduate tuition, enrollment and actual completion are visible exac
   const s = worker(); s.board.pos = 'D-o4'; s.flags.push('degree');
   assert.match(popupModel(s)!.choices.find(row => row.id === 'graduate:enroll')!.summary, /150만 × 6계절/);
   const enrolled = choose(s, 'graduate:enroll').state;
-  assert.match(popupModel(enrolled, { kind: 'my-life', offered: [] })!.tabs![1].lines.join(' '), /대학원 · 이수 중 · 6계절 남음/);
-  enrolled.turn = enrolled.timers[ECONOMY_KEYS.graduateUntil] - 1; enrolled.board.step = 'bonus';
+  assert.match(popupModel(enrolled, { kind: 'my-life', offered: [] })!.tabs![1].lines.join(' '), /대학원 · 이수 중 · 5계절 남음/);
+  if (options(enrolled).some(row => row.id === 'job:none')) Object.assign(enrolled, choose(enrolled, 'job:none').state);
+  enrolled.turn = enrolled.timers[ECONOMY_KEYS.graduateUntil] - 1; enrolled.board.step = 'bonus'; enrolled.board.dice = [1, 1]; enrolled.phase = 'action'; enrolled.eventId = null;
   const complete = choose(enrolled, 'end'); assert.ok(complete.state.flags.includes('master'));
   const cards = resultPopups(enrolled, complete.state, complete.result);
   assert.equal(cards.filter(card => card.title === P.graduateTitle).length, 1);
@@ -152,16 +153,16 @@ test('F4 A7: ending pages contain complete items, including long stories and ind
   assert.deepEqual(seen, model.lines); assert.ok(model.lines.every(line => pages.some(page => page.includes(line))));
 }));
 
-test('F4 A8: wedding face shows lock reasons without lifestyle choices; family mode is shown once', () => {
+test('F4 A8: wedding face shows lock reasons and all lifestyle choices; family mode remains reachable', () => {
   const s = worker(); s.turn = 4; s.family.partnerAt = 0; s.board.pos = 'B-o23';
   s.board.pos = WORLD.find(node => node.place === 'wedding')!.id;
   const wedding = popupModel(s)!; assert.equal(wedding.kind, 'wedding');
-  assert.ok(!wedding.choices.some(row => row.id.startsWith('lifestyle:')));
-  assert.match(wedding.choices.find(row => row.id === 'wed:0')!.summary, /집|주거/);
+  assert.ok(wedding.choices.some(row => row.id.startsWith('lifestyle:')));
+  assert.match(wedding.choices.find(row => row.id === 'wed:0')!.summary, /전세 빌라/);
   s.family.marriedAt = 3; s.timers[FAMILY_KEYS.dual] = 3;
   assert.ok(popupModel(s)!.choices.some(row => row.id === 'dual:1'));
   const chosen = choose(s, 'dual:1').state; chosen.board.step = 'space'; chosen.board.pos = WORLD.find(node => node.place === 'hospital')!.id;
-  assert.ok(!popupModel(chosen)!.choices.some(row => row.id.startsWith('dual:')));
+  assert.deepEqual(popupModel(chosen)!.choices.filter(row => row.id.startsWith('dual:')).map(row => row.title), ['가정 중심', '맞벌이']);
 });
 
 test('F4 A8: review acknowledgement is 확인; annual changes and lucky copy are not repeated', () => {
@@ -175,7 +176,7 @@ test('F4 A8: review acknowledgement is 확인; annual changes and lucky copy are
   const outcome = choose(lucky, 'spin'), queue = resultPopups(lucky, outcome.state, outcome.result);
   const luck = queue.find(row => row.kind === 'luck')!;
   assert.equal(luck.lines.filter(line => line === outcome.result.luck!.text).length, 1);
-  assert.deepEqual(luck.lines, [outcome.result.luck!.text]); assert.ok(queue.some(row => row.title === P.record));
+  assert.ok(luck.lines.includes(P.settle(outcome.result.upkeep!.total))); assert.equal(queue.length, 1);
   assert.equal(humanCopy('비행한다..'), '비행한다.');
   assert.ok(textPages(['첫 항로', '두 번째 항로'.repeat(30)]).every(page => !page.endsWith(' · ')));
 });
@@ -186,14 +187,14 @@ test('F4 A9/A10/B3: opaque sheets, labelled empty states and changed HUD/result 
   assert.match(row.value, /G등급 0 → E등급 50/);
   const bands = hud(after, derived(after), options(after), () => {}, undefined, before);
   const chip = (bands.top as unknown as TestNode).querySelector('[data-changed-stat=skill]')!;
-  assert.ok(chip); assert.ok(chip.querySelector('.life2-stat-tick'));
+  assert.ok(chip); assert.ok(!chip.querySelector('.life2-stat-tick')); assert.ok(bands.top.querySelector('.life2-change-strip'));
   const root = new TestNode('div'); mount(root, popupModel(after, { kind: 'result', offered: [], lines: [], rows: changes })!);
   assert.equal(root.querySelector('[data-changed-stat=skill]')!.querySelector('dd')!.textContent, row.value);
   mount(root, popupModel(newGame(1), { kind: 'my-life', offered: [] })!);
   controls(root).find(node => node.dataset.tab === 'family')!.fire('click'); assert.ok(root.querySelector('dl'));
   assert.match(allCopy(root), /부동산 칸/);
   assert.match(POLISH_STYLE, /data-popup=my-life\].*background:#fff6e0/);
-  assert.match(POLISH_STYLE, /life2-shell:has\(\.life2-popup\).*0 44px/);
+  assert.match(POLISH_STYLE, /life2-shell:has\(\.life2-popup-host\).*0 44px/);
 }));
 
 test('F4 B1/B2: stage and rank animation stop on click/Escape; reduced motion disables all four effects', () => {

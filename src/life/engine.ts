@@ -16,9 +16,9 @@ import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromo
   contestPrize, creatorIncome, entryRank, performance, review, specialistChoices, startingAction } from './jobs.ts';
 import { applyHomeChoice, homeRecovery, yearEndHome } from './home.ts';
 import type { EstateOffer } from './home.ts';
-import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery } from './family.ts';
+import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery, familyVisit } from './family.ts';
 import { CREATOR_VIDEO, JOB_RULES, SPECIAL_RULES as S, SPECIAL_TEXT as ST, TRACKS, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
-import { BOARD_CHOICES, CAREER_ACTIONS, ENDING_KEYS, ENDING_RULES, ENDING_TEXT, FAMILY_RULES, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
+import { BOARD_CHOICES, CAREER_ACTIONS, ENDING_KEYS, ENDING_RULES, ENDING_TEXT, FAMILY_RULES, FAMILY_TEXT, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT, WEDDINGS } from './life-data.ts';
 import { answer, childFor, EVENTS_A, EVENT_KEYS as EK, EVENT_RULES as ER, EVENT_TEXT as ET,
   familyEventEffect, materialize } from './events-a.ts';
@@ -243,7 +243,15 @@ function view(state: GameState, id: string, r: Resolved): OptionView {
   return option;
 }
 
-function resolve(state: GameState): Map<string, Resolved> {
+/** A local invitation retains the existing event's requirements, costs and opt-out. */
+function localFamilyEvents(state: GameState) {
+  const node = nodeAt(state);
+  if (state.phase !== 'action' || state.board.step !== 'space' || node.map !== FAMILY_RULES.localMap
+    || !(node.kind === 'start' || node.kind === 'life' && node.place === FAMILY_RULES.localPlace)) return [];
+  return EVENTS_A.filter(event => FAMILY_RULES.localEvents.includes(event.id) && event.eligible?.(state));
+}
+
+function resolve(state: GameState, interactive = false): Map<string, Resolved> {
   const choices = new Map<string, Resolved>();
   if (state.phase === 'ended') return choices;
   const node = nodeAt(state);
@@ -296,6 +304,10 @@ function resolve(state: GameState): Map<string, Resolved> {
     choices.set('skip', { kind: 'board', place: node.place, choice: BOARD_CHOICES.skip, flight: false,
       life, free: state.board.step === 'spin' }); return choices;
   }
+  for (const event of localFamilyEvents(state)) choices.set(`family:event:${event.id}`, {
+    kind: 'board', place: node.place, flight: false, free: true, life: true,
+    choice: { title: FAMILY_TEXT.localEvent[event.id], desc: FAMILY_TEXT.localDesc, effect: { text: FAMILY_TEXT.localDesc } },
+  });
   for (const { id, choice, locks } of specialistChoices(state)) {
     choices.set(id, { kind: 'action', place: node.place, choice, flight: false, jobLocks: locks });
   }
@@ -306,7 +318,11 @@ function resolve(state: GameState): Map<string, Resolved> {
   for (const { id, locks, ...service } of [...economyChoices(state), ...eventAssetChoices(state)]) {
     choices.set(id, { ...service, flight: false, jobLocks: locks });
   }
-  if (state.board.step === 'spin') board('spin', BOARD_CHOICES.spin);
+  if (state.board.step === 'spin') {
+    board('spin', BOARD_CHOICES.spin);
+    const visit = interactive ? familyVisit(state) : null;
+    if (visit) choices.set(visit.id, { kind: 'board', place: node.place, choice: visit.choice, flight: false });
+  }
   else if (state.board.step === 'pick') {
     for (const move of reachable(state)) {
       const place = BY_ID.get(move.node)!.place;
@@ -335,10 +351,10 @@ function resolve(state: GameState): Map<string, Resolved> {
   return choices;
 }
 
-export function options(state: GameState, menu: 'board' | 'phone' = 'board'): OptionView[] {
+export function options(state: GameState, menu: 'board' | 'phone' = 'board', interactive = false): OptionView[] {
   if (menu === 'phone') return phoneServices(state).map(({ id, locks, ...service }) =>
     view(state, id, { ...service, flight: false, jobLocks: locks }));
-  return [...resolve(state)].map(([id, r]) => view(state, id, r));
+  return [...resolve(state, interactive)].map(([id, r]) => view(state, id, r));
 }
 
 function phoneServices(state: GameState): ReturnType<typeof economyChoices> {
@@ -346,8 +362,8 @@ function phoneServices(state: GameState): ReturnType<typeof economyChoices> {
     ? [{ id: ENDING_RULES.earlyId, kind: 'action' as const, place: nodeAt(state).place, choice: ENDING_TEXT.early, free: true }] : [])];
 }
 
-function resolveOption(state: GameState, id: string, menu: 'board' | 'phone') {
-  let r = menu === 'board' ? resolve(state).get(id) : undefined;
+function resolveOption(state: GameState, id: string, menu: 'board' | 'phone', interactive = false) {
+  let r = menu === 'board' ? resolve(state, interactive).get(id) : undefined;
   if (!r) {
     const service = phoneServices(state).find(choice => choice.id === id);
     if (service) r = { ...service, flight: false, jobLocks: service.locks };
@@ -463,7 +479,7 @@ function land(state: GameState, result: Result): GameState {
   } else if (SETTLEMENT_KINDS.includes(node.kind)) {
     payLedger(state, result);
     result.notes.push(TEXT.settled);
-    if (!estateOffers(state).length) state.board.step = 'bonus';
+    if (!estateOffers(state).length && !localFamilyEvents(state).length) state.board.step = 'bonus';
   } else if (node.kind === 'rest') {
     const before = state.s.stamina;
     setStat(state, 'stamina', before + homeRecovery(state).rest);
@@ -550,7 +566,7 @@ function applyEffect(state: GameState, effect: Effect, add: StatMap): string | u
   return flag;
 }
 
-function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, runHooks: boolean, singleDie = false): { state: GameState; result: Result } {
+function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, runHooks: boolean, singleDie = false, automatic = false): { state: GameState; result: Result } {
   const history = state;
   state = recordAchievements(state);
   const before = { ...state.s }, success = branch === 'success', crashed = branch === 'crash';
@@ -633,6 +649,15 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   } else if (shortcut) {
     state.board.pos = shortcut.node;
     state = arrive(state, shortcut, result, history.board.pos);
+  } else if (v.id.startsWith('family:event:')) {
+    beginEvent(state, v.id.slice('family:event:'.length)); result.eventId = state.eventId!;
+  } else if (v.id.startsWith('family:go:')) {
+    // Consume the ordinary spin, then use this season's tile and bonus at the invited destination.
+    state = rollAssetDice(state);
+    const destination = v.id.slice('family:go:'.length), origin = state.board.pos;
+    state.board.pos = destination;
+    state = arrive(state, { node: destination, steps: 0, path: [destination], tolls: [S.expressFare],
+      fare: S.expressFare, via: origin, passed: { pay: [], start: [] } }, result, origin);
   } else if (v.id === 'spin') {
     state = rollAssetDice(state); state.board.step = 'pick';
     // T14 counterfactual: preserve RNG consumption, use only the first eye before auto-travel.
@@ -651,6 +676,12 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     delete state.timers[EK.kid];
   } else if (state.board.step === 'bonus') state = endSeason(state, result, runHooks);
   else state.board.step = 'bonus';
+  // Empty extra-action menus are an automatic close, never another confirmation.
+  // Resolve all pending family/job/event choices first; disabled activities cannot block a close.
+  if (automatic && state.phase === 'action' && state.board.step === 'bonus') {
+    const enabled = options(state).filter(option => option.enabled);
+    if (enabled.length === 1 && enabled[0].id === 'end') state = endSeason(state, result, runHooks);
+  }
   state = recordAchievements(state);
   result.statusTo = state.status; result.trackTo = state.track;
   const settlement = diff(afterOption, state.s);
@@ -661,8 +692,8 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   return { state, result };
 }
 
-export function choose(prev: GameState, optionId: string, menu: 'board' | 'phone' = 'board', singleDie = false): { state: GameState; result: Result } {
-  const { r, v } = resolveOption(prev, optionId, menu);
+export function choose(prev: GameState, optionId: string, menu: 'board' | 'phone' = 'board', singleDie = false, automatic = false): { state: GameState; result: Result } {
+  const { r, v } = resolveOption(prev, optionId, menu, automatic);
   if (!v.enabled) throw new Error(TEXT.disabled(optionId, v.locks));
   const state = structuredClone(prev);
   let branch: BranchId = 'sure', roll: Result['roll'];
@@ -672,20 +703,20 @@ export function choose(prev: GameState, optionId: string, menu: 'board' | 'phone
     branch = success ? 'success' : 'fail';
     if (!success && r.flight && randInt(state, LIFE_RULES.percent) < (v.roll.crashPct ?? 0)) branch = 'crash';
   }
-  const played = play(state, r, v, branch, true, singleDie);
+  const played = play(state, r, v, branch, true, singleDie, automatic);
   if (roll) played.result.roll = roll;
   return played;
 }
 
 /** Previews share the same branch executor; neither RNG nor hooks on the live run are touched. */
-export function forecast(prev: GameState, optionId: string, menu: 'board' | 'phone' = 'board'): Forecast {
-  const { r, v } = resolveOption(prev, optionId, menu);
+export function forecast(prev: GameState, optionId: string, menu: 'board' | 'phone' = 'board', automatic = false): Forecast {
+  const { r, v } = resolveOption(prev, optionId, menu, automatic);
   const ids: BranchId[] = v.roll ? ['success', 'fail'] : ['sure'];
   if (v.roll?.crashPct) ids.push('crash');
   const branches = ids.map((id): Forecast['branches'][number] => {
     const state = structuredClone(prev);
     state.s.money = Math.max(state.s.money, v.cost);
-    const { result } = play(state, r, v, id, false);
+    const { result } = play(state, r, v, id, false, false, automatic);
     return { id, deltas: result.deltas, endsSeason: !!result.season,
       ...(result.season && { accrual: result.season.accrual }), ...(result.flag && { flag: result.flag }),
       ...(result.statusTo !== result.statusFrom && { status: result.statusTo }),

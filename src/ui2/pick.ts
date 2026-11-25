@@ -9,7 +9,7 @@ export const destinationDetails = (move: Move): string =>
   `${move.steps}걸음${move.fare ? ` · 통행료 ${move.fare}만` : ''}${move.stop ? ' · 심사 정차' : ''}`;
 export function destinationName(move: Move, origin: string): string {
   const node = BY_ID.get(move.node)!;
-  return `${node.map !== BY_ID.get(origin)!.map ? `⇄ ${MAPS[node.map].name} · ` : ''}${PLACES[node.place].name}`;
+  return `${node.map !== BY_ID.get(origin)!.map ? `⇄ ${MAPS[node.map].name} · ` : ''}${node.kind === 'start' && node.map !== 'A' ? '출발 광장' : PLACES[node.place].name}`;
 }
 
 /** Never draw a line across unrelated maps; previews retain the engine's full path. */
