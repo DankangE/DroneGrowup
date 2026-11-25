@@ -12,12 +12,12 @@ import { applyAssetChoice, applyAssetMove, assetChoices, assetPopup, assetReacha
 import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, ECONOMY_TEXT,
   flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
-  jobChoices, performance, review, startingAction } from './jobs.ts';
+  contestPrize, creatorIncome, jobChoices, performance, review, specialistChoices, startingAction } from './jobs.ts';
 import { applyHomeChoice, estateOffers, homeRecovery, yearEndHome } from './home.ts';
 import type { EstateOffer } from './home.ts';
 import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery } from './family.ts';
-import { JOB_RULES, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
-import { BOARD_CHOICES, CAREER_ACTIONS, FAMILY_RULES, INITIAL_STATE, LIFE_RULES, SETTLEMENT_KINDS,
+import { CREATOR_VIDEO, JOB_RULES, SPECIAL_RULES as S, SPECIAL_TEXT as ST, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
+import { BOARD_CHOICES, CAREER_ACTIONS, FAMILY_RULES, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT } from './life-data.ts';
 import { randInt } from './move.ts';
 import type { Move } from './move.ts';
@@ -71,7 +71,12 @@ export function newGame(seed: number): GameState {
 export function derived(state: GameState): Derived {
   const age = ageAt(state.turn);
   const period = LIFE_RULES.periods.find(row => age <= row.maxAge) ?? LIFE_RULES.periods.at(-1)!;
-  return { ...economyView(withShopIncome(state)), age, season: seasonAt(state.turn),
+  const economy = economyView(withShopIncome(state)), advertising = creatorIncome(state);
+  if (advertising) {
+    economy.upkeep.lines.push({ label: ST.creatorIncome, amount: advertising });
+    economy.upkeep.total += advertising;
+  }
+  return { ...economy, age, season: seasonAt(state.turn),
     seasonName: LIFE_RULES.seasons[seasonAt(state.turn)], dateLabel: dateLabel(state.turn), period: period.name,
     remainingSeasons: Math.max(0, LIFE_RULES.maxTurns - state.turn),
     capStamina: Math.min(ageCap(state.turn), state.s.capStamina), familyAchievementPoints: familyAchievementPoints(state) };
@@ -129,9 +134,12 @@ function flightOdds(state: GameState, choice: Choice) {
     crashPct: clamp(crash, 0, LIFE_RULES.percent) };
 }
 
-function outcome(state: GameState, effect: Effect, flight = false): OutcomeView {
+function outcome(state: GameState, effect: Effect, flight = false, prize = false): OutcomeView {
   const add = { ...effect.add };
-  if (flight && add.money && add.money > 0) add.money = flightPay(state, add.money);
+  if (add.money && add.money > 0) {
+    if (prize) add.money = contestPrize(state, add.money);
+    else if (flight) add.money = flightPay(state.track === 'racer' ? { ...state, track: null } : state, add.money);
+  }
   return { text: effect.text, add,
     ...(effect.status && effect.status !== state.status && { status: effect.status }),
     ...(effect.track !== undefined && effect.track !== state.track && { track: effect.track }) };
@@ -159,7 +167,7 @@ function view(state: GameState, id: string, r: Resolved): OptionView {
     }
     if (flight) chance += flightOdds(state, choice).bonus;
     option.roll = { chance: clamp(chance, RULES.chanceMin, RULES.chanceMax), staminaPct,
-      success: outcome(state, choice.roll.success, flight),
+      success: outcome(state, choice.roll.success, flight, kind === 'event' && nodeAt(state).kind === 'contest'),
       fail: outcome(state, choice.roll.fail),
       ...(flight && { crashPct: flightOdds(state, choice).crashPct }) };
     if (id === 'promo') option.desc = CAREER_TEXT.promoDesc(promotionView(state).title, option.roll.chance);
@@ -189,6 +197,9 @@ function resolve(state: GameState): Map<string, Resolved> {
       jobLocks: locks, family: true, free: family.exclusive });
   }
   if (family.exclusive) return choices;
+  for (const { id, choice, locks } of specialistChoices(state)) {
+    choices.set(id, { kind: 'action', place: node.place, choice, flight: false, jobLocks: locks });
+  }
   for (const home of estateOffers(state)) {
     choices.set(home.id, { kind: 'action', place: node.place, choice: home.choice,
       flight: false, jobLocks: home.locked, home });
@@ -214,10 +225,12 @@ function resolve(state: GameState): Map<string, Resolved> {
   } else {
     const tile = state.board.step === 'space';
     // Match v1 SPACE_MENU: tile menus use kind + when; extras use the actual place + when.
-    for (const original of [...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, ...ACTIONS]) {
+    for (const original of [...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, CREATOR_VIDEO, ...ACTIONS]) {
+      const recording = original.id === S.videoId;
+      if (!(recording ? tile && node.kind === 'job'
+        : tile ? SPACE_MENU[node.kind]?.includes(original.id) : original.place === node.place)) continue;
       const action = startingAction(state, original, tile);
-      if (!(tile ? SPACE_MENU[node.kind]?.includes(action.id) : action.place === node.place)
-        || !met(state, action.when) || (!tile && state.s.stamina < (action.tire ?? 0))) continue;
+      if (!met(state, action.when) || (!tile && state.s.stamina < (action.tire ?? 0))) continue;
       if (SPACE_MENU.rankup?.includes(action.id) && (!tile || canPromote(state))) continue;
       choices.set(`act:${action.id}`, { kind: action.flight ? 'job' : 'action', place: action.place,
         choice: tile ? { ...action, tire: 0 } : action, flight: !!action.flight });
@@ -262,6 +275,8 @@ function payLedger(state: GameState, result: Result) {
 function endSeason(state: GameState, result: Result, runHooks: boolean): GameState {
   const from = dateLabel(state.turn), { upkeep } = derived(state);
   state = accrue(withShopIncome(state), false);
+  const advertising = creatorIncome(state);
+  if (advertising) state.board.ledger[ST.creatorIncome] = (state.board.ledger[ST.creatorIncome] ?? 0) + advertising;
   if (state.status === 'working' && state.track === 'academy') {
     const a = RULES.academy, seated = Math.min(state.s.students, a.baseSeats + state.s.staff * a.seatsPerStaff);
     setStat(state, 'students', seated - Math.max(1, Math.floor(seated / a.leaveDiv)));
@@ -305,7 +320,8 @@ function endSeason(state: GameState, result: Result, runHooks: boolean): GameSta
 }
 
 function pickEvent(state: GameState, contest: boolean) {
-  const available = EVENTS.filter(event => met(state, event.when)
+  const available = EVENTS.filter(event => (met(state, event.when)
+    || (contest && state.status === 'working' && state.track === 'racer' && event.id === S.racerContest))
     && (state.seen[event.id] === undefined || state.turn - state.seen[event.id] >= LIFE_RULES.eventCooldown));
   const themed = contest ? available.filter(event => CONTEST_EVENTS.includes(event.id)) : [];
   const pool = themed.length ? themed : available;
@@ -372,6 +388,18 @@ function arrive(state: GameState, move: Move, result: Result): GameState {
   return state;
 }
 
+/** Express travel lands on a start tile: settle once, then use only the destination's bonus slot. */
+function express(state: GameState, destination: string, result: Result): GameState {
+  const origin = state.board.pos, node = BY_ID.get(destination)!;
+  state.board.pos = destination;
+  state.board.visited |= 1 << MAP_IDS.indexOf(node.map);
+  if (node.map === S.map) state.flags = state.flags.filter(flag => flag !== S.invite);
+  state = arrive(state, { node: destination, steps: 0, path: [destination], tolls: [S.expressFare],
+    fare: S.expressFare, via: origin, passed: { pay: [], start: [destination] } }, result);
+  state.board.step = 'bonus';
+  return state;
+}
+
 function applyEffect(state: GameState, effect: Effect, add: StatMap): string | undefined {
   for (const [stat, value] of entries(add)) setStat(state, stat, state.s[stat] + value);
   for (const [stat, value] of entries(effect.set)) setStat(state, stat, value);
@@ -412,6 +440,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   const flag = applyEffect(state, job ? { ...effect, status: undefined, track: undefined } : effect, outcome.add);
   if (job) state = applyJobChoice(state, v.id, branch === 'sure' || success);
   else if (v.id.startsWith('act:')) {
+    if (v.id === `act:${S.videoId}` && success) randInt(state, S.fanMax - S.fanMin + 1);
     if (state.board.step === 'space' && nodeAt(state).kind === 'job') {
       state = performance(state, branch === 'sure' || success ? 'workSuccess' : 'workFailure');
     } else if (state.board.step === 'bonus' && CAREER_ACTIONS.includes(v.id.slice('act:'.length))) {
@@ -438,6 +467,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     if (moves.length === 1) state = travel(state, moves[0].node, result);
     else if (!moves.length) state = land(state, result);
   } else if (v.id.startsWith('go:')) state = travel(state, v.id.slice('go:'.length), result);
+  else if (v.id.startsWith('express:')) state = express(state, v.id.slice('express:'.length), result);
   else if (state.phase === 'event') {
     if (nodeAt(state).kind === 'contest' && success) {
       state.board.contests++;

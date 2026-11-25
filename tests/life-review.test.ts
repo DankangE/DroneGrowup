@@ -323,7 +323,8 @@ test('year-end review runs at the winter/spring boundary only and is idempotent'
 });
 
 for (const [track, rank, stats] of [
-  ['pilot', 2, { rep: 105, flights: 80 }], ['creator', 2, { fans: 300 }],
+  // 310 fans retain the gold threshold (300) after T10's annual 3% loss.
+  ['pilot', 2, { rep: 105, flights: 80 }], ['creator', 2, { fans: 310 }],
   ['racer', 1, { skill: 330 }], ['solo', 1, { contracts: 6, rep: 105 }],
   ['company', 1, { round: 1 }], ['academy', 1, { students: 16 }], ['director', 1, { support: 60 }],
 ] as const) {
@@ -342,8 +343,9 @@ for (const [track, rank, stats] of [
 
 test('independent careers clear the grace warning on recovery regardless of performance', () => {
   let state = worker('creator', 2, { fans: 299 }); state = yearEndReview(state);
-  assert.equal(state.job.warn, 1); state.turn += 4; state.s.fans = 300; state.job.perf = 0;
-  assert.equal(yearEndReview(state).job.warn, 0);
+  assert.equal(state.job.warn, 1); state.turn += 4; state.s.fans = 310; state.job.perf = 0;
+  const recovered = yearEndReview(state);
+  assert.equal(recovered.job.warn, 0); assert.equal(recovered.job.rank, 2);
   const racer = worker('racer', 0, { wins: 999, skill: 330 });
   assert.equal(review(racer).outcome, 'normal'); assert.equal(yearEndReview(racer).job.rank, 0);
 });

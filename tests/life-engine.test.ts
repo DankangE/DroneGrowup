@@ -157,7 +157,7 @@ test('empty movement, jobfair and unimplemented tile kinds always offer a way fo
     const node = WORLD.find(node => node.kind === kind)!;
     const state = at(node.id);
     const exit = kind === 'jobfair' ? 'job:none' : 'skip';
-    if (['jobfair', 'shop', 'life', 'estate', 'biz', 'invest'].includes(kind)) {
+    if (['jobfair', 'shop', 'life', 'estate', 'biz', 'invest', 'station'].includes(kind)) {
       assert.ok(options(state).some(option => option.id === exit && option.enabled && !option.cost && !option.tire));
     } else assert.deepEqual(options(state).map(option => option.id), ['skip'], kind);
     const next = choose(state, exit).state;
@@ -423,7 +423,7 @@ function randomRun(seed: number, check: boolean): GameState {
     assert.ok(steps < 204 * 7, `seed ${seed}: stuck`);
     const offered = options(state), enabled = offered.filter(option => option.enabled);
     assert.ok(enabled.length > 0);
-    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|home:(rent|sell|move):[1-6]|home:buy:[3-6](:mortgage)?|biz:(buy|up|sell|check):[a-z_]+|fund:(in|out|kind):\d+|luck:(promote|wait|shortcut:[a-z]+)|date|wed:[0-2]|dual:[01]|baby|edu:[0-2]|gift:[0-2]|leisure:[a-z]+|skip|end)$/.test(option.id)));
+    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|promo|retire:(pension|rehire|switch)|(buy|sell):(drone|gear|car)|lifestyle:[0-3]|home:(rent|sell|move):[1-6]|home:buy:[3-6](:mortgage)?|biz:(buy|up|sell|check):[a-z_]+|fund:(in|out|kind):\d+|luck:(promote|wait|shortcut:[a-z]+)|graduate:enroll|express:[A-F]-o0|date|wed:[0-2]|dual:[01]|baby|edu:[0-2]|gift:[0-2]|leisure:[a-z]+|skip|end)$/.test(option.id)));
     const exits = enabled.filter(option => option.id === 'skip' || option.id === 'end' || option.id === 'job:none'
       || (option.id.startsWith('ev:') && !option.cost && !option.tire));
     if (state.board.step === 'spin' || state.board.step === 'pick') {
@@ -434,7 +434,7 @@ function randomRun(seed: number, check: boolean): GameState {
     const option = enabled[pick(enabled.length)], count = turns[state.turn];
     if (option.id === 'spin') count.spin++;
     else if (!option.free && (state.phase === 'event' || state.board.step === 'space')
-      && /^(act:|ev:|home:|lifestyle:|date$|wed:|dual:|baby$|leisure:|skip$)/.test(option.id)) count.tile++;
+      && /^(act:|ev:|home:|lifestyle:|graduate:|express:|date$|wed:|dual:|baby$|leisure:|skip$)/.test(option.id)) count.tile++;
     else if (state.board.step === 'bonus' && option.id.startsWith('act:')) count.extra++;
     assert.ok(count.spin <= 1 + count.again && count.tile <= 1 && count.extra <= 1);
     const before = check && seed <= 20 ? structuredClone(state) : null;
