@@ -67,7 +67,7 @@ test('review stops truncate travel, retain the dotted preview and do not animate
   const move = reachable(state, { canPromote: () => true }).find(move => move.node === 'D-o1')!;
   assert.equal(move.stop, 'B-o16');
   assert.deepEqual(movementFrames(state.board.pos, { move }), [{ phase: 'move', pos: 'B-o16', ms: 250 }]);
-  assert.equal(destinationDetails(move), '7걸음 · 통행료 0만 · 심사 정차');
+  assert.equal(destinationDetails(move), '7걸음 · 심사 정차');
   assert.equal(pathSegments(state.board.pos, move.path, 'B').length, 6);
 });
 

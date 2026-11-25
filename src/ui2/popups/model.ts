@@ -100,7 +100,8 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
   }
   // A caller supplying future option ids also supplies their previews, if available.
   // Never ask the current engine to resolve an id it does not know yet.
-  const visible = kind === 'result' ? [] : kind === 'phone' ? phoneChoices(offered, 'all') : offered;
+  const visible = kind === 'result' ? [] : kind === 'phone' ? phoneChoices(offered, 'all')
+    : [...offered].sort((a, b) => choiceOrder(a.id) - choiceOrder(b.id));
   const choices = visible.map(option => ({ ...choiceModel(option,
     context.previews?.[option.id] ?? (context.offered === undefined ? forecast(state, option.id) : undefined)),
     ...(context.destinations?.[option.id] && { destination: context.destinations[option.id] }) }));
@@ -109,6 +110,9 @@ export function popupModel(state: GameState, context: PopupContext = {}): PopupM
     ...(kind === 'my-life' && { tabs: lifeTabs(state, context.summary) }),
     ...(result?.roll && { roll: { ...result.roll } }) };
 }
+
+// Presentation order only: promotion first, quitting last, stable order for all other choices.
+const choiceOrder = (id: string) => id === 'promo' ? -1 : id === 'quit' ? 1 : 0;
 
 export function phoneChoices(offered: readonly OptionView[], tab: PhoneTab): OptionView[] {
   const category = (option: OptionView): PhoneTab | undefined => {

@@ -164,7 +164,7 @@ export const CAREER_ACTIONS = [...SPACE_MENU.job!, 'pi_assist', 'ac_teach', 'dir
 export const SETTLEMENT_KINDS: SpaceKind[] = ['pay', 'start'];
 
 export const BOARD_CHOICES: Record<'spin' | 'skip' | 'end', Choice> = {
-  spin: { title: '주사위 굴리기', desc: '두 주사위를 굴리고 갈 곳을 고른다.', effect: { text: '주사위를 굴렸다.' } },
+  spin: { title: '룰렛 돌리기', desc: '룰렛 두 개를 돌리고 갈 곳을 고른다.', effect: { text: '룰렛을 돌렸다.' } },
   skip: { title: '그냥 지나간다', desc: '이번 칸의 행동을 건너뛴다.', effect: { text: '이번 칸을 그냥 지나갔다.' } },
   end: { title: '계절 마치기', desc: '이번 계절을 마무리한다.', effect: { text: '이번 계절을 마무리했다.' } },
 };
