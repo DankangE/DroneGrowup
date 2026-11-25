@@ -275,7 +275,7 @@ export function showRankCard(root: HTMLElement, change: RankChange, onContinue: 
     if (r.locks.length) target.append(el('small', 'lock-reasons', r.locks[0]));
     return target;
   });
-  else sheet.body.append(el('p', '', '50세 은퇴까지 이 자리를 지킨다'));
+  else sheet.body.append(el('p', '', to.ending ? '커리어 완성 · 인생 결산으로' : '50세 은퇴까지 이 자리를 지킨다'));
   sheet.body.append(button('계속', 'primary', () => { sheet.close(); onContinue(); }, 'continue'));
   sheet.open();
 }

@@ -8,6 +8,11 @@ import type { Effect, GameState, PlaceId, Stat } from './types.ts';
 import { careerRank, type CareerRank } from './rank.ts';
 export { careerRank, type CareerRank } from './rank.ts';
 
+/** Direct wins end on the action. Retirement and debt settlement reset the board to spin. */
+export function endedRank(state: GameState): CareerRank {
+  return careerRank(state, state.board.step === 'spin' ? null : state.ending);
+}
+
 export type GradeLetter = (typeof GRADES)[number];
 export type Grade = {
   letter: GradeLetter;
@@ -117,8 +122,7 @@ export type RankChange = {
 /** What changed between the states before and after one choice; null while the rung is the same. */
 export function rankChange(before: GameState, after: GameState): RankChange | null {
   const from = careerRank(before);
-  // A direct career win ends on the action. Season settlement resets the board to spin.
-  const to = careerRank(after, after.board.step === 'spin' ? null : after.ending);
+  const to = endedRank(after);
   if (from.stage === to.stage && from.level === to.level) return null;
   const old = careerPerks(before);
   const perks = careerPerks(after).map((perk, i) => ({ ...perk, gain: perk.value - old[i].value }));

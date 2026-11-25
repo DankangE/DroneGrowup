@@ -97,10 +97,9 @@ export function pick(policy: Policy, state: GameState, rand: () => number): stri
   const allowed = (o: OptionView) => o.kind !== 'board' &&
     (!(o.sure?.stage || o.roll?.success.stage || o.roll?.success.end) || policy.goals.includes(o.id));
   const candidates = turn.filter(allowed);
-  // Reconsider the goal at the landing's waived cost, including any training available here.
-  const waivedGoal = goal && localGoal?.enabled && localGoal.tire < goal.tire ? localGoal : undefined;
-  const trainer = waivedGoal && chanceTrainer(policy, state, waivedGoal, candidates);
-  const readyGoal = trainer ? undefined : waivedGoal;
+  // Use the goal's actual local cost and odds on both landings and bonus actions.
+  const trainer = localGoal?.enabled ? chanceTrainer(policy, state, localGoal, candidates) : undefined;
+  const readyGoal = localGoal?.enabled && !trainer ? localGoal : undefined;
   // Compare progress toward each outstanding requirement. An airfield visit can build skill
   // while theory is still missing, even when the planner's preferred classroom is elsewhere.
   const needs = (goal?.missing ?? []).filter(m => m.stat !== 'stamina' && m.stat !== 'money');
@@ -124,7 +123,7 @@ function onlyNeedsStamina(o: OptionView) {
 }
 
 function chanceTrainer(policy: Policy, state: GameState, goal: OptionView, choices: OptionView[]) {
-  if (!goal.roll || goal.roll.chance >= policy.minChance) return;
+  if (RULES.maxTurns - state.turn <= 10 || !goal.roll || goal.roll.chance >= policy.minChance) return;
   const mod = ACTIONS.find(a => a.id === goal.id)?.roll?.mods?.[0];
   if (mod && state.s[mod.stat] < mod.over + (mod.per * mod.cap) / mod.pct) {
     return best(choices.filter(o => o.id !== goal.id && ev(o, mod.stat) > 0), o => ev(o, mod.stat));
@@ -152,10 +151,7 @@ function plannedPick(policy: Policy, state: GameState, opts: OptionView[]): stri
   /** Works towards an option: plays it when it is ready, otherwise goes after what it still lacks. */
   const pursue = (o: OptionView, depth: number): string | null => {
     if (onlyNeedsStamina(o)) return 'end';
-    if (o.enabled) {
-      if (RULES.maxTurns - state.turn > 10) return chanceTrainer(policy, state, o, turn)?.id ?? o.id;
-      return o.id;
-    }
+    if (o.enabled) return chanceTrainer(policy, state, o, turn)?.id ?? o.id;
     const lack = o.missing[0];
     if (!lack || depth > 3) return null;
     if (lack.stat === 'stamina') return 'end';

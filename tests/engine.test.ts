@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
-import { nextRanks, rankChange } from '../src/game/career.ts';
+import { careerRank, endedRank, nextRanks, rankChange } from '../src/game/career.ts';
 import { ACTIONS, BOARD, BOARD_PLACES, CONTEST_EVENTS, SPACE_MENU, ENDINGS, EVENTS, PLACES, RULES, STAGES, STAT_MAX } from '../src/game/data.ts';
 import { actionViews, boardView, choose, creditLimit, dateLabel, derived, finalRank, forecast, newGame, options, restore, serverRun, staminaBand } from '../src/game/engine.ts';
 import type { GameState, Stage, StatMap } from '../src/game/types.ts';
@@ -199,6 +199,7 @@ test('three seasons of overdue debt including unpaid expenses close the ledger, 
     assert.equal(next.s.overdue, i);
   }
   assert.equal(next.ending, 'debtor');
+  assert.deepEqual(endedRank(next), careerRank(next));
   assert.equal(next.score, 0);
   assert.deepEqual(next.board.ledger, {});
 });
@@ -218,6 +219,7 @@ test('a run that reaches the last season ends with the ending of its career', ()
     assert.equal(state.turn, 120);
     assert.equal(derived(state).age, 50);
     assert.equal(state.ending, ending, stage);
+    assert.deepEqual(endedRank(state), careerRank(state), stage);
     assert.equal(options(state).length, 0);
     assert.ok(Number.isInteger(state.score) && state.score >= 0);
   }
@@ -229,6 +231,25 @@ test('a planner saves stamina before a tiring rolled bonus, even with its goal a
   assert.equal(pick(POLICIES.gambler, state, botRandom(1)), 'st_exam');
   space(state, 7);
   assert.equal(pick(POLICIES.ceo, state, botRandom(1)), 'st_exam');
+});
+
+test('a CEO planner picks a ready IPO over another investment on the bank bonus', () => {
+  const state = bonus(at('company', {
+    staff: 6, contracts: 12, round: 2, value: 32000, money: 5000, rep: 250, stamina: 100, drone: 3, gear: 2,
+  }));
+  assert.equal(option(state, 'co_ipo').roll!.chance, 80);
+  assert.ok(option(state, 'co_ir').enabled);
+  assert.equal(pick(POLICIES.ceo, state, botRandom(1)), 'co_ipo');
+});
+
+test('a pilot planner takes the stamina-free exam during the final ten turns', () => {
+  const state = space(at('student', { money: 600, theory: 90, skill: 90, stamina: 20 }), 7);
+  const exam = option(state, 'st_exam');
+  assert.ok(exam.enabled && exam.tire === 0 && exam.roll!.chance < POLICIES.pilot.minChance);
+  for (const remaining of [11, 10, 1]) {
+    state.turn = RULES.maxTurns - remaining;
+    assert.equal(pick(POLICIES.pilot, state, botRandom(1)), remaining > 10 ? 'st_theory' : 'st_exam');
+  }
 });
 
 test('a pilot planner trains on a rank-up landing when the exam is below its chance threshold', () => {
@@ -358,7 +379,10 @@ test('a career-winning action keeps its early score bonus and skips season settl
     if (!next.result.roll!.success) continue;
     assert.equal(next.result.ended, 'chairman');
     assert.equal(next.state.board.rankups, state.board.rankups + 1);
-    assert.deepEqual(rankChange(state, next.state)?.to, nextRanks(state).find(r => r.optionId === 'dir_chair')!.rank);
+    const standing = endedRank(next.state);
+    assert.deepEqual([standing.title, standing.level, standing.ending], ['파일럿 총협회장', 9, 'chairman']);
+    assert.deepEqual(rankChange(state, next.state)?.to, standing);
+    assert.deepEqual(standing, nextRanks(state).find(r => r.optionId === 'dir_chair')!.rank);
     assert.equal(next.state.turn, 18);
     assert.equal(next.result.season, undefined);
     assert.equal(next.result.upkeep?.total, 50);

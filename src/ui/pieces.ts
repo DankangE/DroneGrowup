@@ -1,4 +1,4 @@
-import { careerRank, grade } from '../game/career.ts';
+import { grade } from '../game/career.ts';
 import type { CareerRank, Requirement } from '../game/career.ts';
 import { STAT_LABEL } from '../game/data.ts';
 import { num } from '../game/engine.ts';
@@ -66,8 +66,7 @@ export function requirements(items: Requirement[], detailed = false) {
   return group;
 }
 
-export function rankLine(state: GameState) {
-  const rank = careerRank(state);
+export function rankLine(rank: CareerRank) {
   const line = el('div', 'rank-line');
   line.append(el('strong', '', rank.title), el('span', 'level', 'Lv ' + rank.level), stars(rank));
   return line;

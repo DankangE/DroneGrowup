@@ -1,4 +1,4 @@
-import { careerRank, GRADED_STATS } from '../game/career.ts';
+import { endedRank, GRADED_STATS } from '../game/career.ts';
 import { chibi, rankLine, standingGrades } from './pieces.ts';
 import { ENDINGS, RULES } from '../game/data.ts';
 import { derived, endingInfo, finalRank, num } from '../game/engine.ts';
@@ -108,13 +108,14 @@ export function galleryScreen(meta: Meta, onTitle: () => void) {
 export type EndingRecord = { firstTime: boolean; newBest: boolean };
 export function endingScreen(state: GameState, record: EndingRecord, onRetry: () => void, onGallery: () => void, onTitle: () => void) {
   const ending = endingInfo(state.ending!);
+  const standing = endedRank(state);
   const main = el('main','ending-screen frame');
   const story = el('section','ending-story');
   const badges = el('div','records');
   if (record.firstTime) badges.append(pill('book','새 엔딩'));
   if (record.newBest) badges.append(pill('star',`최고 기록 ${num(state.score)}점`));
   const portraits = el('div', 'ending-portraits');
-  portraits.append(portrait(endingPortrait(ending.id)), chibi(careerRank(state)));
+  portraits.append(portrait(endingPortrait(ending.id)), chibi(standing));
   story.append(portraits);
   if (badges.childElementCount) story.append(badges);
   story.append(el('h1','',ending.title), el('p','',ending.text));
@@ -153,7 +154,7 @@ export function endingScreen(state: GameState, record: EndingRecord, onRetry: ()
   const controls = el('div','ending-controls');
   controls.append(button('다시 하기','primary',onRetry,'retry'),button('엔딩 도감','secondary',onGallery,'gallery'),button('타이틀','secondary',onTitle,'title'));
   const details = el('div', 'run-facts');
-  details.append(rankLine(state), facts, standingGrades(state, GRADED_STATS));
+  details.append(rankLine(standing), facts, standingGrades(state, GRADED_STATS));
   const tabs = el('div', 'tabs ending-tabs');
   function select(showFacts: boolean) {
     summary.hidden = showFacts;

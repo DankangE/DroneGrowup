@@ -1,4 +1,4 @@
-import { GRADED_STATS, grade } from '../game/career.ts';
+import { careerRank, GRADED_STATS, grade } from '../game/career.ts';
 import { gradeBadge, rankLine } from './pieces.ts';
 import { previewWheel } from './wheel.ts';
 import { GRADE_STEPS, GRADES, PLACES, RULES, STAT_LABEL } from '../game/data.ts';
@@ -376,7 +376,7 @@ export function createPanel(state: GameState, choices: OptionView[], choose: (id
         }
         header.append(tabs);
         if (infoTab === 'stats') {
-          const summary = rankLine(state);
+          const summary = rankLine(careerRank(state));
           summary.append(button('타이틀', 'return-title', onTitle, 'title'));
           body.append(summary);
           const rows = GRADED_STATS.filter(stat => state.s[stat] || ['stamina','theory','skill'].includes(stat)).map(stat => {
