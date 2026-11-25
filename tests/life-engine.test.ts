@@ -7,6 +7,7 @@ import { choose, currentEvent, derived, forecast, HOOKS, lifeEvent, met, newGame
   yearEnd } from '../src/life/engine.ts';
 import { LIFE_RULES, SPACE_MENU, STATS } from '../src/life/life-data.ts';
 import { randInt, reachable, rollDice } from '../src/life/move.ts';
+import { JOB_RULES } from '../src/life/tracks.ts';
 import { WORLD } from '../src/life/world.ts';
 import type { GameState, StatMap, WorldNode } from '../src/life/types.ts';
 
@@ -57,8 +58,10 @@ test('newGame starts a complete integer v2 state at the actual map A start', () 
   assert.deepEqual(state.board.lapAt, { A: -1, B: -1, C: -1, D: -1, E: -1, F: -1 });
   assert.equal(state.board.visited, 1);
   assert.deepEqual(Object.keys(state.s).sort(), [...STATS].sort());
-  for (const [stat, value] of Object.entries(LIFE_RULES.start)) assert.equal(state.s[stat as keyof StatMap], value);
-  assert.deepEqual(options(state).map(option => option.id), ['spin']);
+  for (const [stat, value] of Object.entries({ ...LIFE_RULES.start, money: JOB_RULES.startMoney })) {
+    assert.equal(state.s[stat as keyof StatMap], value);
+  }
+  assert.deepEqual(options(state).map(option => option.id), ['start:school', 'start:work', 'start:self']);
   assert.deepEqual(restore(JSON.parse(JSON.stringify(state))), state);
   assert.equal(newGame(0).seed, 1); assert.equal(newGame(-1).seed, 4294967295);
   assert.equal(newGame(12.9).seed, 12); assert.equal(newGame(NaN).seed, 1);
@@ -123,7 +126,7 @@ test('yearEnd fires at turns 4..204 by 4; lifeEvent at 4..204 by 8, after winter
 test('spin delegates two dice to T02 and automatically travels only for a single destination', () => {
   const cases = new Set<number>();
   for (let seed = 1; seed <= 100; seed++) {
-    const state = newGame(seed), preview = structuredClone(state);
+    const state = choose(newGame(seed), 'start:school').state, preview = structuredClone(state);
     rollDice(preview); const moves = reachable(preview);
     const actual = choose(state, 'spin');
     assert.deepEqual(actual.state.board.dice, preview.board.dice);
@@ -141,9 +144,9 @@ test('spin delegates two dice to T02 and automatically travels only for a single
   assert.deepEqual([...cases].sort(), [1, 2]);
 });
 
-test('empty movement and unimplemented tile kinds always offer a way forward', () => {
+test('empty movement, jobfair and unimplemented tile kinds always offer a way forward', () => {
   withNode('A-o0', { next: [] }, () => {
-    const result = choose(newGame(3), 'spin');
+    const result = choose(choose(newGame(3), 'start:school').state, 'spin');
     assert.equal(result.state.board.pos, 'A-o0');
     assert.ok(options(result.state).length > 0);
     const picking = at('A-o0', 'pick');
@@ -153,8 +156,11 @@ test('empty movement and unimplemented tile kinds always offer a way forward', (
   for (const kind of ['rankup', 'jobfair', 'shop', 'estate', 'life', 'biz', 'luck', 'station', 'invest']) {
     const node = WORLD.find(node => node.kind === kind)!;
     const state = at(node.id);
-    assert.deepEqual(options(state).map(option => option.id), ['skip'], kind);
-    const next = choose(state, 'skip').state;
+    const exit = kind === 'jobfair' ? 'job:none' : 'skip';
+    if (kind === 'jobfair') {
+      assert.ok(options(state).some(option => option.id === exit && option.enabled && !option.cost && !option.tire));
+    } else assert.deepEqual(options(state).map(option => option.id), ['skip'], kind);
+    const next = choose(state, exit).state;
     assert.equal(next.board.step, 'bonus'); assert.ok(options(next).some(option => option.id === 'end'));
   }
 });
@@ -162,7 +168,8 @@ test('empty movement and unimplemented tile kinds always offer a way forward', (
 test('pay/start settlement on passing or arrival clears the ledger exactly once and tracks start visits', () => {
   for (const [origin, destination, steps] of [['A-o10', 'A-o11', 1], ['A-o27', 'A-o0', 1],
     ['A-o10', 'A-o12', 2], ['A-o27', 'A-o1', 2]] as const) {
-    const state = at(origin, 'pick'); state.board.dice = [steps, steps];
+    // Fix the accounting balance independently of the starting bankroll.
+    const state = at(origin, 'pick', { money: 60 }); state.board.dice = [steps, steps];
     state.board.ledger = { 급여: 95, 생활비: -25 };
     const { state: next, result } = choose(state, `go:${destination}`);
     assert.equal(next.s.money, 130); assert.deepEqual(next.board.ledger, {});
@@ -417,11 +424,11 @@ function randomRun(seed: number, check: boolean): GameState {
     assert.ok(steps < 204 * 5, `seed ${seed}: stuck`);
     const offered = options(state), enabled = offered.filter(option => option.enabled);
     assert.ok(enabled.length > 0);
-    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|skip|end)$/.test(option.id)));
-    const exits = enabled.filter(option => option.id === 'skip' || option.id === 'end'
+    assert.ok(offered.every(option => /^(spin|go:[A-F]-[a-z]\d+|act:[a-z0-9_]+|ev:\d+|start:(school|work|self)|job:[a-z]+|quit|skip|end)$/.test(option.id)));
+    const exits = enabled.filter(option => option.id === 'skip' || option.id === 'end' || option.id === 'job:none'
       || (option.id.startsWith('ev:') && !option.cost && !option.tire));
     if (state.board.step === 'spin' || state.board.step === 'pick') {
-      // Before landing, the free route forward is spin or a fare-free normal edge.
+      // Before landing, start/job choices also provide a free route to the first spin.
       assert.ok(enabled.some(option => !option.cost && !option.tire));
       if (state.board.step === 'pick') assert.ok(reachable(state).some(move => move.fare === 0));
     } else assert.ok(exits.length > 0, `seed ${seed}: no free popup exit`);
