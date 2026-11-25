@@ -9,7 +9,7 @@
 //                detail: { turns: 0..120, age: 20..50, netWorth, debt, wins, losses, flights, crashes } }
 // Nicknames come from the API and are untrusted: they only ever reach the DOM through textContent.
 import { RULES } from './game/data.ts';
-import { netWorth } from './game/engine.ts';
+import { netWorth, serverRun } from './game/engine.ts';
 import type { GameState } from './game/types.ts';
 import { adoptServerProgress, cleanProgress, localProgress, markSynced, mergeMeta, syncedAt, type Progress } from './save.ts';
 
@@ -188,7 +188,8 @@ async function flush() {
       lost = 'moved';
       return;
     }
-    const body: Progress = { run: sending.run, meta: mergeMeta(sending.meta, cleanProgress(cur.data).meta) };
+    // The server keeps only known run keys; the board travels packed inside `seen` (see serverRun).
+    const body: Progress = { run: sending.run && serverRun(sending.run), meta: mergeMeta(sending.meta, cleanProgress(cur.data).meta) };
     const stamp = Math.max(Date.now(), (Number(cur.progressAt) || 0) + 1);
     known = stamp;
     markSynced(stamp); // before the request: a reload while it is in flight must not mistake it for another device

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { POLICIES, botRandom, pick } from '../src/game/bots.ts';
 import { ACTIONS, BOARD, BOARD_PLACES, CONTEST_EVENTS, SPACE_MENU, ENDINGS, EVENTS, PLACES, RULES, STAGES, STAT_MAX } from '../src/game/data.ts';
-import { actionViews, boardView, choose, creditLimit, dateLabel, derived, finalRank, forecast, newGame, options, restore, staminaBand } from '../src/game/engine.ts';
+import { actionViews, boardView, choose, creditLimit, dateLabel, derived, finalRank, forecast, newGame, options, restore, serverRun, staminaBand } from '../src/game/engine.ts';
 import type { GameState, Stage, StatMap } from '../src/game/types.ts';
 
 /** A fresh run moved to a stage with some stats set, as plain data (the state is JSON all the way down). */
@@ -443,7 +443,7 @@ test('space waives tire, bonus offers only its place, and one bonus ends the sea
   assert.equal(second.result.deltas.stamina, -20);
   assert.equal(second.state.turn, 1);
   assert.equal(second.state.board.step, 'spin');
-  assert.equal(second.state.s.stamina, 30);
+  assert.equal(second.state.s.stamina, RULES.seasonRefill);
   assert.equal(second.state.s.acts, 0);
   assert.throws(() => choose(second.state, 'st_sim'), /not available/);
   first.state.s.stamina = 15;
@@ -457,8 +457,8 @@ test('rest landing and season refill apply separately and respect the cap', () =
   state.board.pos = 4;
   const next = choose(state, 'spin');
   assert.equal(next.result.restGain, 60);
-  assert.deepEqual(next.result.season, { from: dateLabel(0), to: dateLabel(1), refill: 30, accrual: [{ label: '생활비', amount: -25 }] });
-  assert.equal(next.state.s.stamina, 90);
+  assert.deepEqual(next.result.season, { from: dateLabel(0), to: dateLabel(1), refill: RULES.seasonRefill, accrual: [{ label: '생활비', amount: -25 }] });
+  assert.equal(next.state.s.stamina, 60 + RULES.seasonRefill);
   state.s.stamina = 85;
   assert.equal(choose(state, 'spin').result.restGain, 15);
 });
@@ -611,6 +611,39 @@ test('restore migrates a stripped board and sanitizes malformed board fields', (
   raw.board = { pos: 77, step: 'fork', left: -4, roll: 9, route: 2, contest: 'true', forks: -2, rankups: 2.5,
     contests: 3, ledger: { '급여': 10, '생활비': -1.5, '가짜': 200 } };
   assert.deepEqual(restore(raw)!.board, { ...newGame(1).board, contests: 3, ledger: { '급여': 10 } });
+});
+
+/** The NalidaGame hook's `cleanRun`: known keys only; `seen` keeps id-like keys with values clamped to 0..120. */
+function serverClean(run: GameState) {
+  const raw = JSON.parse(JSON.stringify(run));
+  const seen: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw.seen as Record<string, number>).slice(0, 200)) {
+    if (/^[A-Za-z0-9_.-]{1,40}$/.test(k)) seen[k] = Math.min(120, Math.max(0, Math.floor(v)));
+  }
+  const { v, seed, rng, turn, stage, phase, s, flags, eventId, log } = raw;
+  return { v, seed, rng, turn, stage, phase, s, flags, eventId, seen, ending: null, score: 0, log };
+}
+
+test('a cross-device load keeps the board, its unpaid ledger and achievements through the server cleaning', () => {
+  for (const policy of ['ceo', 'academy', 'random']) {
+    let state = newGame(11);
+    const rand = botRandom(5);
+    for (let i = 0; i < 400 && state.phase !== 'ended'; i++) {
+      state = choose(state, pick(POLICIES[policy], state, rand)).state;
+      if (i % 7 || state.phase === 'ended') continue;
+      const back = restore(serverClean(serverRun(state)))!;
+      assert.deepEqual(back.board, restore(JSON.parse(JSON.stringify(state)))!.board, `${policy} step ${i}`);
+      assert.deepEqual(back.seen, state.seen);
+    }
+  }
+  const state = newGame(4);
+  Object.assign(state.board, { pos: 3, step: 'fork', left: 4, roll: 5, forks: 237, contests: 101, rankups: 9,
+    ledger: { '직원 급여': -123456, '급여': 9_999_999, '생활비': -40 } });
+  const back = restore(serverClean(serverRun(state)))!;
+  assert.deepEqual(back.board, state.board);
+  assert.equal(finalRank(back).total, finalRank(state).total);
+  // A server copy saved before the packing simply starts a fresh board.
+  assert.deepEqual(restore(serverClean(state))!.board, newGame(4).board);
 });
 
 test('every step of 300 random runs offers an enabled non-free choice', () => {

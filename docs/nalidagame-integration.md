@@ -38,10 +38,17 @@ NalidaGame server side needs to register the game. Nothing has been changed in t
 
 ## Progress (`PUT /progress`, last write wins on `progressAt`)
 
-Variant C uses the existing progress API. The server's `cleanRun` copies only known keys, so a
-cross-device load drops `run.board`. The client’s `restore()` keeps the saved career, calendar and stats
-and supplies a fresh board at node 0, ready to spin, with an empty ledger and zero board achievements.
-Local saves include the board and can resume mid-move.
+Variant C uses the existing progress API with no new field. The server's `cleanRun` copies only known
+keys and would drop `run.board`, so before each upload the client (`serverRun` in `src/game/engine.ts`)
+also packs the board into `run.seen` under keys that start with `_b.`: position, steps left, route, roll,
+step, contest flag, the fork/contest/rank-up achievement counters and every unpaid ledger line. Each
+integer is split into base-100 digits (`_b.forks.0`, `_b.forks.1`, ..., plus `_b.<name>.neg` for a
+negative amount), so every value fits the existing `seen` rule (key `[A-Za-z0-9_.-]{1,40}`, value 0..120)
+and a board adds 10 to 40 keys in play (at most about 90 with every ledger line at its limit), which
+together with the 50-odd event ids stays under the 200-key cap. `restore()` rebuilds the board from those
+keys when `run.board` is missing, validates it like a local board and keeps only real event ids in
+`seen`. A server copy saved before this change has no `_b.` keys and still loads with a fresh board at
+node 0. Local saves include the board directly and can resume mid-move.
 
 ```jsonc
 {

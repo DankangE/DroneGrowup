@@ -649,6 +649,56 @@ function restoreBoard(raw: unknown): BoardState {
   return board;
 }
 
+// The NalidaGame progress hook keeps only known run keys, but it keeps every `seen` entry whose key matches
+// [A-Za-z0-9_.-]{1,40}, clamping the value to an integer in 0..120 (MAX_SEEN 200). The board rides along there
+// as base-100 digits under `_b.` keys, which can never be event ids. `restore` reads it back when `board` is missing.
+const PACK = '_b.';
+const STEPS: BoardState['step'][] = ['spin', 'fork', 'space', 'bonus'];
+const PACK_DIGITS = 6; // 100^6 covers the ledger bound restoreBoard accepts
+
+function packInt(out: Record<string, number>, name: string, value: number) {
+  if (value < 0) out[`${PACK}${name}.neg`] = 1;
+  let rest = Math.abs(value);
+  for (let i = 0; i === 0 || (rest > 0 && i < PACK_DIGITS); i++, rest = Math.floor(rest / 100)) out[`${PACK}${name}.${i}`] = rest % 100;
+}
+
+function unpackInt(seen: Record<string, unknown>, name: string): number | undefined {
+  let value = 0;
+  for (let i = PACK_DIGITS - 1; i >= 0; i--) {
+    const digit = seen[`${PACK}${name}.${i}`];
+    if (digit === undefined) continue;
+    if (typeof digit !== 'number' || !Number.isInteger(digit) || digit < 0 || digit > 99) return undefined;
+    value += digit * 100 ** i;
+  }
+  if (seen[`${PACK}${name}.0`] === undefined) return undefined;
+  return seen[`${PACK}${name}.neg`] === 1 ? -value : value;
+}
+
+/** The board as `seen` entries that survive the server's progress cleaning. Board keys come first so MAX_SEEN never drops them. */
+export function packBoard(board: BoardState): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of ['pos', 'left', 'route', 'roll', 'forks', 'contests', 'rankups'] as const) packInt(out, key, board[key]);
+  packInt(out, 'step', STEPS.indexOf(board.step));
+  packInt(out, 'contest', board.contest ? 1 : 0);
+  UPKEEP_LABELS.forEach((label, i) => { if (board.ledger[label] !== undefined) packInt(out, 'l' + i, board.ledger[label]); });
+  return out;
+}
+
+/** A run as uploaded to the server: the same state with the board packed into `seen`. */
+export const serverRun = (state: GameState): GameState => ({ ...state, seen: { ...packBoard(state.board), ...state.seen } });
+
+function unpackBoard(seen: unknown): Partial<BoardState> | undefined {
+  if (!seen || typeof seen !== 'object') return undefined;
+  const d = seen as Record<string, unknown>;
+  const pos = unpackInt(d, 'pos');
+  if (pos === undefined) return undefined;
+  const get = (name: string) => unpackInt(d, name);
+  const ledger: Record<string, number> = {};
+  UPKEEP_LABELS.forEach((label, i) => { const amount = get('l' + i); if (amount !== undefined) ledger[label] = amount; });
+  return { pos, left: get('left'), route: get('route'), roll: get('roll'), forks: get('forks'), contests: get('contests'),
+    rankups: get('rankups'), step: STEPS[get('step') ?? 0], contest: get('contest') === 1, ledger };
+}
+
 const STAGE_IDS = Object.keys(STAGES) as Stage[];
 
 /** Rebuilds a state from untrusted JSON (localStorage). Null when it is not a save this version can continue. */
@@ -676,7 +726,7 @@ export function restore(raw: unknown): GameState | null {
     setStat(state, k, value);
   }
   settle(state);
-  state.board = restoreBoard(d.board);
+  state.board = restoreBoard(d.board ?? unpackBoard(d.seen));
   if (d.phase !== 'ended') {
     const behindChoice = d.phase === 'action' && state.board.step === 'bonus';
     state.s.acts = behindChoice ? Math.min(1, state.s.acts) : 0;
