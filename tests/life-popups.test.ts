@@ -4,7 +4,7 @@ import { choose, currentEvent, forecast, newGame, options } from '../src/life/en
 import type { Forecast, OptionView, Result } from '../src/life/engine.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { COPY, POPUPS, POPUP_RULES } from '../src/ui2/popups/data.ts';
-import { choicePage, phoneChoices, popupKind, popupModel, shortTitle, textPages } from '../src/ui2/popups/model.ts';
+import { choicePage, choiceSummary, phoneChoices, popupKind, popupModel, shortTitle, textPages } from '../src/ui2/popups/model.ts';
 import { POPUP_STYLE } from '../src/ui2/popups/style.ts';
 
 const started = () => choose(newGame(11), 'start:school').state;
@@ -58,7 +58,7 @@ test('space cards show exact engine forecasts, including branch deltas and locke
   for (const view of options(state)) {
     const card = model.choices.find(choice => choice.id === view.id)!, preview = forecast(state, view.id);
     assert.equal(card.enabled, view.enabled);
-    assert.equal(card.summary, COPY.cost(preview.cost, preview.tire, preview.chance));
+    assert.equal(card.summary, choiceSummary(view, preview));
     assert.ok(preview.branches.every(branch => card.details.some(line => line.startsWith(`${COPY.expected} · ${COPY[branch.id]}`))));
   }
   assert.ok(model.choices.some(choice => !choice.enabled));

@@ -52,7 +52,8 @@ export function pagingChecks(page, check, activate = control => control.click())
   };
   const dismissResults = async name => {
     let count = 0;
-    while (await popup.count() && await popup.getAttribute('data-popup') === 'result') {
+    while (await popup.count() && (await popup.getAttribute('data-popup') === 'result'
+      || await popup.getAttribute('data-presentation') !== null)) {
       assert.ok(count++ < 100, 'result dismissal terminates');
       await check(`${name} result ${count}`);
       const before = await actual();
@@ -301,7 +302,95 @@ export function audit() {
     if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('screen regions overlap');
   }
+  const popup = document.querySelector('.life2-popup');
+  if (popup) {
+    const sheet = popup.getBoundingClientRect();
+    if (vw < 900 && !popup.hasAttribute('data-fullscreen') && sheet.height > vh * .55 + 1) issues.push('sheet exceeds 55%');
+    for (const node of popup.querySelectorAll('p, button, h2')) {
+      const box = node.getBoundingClientRect();
+      if (box.top < sheet.top - 1 || box.bottom > sheet.bottom + 1 || box.left < sheet.left - 1 || box.right > sheet.right + 1)
+        issues.push('popup content outside sheet');
+      if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push('popup text overflows');
+    }
+    for (const control of document.querySelectorAll('.life2-bottom button')) {
+      const box = control.getBoundingClientRect(), hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      if (!control.contains(hit)) issues.push('popup covers bottom navigation');
+    }
+    if (vw < 900 && !popup.hasAttribute('data-fullscreen')) {
+      const pawn = document.querySelector('[aria-current=location]').getBoundingClientRect();
+      const hud = document.querySelector('.life2-hud').getBoundingClientRect();
+      const bottom = document.querySelector('.life2-bottom').getBoundingClientRect();
+      const fitsAbove = hud.bottom + 6 + sheet.height + 6 <= pawn.top;
+      const fitsBelow = pawn.bottom + 6 <= bottom.top - 6 - sheet.height;
+      if ((fitsAbove || fitsBelow) && pawn.bottom > sheet.top && pawn.top < sheet.bottom) issues.push('sheet hides a pawn row that could remain visible');
+    }
+  }
   return [...new Set(issues)];
+}
+
+// F3 regressions exercise mounted engine transitions, not just named popup fixtures.
+async function fix3Checks(page, load, check) {
+  const popup = () => page.locator('.life2-popup');
+  const close = () => page.locator('[data-action=popup-close]').click();
+  const select = async id => {
+    for (let index = 0; index < 30; index++) {
+      const option = page.locator(`[data-option="${id}"]`);
+      if (await option.count()) { await option.click(); return; }
+      const next = page.locator('[data-action=popup-page-next]');
+      assert.ok(await next.count() && await next.isEnabled(), `${id} is reachable`); await next.click();
+    }
+    assert.fail(`missing ${id}`);
+  };
+  const worker = (rank = 0) => {
+    const run = choose(newGame(1), 'start:self').state;
+    run.turn = 3; run.status = 'working'; run.track = 'service';
+    run.job = { rank, perf: 26, tenure: 8, total: 8, warn: 0, changedAt: 0, tracks: ['service'] };
+    Object.assign(run.s, { xp: 210, rank, stamina: 80, capStamina: 80 });
+    run.board.pos = WORLD.find(node => node.map === 'A' && node.kind === 'rankup').id;
+    run.board.step = 'bonus'; run.board.dice = [1, 1]; return run;
+  };
+  const expect = async kind => {
+    assert.equal(await popup().getAttribute('data-popup'), kind); await check(`F3 ${kind}`);
+    assert.equal(await page.locator('[data-action=popup-close]').textContent(), '닫기');
+  };
+  const promotion = worker(); promotion.board.step = 'space'; promotion.job.perf = 95;
+  await load(promotion); await select('promo'); await expect('rankup');
+  const warning = worker(); await load(warning); await select('end'); await expect('year-end');
+  assert.match(await popup().locator('p').textContent(), /성과 26: 경고 기준 30 미만/);
+  // Navigation must work above a pending result and return to that same result.
+  await keyboardActivate(page, page.locator('[data-nav=phone]')); await expect('phone'); await close(); await expect('year-end');
+  await page.locator('[data-nav=life]').click(); await expect('my-life');
+  for (const tab of ['ability', 'career', 'family', 'assets', 'records']) {
+    await page.locator(`[data-tab=${tab}]`).click(); await check(`F3 life ${tab}`);
+  }
+  await close(); await close(); await expect('review');
+  assert.match(await popup().locator('p').textContent(), /성과 26: 경고 기준 30 미만/);
+  const demotion = worker(1); demotion.job.warn = 1;
+  await load(demotion); await select('end'); await expect('demotion');
+  for (const turn of [63, 143]) {
+    const run = worker(); run.status = 'jobless'; run.track = null; run.turn = turn;
+    await load(run); await select('end');
+    for (let count = 0; await popup().getAttribute('data-popup') !== 'chapter'; count++) {
+      assert.ok(count < 5); await close();
+    }
+    await expect('chapter');
+  }
+  const retirement = worker(1); retirement.turn = 164;
+  await load(retirement); await expect('retirement');
+  for (const id of ['go:A-o12', 'spin']) {
+    const run = choose(newGame(11), 'start:self').state;
+    run.board.pos = id === 'spin' ? 'A-o8' : 'A-o11';
+    run.board.step = id === 'spin' ? 'spin' : 'pick'; run.board.dice = id === 'spin' ? [] : [1, 1];
+    await load(run);
+    if (id === 'spin') await page.locator('.life2-wheel').click(); else await page.locator('[data-space="A-o12"][data-dest]').click();
+    await expect('luck'); await close(); await expect('bonus');
+  }
+  // Low pawn rows exercise top docking at each phone size.
+  for (const node of WORLD.filter(node => node.map === 'A' && node.y >= 70)) {
+    const run = worker(); run.board.pos = node.id;
+    await load(run); await page.locator('[data-nav=phone]').click(); await check(`F3 pawn ${node.id}`);
+  }
+  console.log('  F3: live rank/review/year/chapter/retirement/luck popups, main-face warning, bottom navigation and pawn rows checked');
 }
 
 // T18 isolated popup section: no changes to the existing map/movement fixtures.
@@ -496,6 +585,7 @@ async function main() {
         const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
         event.board.step = 'space'; event.board.dice = [1, 1];
         await load(event); await checkPages('event');
+        await fix3Checks(page, load, check);
         const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];
         assertPopupCoverage(popupKinds);
         await page.goto(`${base}?life=1&seed=11`);

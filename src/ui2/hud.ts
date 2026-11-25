@@ -7,6 +7,7 @@ import { button, el } from '../ui/dom.ts';
 
 export const HUD_STYLE = `
 .life2 .life2-shell { grid-template-rows:78px minmax(412px,1fr) 168px 44px; }
+.life2 .life2-bottom { position:relative; z-index:11; }
 .life2 .life2-hud { gap:2px; }
 .life2 .life2-grades { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:1px 3px; font-size:11px; line-height:12px; }
 @media (min-width:900px) {

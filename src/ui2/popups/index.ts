@@ -1,6 +1,6 @@
 import { button, el } from '../../ui/dom.ts';
 import { jobPortrait, placeArt } from '../art.ts';
-import { COPY, PHONE_TABS } from './data.ts';
+import { COPY, PHONE_TABS, POPUP_RULES } from './data.ts';
 import type { LifeTab, PhoneTab } from './data.ts';
 import { choicePage, shortTitle, textPages } from './model.ts';
 import type { PopupModel } from './model.ts';
@@ -13,7 +13,7 @@ export { mountEnding, mountEndingCollection, endingModel, collectionModel } from
 
 export type PopupActions = {
   choose: (id: string) => void; dismiss: () => void;
-  phoneTab?: (tab: PhoneTab) => PopupModel; returnFocus?: HTMLElement;
+  phoneTab?: (tab: PhoneTab) => PopupModel; returnFocus?: HTMLElement; navigation?: HTMLElement;
 };
 
 /** Mount in the shell's options slot; the caller owns choose(state, id) and subsequent rendering.
@@ -38,6 +38,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     panel.setAttribute('aria-label', model.title);
     if (model.fullscreen) panel.dataset.fullscreen = '';
     if (model.notification) panel.dataset.notification = '';
+    if (model.presentation) panel.dataset.presentation = '';
     if (detail || confirmingQuit) panel.dataset.details = '';
     if (confirmingQuit) panel.dataset.confirm = 'quit';
     const header = el('header', 'life2-popup-header'), title = el('h2', '', shortTitle(confirmingQuit ? COPY.quitTitle : model.title));
@@ -45,14 +46,18 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     header.append(title, button(COPY.exit, '', close, 'popup-close'));
     const copy = el('div', 'life2-popup-copy');
     const selectedTab = model.tabs?.find(item => item.id === lifeTab) ?? model.tabs?.[0];
-    const pages = textPages(confirmingQuit ? [COPY.quitQuestion] : detail ?? (selectedTab ? [selectedTab.title, ...selectedTab.lines] : [model.title, ...model.lines]));
+    const reading = !model.choices.length;
+    if (reading && !detail && !confirmingQuit) panel.dataset.reading = '';
+    const pages = textPages(confirmingQuit ? [COPY.quitQuestion] : detail ?? (selectedTab ? selectedTab.lines : model.lines),
+      model.notification || (reading && model.roll) ? POPUP_RULES.resultPage
+        : reading || detail ? POPUP_RULES.readingPage : POPUP_RULES.textPage);
     copyPage = Math.min(copyPage, pages.length - 1);
     if (!detail && !confirmingQuit) {
       if (model.roll) {
         const wheel = el('output', '', String(model.roll.value)); wheel.dataset.resultWheel = '';
         wheel.setAttribute('aria-label', `${model.roll.success ? COPY.success : COPY.fail} · ${COPY.roll(model.roll.value, model.roll.chance)}`);
         copy.append(wheel);
-      } else copy.append(model.track && ['job', 'rankup', 'demotion', 'review'].includes(model.kind)
+      } else if (!reading) copy.append(model.track && ['job', 'rankup', 'demotion', 'review'].includes(model.kind)
         ? jobPortrait(model.track) : placeArt(model.place));
     }
     const text = el('p', '', pages[copyPage]); text.setAttribute('aria-live', 'polite'); copy.append(text);
@@ -86,8 +91,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
         info.setAttribute('aria-label', `${option.title} · ${COPY.details}`);
         row.append(control, info); list.append(row);
       }
-      if (!choices.items.length && !selectedTab) list.append(el('p', '', COPY.empty));
-      panel.append(list);
+      if (!reading) panel.append(list);
       if (selectedTab) {
         copy.dataset.tabPanel = selectedTab.id; copy.setAttribute('role', 'tabpanel');
         copy.setAttribute('aria-label', selectedTab.title);
@@ -113,6 +117,8 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
         header.insertBefore(button(COPY.pages(page, choices.count), '', () => {
           page = (page + 1) % choices.count; render();
         }, 'popup-page-next'), header.lastChild);
+      } else if (reading) {
+        footer.append(button(COPY.exit, '', close, 'popup-continue'));
       } else {
         const previous = button(COPY.previous, '', () => { page--; render(); }, 'popup-page-prev');
         const next = button(COPY.next, '', () => { page++; render(); }, 'popup-page-next');
@@ -121,19 +127,35 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
       }
     }
     if (!model.notification) panel.append(footer);
-    panel.addEventListener('keydown', event => {
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation();
-        if (confirmingQuit) { confirmingQuit = false; render(); } else close(); }
-      if (event.key !== 'Tab' || model.notification) return;
-      const controls = [...panel.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
-      const first = controls[0], last = controls.at(-1);
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === title)) {
-        event.preventDefault(); last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    });
+    panel.addEventListener('keydown', handleKeys);
     host.replaceChildren(el('style', '', POPUP_STYLE), panel);
+    // Pick the other edge when the whole pawn row fits below a top-docked sheet.
+    // Mid-board rows sometimes cannot fit alongside a 3-choice sheet; the close control remains available.
+    if (!model.fullscreen && typeof panel.getBoundingClientRect === 'function' && window.innerWidth < 900) {
+      const shell = host.closest('.life2-shell');
+      const pawn = shell?.querySelector('[aria-current=location]')?.getBoundingClientRect();
+      const hud = shell?.querySelector('.life2-hud')?.getBoundingClientRect();
+      const sheet = panel.getBoundingClientRect(), gap = POPUP_RULES.dockGap;
+      if (pawn && hud && pawn.bottom + gap > sheet.top && hud.bottom + sheet.height + gap * 2 <= pawn.top) {
+        panel.dataset.dock = 'top'; panel.style.setProperty('top', `${hud.bottom + gap}px`);
+        panel.style.setProperty('bottom', 'auto');
+      }
+    }
     if (focus && !model.notification) (panel.querySelector('h2') ?? panel.querySelector('button'))?.focus({ preventScroll: true });
   }
+  function handleKeys(event: KeyboardEvent) {
+    if (closed) return;
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation();
+      if (confirmingQuit) { confirmingQuit = false; render(); } else close(); }
+    if (event.key !== 'Tab' || model.notification) return;
+    const controls = [...panel.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+      ...(actions.navigation?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
+    const first = controls[0], last = controls.at(-1);
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === panel.querySelector('h2'))) {
+      event.preventDefault(); last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
+  actions.navigation?.addEventListener('keydown', handleKeys);
   render();
   return { close, update(next: PopupModel) { if (!closed) { model = next; page = copyPage = 0; detail = undefined; confirmingQuit = false; render(); } } };
 }
