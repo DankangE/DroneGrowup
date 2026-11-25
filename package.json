@@ -20,11 +20,11 @@
     "cashflow:life": "node scripts/life-cashflow.ts",
     "dominance:life": "echo 'TODO: scripts/dominance-life.ts (T15)'",
     "outcomes:life": "echo 'TODO: scripts/outcome-check-life.ts (T15)'",
-    "playtest:life": "echo 'TODO: scripts/playtest-life.mjs (T20)'",
+    "playtest:life": "node scripts/playtest-life.mjs",
     "layout:life": "node scripts/layout-check-life.mjs",
-    "verify": "tsc --noEmit && vite build && npm run test && npm run simulate && npm run dominance && npm run outcomes && npm run playtest && npm run playtest:platform && npm run layout",
+    "verify": "tsc --noEmit && vite build && npm run test && npm run simulate && npm run dominance && npm run outcomes && npm run playtest && npm run playtest:platform && npm run layout && npm run layout:life && npm run playtest:life && npm run check:board -- keys",
     "screenshots:board": "node scripts/board-c-check.mjs shots",
-    "check:board": "node scripts/board-c-check.mjs"
+    "check:board": "node scripts/board-life-check.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

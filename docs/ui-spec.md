@@ -342,3 +342,70 @@ fills any discovered portrait frame whose art is unavailable. A "타이틀" butt
   wheel shows the option's chance and stops on the engine's rolled value, that the piece stands on the space
   the state implies, that a badge's grade is `grade(stat, value)`, and that a rank card appears exactly when
   `rankChange` reports one.
+
+## v2 life board (T20)
+
+The v2 screen is selected with `?life=1&seed=11`; the default screen remains v1.
+Rules and timings come from `docs/design/life-board.md` §§2 and 11. A fresh v2 run
+opens its starting-choice popup directly. Play stays in `data-screen="play"`,
+with a complete 7×9 map, HUD, two wheels and an options/popup slot. All four
+supported sizes are checked: 390×844, 360×740, 1280×800 and 1366×768.
+
+The current renderer uses these hooks:
+
+| Hook | Meaning |
+| --- | --- |
+| `#app[data-screen][data-phase]` | Screen and current presentation phase; animation may precede the next engine prompt |
+| `[data-map="A..F"]` | Currently displayed map |
+| `[data-space][data-kind]`, `[data-pawn]` | World tile id/kind and the pawn's current node |
+| `[data-dest]` | Reachable tile button, or another map's destination in the option pager |
+| `[data-path-preview]`, `[data-review-stop]` | Hover/focus route and early review stop |
+| `[data-die="0|1"]` | The two wheel faces |
+| `[data-action="spin|stop-spin|skip-move"]` | Start, stop the wheel, or finish movement |
+| `[data-option]` | Engine choice id, disabled exactly when the engine disables it |
+| `[data-action="page-prev|page-next"]` | Plain destination pager |
+| `[data-popup]` | Mounted popup kind; result notifications use this hook too |
+| `[data-action="popup-page-prev|popup-page-next"]` | Popup choices, at most three per page |
+| `[data-action="popup-close|popup-reopen"]` | Dismiss a presentation or reopen an unresolved prompt |
+| `[data-action="popup-details|popup-back|popup-text-next"]` | Choice details and fixed text pages |
+| `[data-action="popup-confirm|popup-cancel"]` | Quit confirmation controls |
+| `[data-result-wheel]` | Rolled value; accessible label also gives the chance and outcome |
+| `[data-nav="life|phone"]`, `[data-tab]` | My-life/phone navigation and popup tabs |
+
+`?debug=1` additionally exposes `window.__life.state()` and `.options()` as
+read-only observations, and `.load(raw)` for validated layout/timing fixtures.
+No debug API is exposed without that flag. Playtest never loads a fixture or
+calls the browser engine directly: it clicks the actual `?life=1` screen.
+Engine choices are applied independently in Node and compared with the browser
+after each input. Result dismissal must leave the state unchanged.
+
+| Command | Acceptance coverage |
+| --- | --- |
+| `npm run playtest:life` | Fresh seeds 1 and 11 at 390×844, using real clicks until the first promotion or 12 completed seasons (three years); all choice pages, disabled options, results, pawn, dice, date and engine parity |
+| `npm run layout:life` | Six maps × four sizes, movement/transfer/skip fixtures, all twenty §11.3 popup groups at each size, five life tabs and 21 ending/gallery entries |
+| `npm run check:board -- keys` | Twelve seasons at each of the four sizes, using real Tab/Enter navigation, including local destination tiles, paging and result dismissal; zero mouse/focus fallbacks |
+| `npm run check:board -- timed [390x844]` | Twelve completed seasons on each of maps A–F with animations and reading pauses; prints each map's seconds per season and difference from 14.9 seconds |
+
+All three default checks are in `npm run verify`; the longer `timed` measurement
+is opt-in. `check:board` now selects v2; the existing v1 `screenshots:board`
+command is unchanged. Browser commands build and serve a local Vite preview and
+use installed Chrome (`CHROME_PATH` may override its path; `HEADED=1` shows the
+new playtest/board runners). They fail on page/console errors or external requests.
+Layout assertions inspect actual boxes, clipping, scroll, 44px tap targets and
+11px minimum text. Merely hiding overflow does not count as passing.
+
+The policy takes an available job, prefers promotion/work/training, then an
+affordable action or a free exit. It reads enabled engine options and reachable
+routes; it does not reimplement eligibility or odds. The playtest's 12-season
+fallback is the T20 interpretation of “at least a few years”; it does not claim
+a 204-season lifetime or final-ending coverage from real play.
+
+Timed runs load one working-character fixture at each map's start before the
+clock starts, then stay on that map through real clicks. No fixture reloads or
+animation skips occur during those twelve seasons. Reading pauses are 0.8s
+before spinning (plus the real 0.7s animation), 3s for destinations, 4s for tile
+choices, 3.5s for extras, 6s for events, 8s for large popups and 2.4s for results.
+The final season's result dismissal is included. Output is measured wall time,
+including browser/automation overhead, with the per-season samples printed.
+It is a repeatable synthetic reading model, not a measured human study or a
+pass/fail balance threshold; no balance numbers are changed by this check.

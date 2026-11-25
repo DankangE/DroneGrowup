@@ -10,9 +10,17 @@ import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
 import { reachable } from '../src/life/move.ts';
 import { destinationDetails } from '../src/ui2/pick.ts';
+import { POPUP_GROUPS } from '../src/ui2/popups/data.ts';
+import { SIZES } from './life-check-data.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SIZES = [[390, 844], [360, 740], [1280, 800], [1366, 768]];
+
+export function assertPopupCoverage(kinds) {
+  assert.equal(POPUP_GROUPS.length, 20, 'section 11.3 has twenty popup groups');
+  for (const group of POPUP_GROUPS) for (const kind of group) {
+    assert.ok(kinds.includes(kind), `missing popup fixture: ${kind}`);
+  }
+}
 
 // Importable without building or opening a port so Node can regress the traversal.
 export function pagingChecks(page, check, activate = control => control.click()) {
@@ -256,7 +264,7 @@ async function movementChecks(page, load, check) {
 }
 
 // Runs in Chromium. Check actual boxes and clipping, not merely overflow:hidden on the root.
-function audit() {
+export function audit() {
   const issues = [], vw = innerWidth, vh = innerHeight;
   const doc = document.scrollingElement;
   if (doc.scrollWidth > vw || doc.scrollHeight > vh) issues.push('document scrolls');
@@ -300,7 +308,8 @@ function audit() {
 async function popupChecks(page, base) {
   await page.goto(`${base}src/ui2/popups/layout.html`);
   await page.waitForFunction(() => window.__popupFixture);
-  for (const kind of await page.evaluate(() => window.__popupFixture.kinds)) {
+  const kinds = await page.evaluate(() => window.__popupFixture.kinds);
+  for (const kind of kinds) {
     const model = await page.evaluate(kind => window.__popupFixture.show(kind), kind);
     const popup = page.locator('[data-popup]');
     assert.equal(await popup.getAttribute('data-popup'), kind);
@@ -342,6 +351,7 @@ async function popupChecks(page, base) {
   assert.equal(await page.locator('[data-notification]').count(), 1);
   assert.equal(await page.locator('[data-result-wheel]').count(), 0);
   console.log('  T18: 11 popup kinds, three choices per page, portrait sheets <=55%, keyboard exit checked');
+  return kinds;
 }
 
 // T19 isolated popup group: fixture-only engine views, plus the separate ending/gallery screens.
@@ -362,7 +372,8 @@ async function popup2Checks(page, base) {
     }
     return [...new Set(issues)];
   }), [], `${selector}: T19 layout`);
-  for (const kind of await page.evaluate(() => window.__popup2Fixture.kinds)) {
+  const kinds = await page.evaluate(() => window.__popup2Fixture.kinds);
+  for (const kind of kinds) {
     const model = await page.evaluate(kind => window.__popup2Fixture.show(kind), kind), seen = [];
     const popup = page.locator('[data-popup]');
     assert.equal(await popup.getAttribute('data-popup'), kind);
@@ -398,6 +409,7 @@ async function popup2Checks(page, base) {
   }
   assert.equal(new Set(seen).size, 21);
   console.log('  T19: 11 popup kinds, five life tabs, 21 endings and collection pages checked');
+  return kinds;
 }
 
 async function main() {
@@ -418,6 +430,7 @@ async function main() {
       try {
         const page = await context.newPage(), size = `${width}x${height}`;
         page.on('pageerror', error => failures.push(`${size}: ${error.message}`));
+        page.on('console', message => { if (message.type() === 'error') failures.push(`${size}: ${message.text()}`); });
         page.on('request', request => {
           if (!request.url().startsWith(base) && !request.url().startsWith('data:')) {
             failures.push(`${size}: unexpected network request ${request.url()}`);
@@ -483,8 +496,8 @@ async function main() {
         const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
         event.board.step = 'space'; event.board.dice = [1, 1];
         await load(event); await checkPages('event');
-        await popupChecks(page, base);
-        await popup2Checks(page, base);
+        const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];
+        assertPopupCoverage(popupKinds);
         await page.goto(`${base}?life=1&seed=11`);
         await page.locator('[data-map=A]').waitFor();
         assert.equal(await page.evaluate(() => window.__life === undefined), true, 'state loader is debug-only');
@@ -500,7 +513,7 @@ async function main() {
     finally { await server.close(); }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
-  console.log(`layout:life OK: ${mapViews} map/size checks, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll`);
+  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x 4 sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
