@@ -5,7 +5,8 @@ import { randInt } from './move.ts';
 import { JOB_CHOICES, JOB_RULES, JOB_TEXT, START_CHOICES, TRACKS } from './tracks.ts';
 import { MAPS, WORLD } from './world.ts';
 import { CAREER_KEYS as K, CAREER_RULES as C, CAREER_TEXT as CT, careerAge, careerIncome, careerTrack,
-  jobConditionLocks, promotionView, rankLocks, retirementView, review, reviewNotice, specialView } from './career2.ts';
+  jobConditionLocks, promotionView, rankLocks, retirementView as retirementEligibility,
+  review, reviewNotice, specialView } from './career2.ts';
 import type { RetirementMode } from './career2.ts';
 import type { ActionDef, Choice, Effect, GameState, Stat, StatMap, TrackDef, TrackId, WorldNode } from './types.ts';
 export { jobConditionLocks, review } from './career2.ts';
@@ -156,7 +157,7 @@ export function jobChoices(state: GameState): { choices: JobChoice[]; exclusive:
   if (starting(state)) return { exclusive: true, choices: Object.entries(START_CHOICES)
     .map(([id, choice]) => ({ id: `start:${id}`, choice, locks: [] })) };
   const retiring = retirementView(state);
-  if (retiring.due && !retiring.racer && state.timers[K.deferred] !== state.turn + 1) return {
+  if (retiring.due && !retiring.racer && (state.timers[K.deferred] ?? state.turn) <= state.turn) return {
     exclusive: true, choices: [...retiring.modes.map(mode => ({
       id: `retire:${mode}`, locks: [], choice: {
         title: mode === 'pension' ? CT.pension : mode === 'rehire' ? CT.rehireTitle : CT.switch,
@@ -164,8 +165,9 @@ export function jobChoices(state: GameState): { choices: JobChoice[]; exclusive:
           + (mode === 'switch' ? CT.switchDesc : ''),
         effect: { text: mode === 'pension' ? CT.pensionDone : mode === 'rehire' ? CT.rehireDone : CT.switchDone },
       },
-    })), { id: 'job:none', locks: [], choice: { title: CT.continue, desc: CT.deferRetirement,
-      effect: { text: CT.deferRetirement } } }],
+    })), { id: 'job:none', locks: [], choice: { title: CT.continue,
+      desc: state.timers[K.deferred] === undefined ? JOB_TEXT.deferRetirement : CT.pensionDone,
+      effect: { text: state.timers[K.deferred] === undefined ? JOB_TEXT.deferRetirement : CT.pensionDone } } }],
   };
   const notice = reviewNotice(state);
   if (notice) return { exclusive: true, choices: [{ id: 'job:none', locks: [], choice: {
@@ -206,8 +208,10 @@ export const isJobChoice = (id: string) => id.startsWith('start:') || id.startsW
 /** Engine has already charged the fee; this branch executor also serves forecast without RNG. */
 export function applyJobChoice(prev: GameState, id: string, success: boolean): GameState {
   let state = structuredClone(prev);
-  if (id === 'job:none' && retirementView(state).due && state.timers[K.deferred] !== state.turn + 1) {
-    state.timers[K.deferred] = state.turn + 1; return state;
+  if (id === 'job:none' && retirementView(state).due && (state.timers[K.deferred] ?? state.turn) <= state.turn) {
+    if (state.timers[K.deferred] !== undefined) return retire(state, 'pension');
+    state.timers[JOB_RULES.retirementBase] ??= retirementView(state).salary;
+    state.timers[K.deferred] = state.turn + JOB_RULES.retirementDeferralSeasons; return state;
   }
   if (id === 'job:none' && reviewNotice(state)) {
     delete state.timers[K.notice]; delete state.timers[K.noticeAt]; return state;
@@ -248,7 +252,7 @@ export function startingAction(state: GameState, action: ActionDef, tile: boolea
 }
 
 function clearCareer(state: GameState): void {
-  for (const key of [K.retry, K.bonus, K.idle, K.worked, K.deferred]) delete state.timers[key];
+  for (const key of [K.retry, K.bonus, K.idle, K.worked, K.deferred, JOB_RULES.retirementBase]) delete state.timers[key];
   state.flags = state.flags.filter(flag => flag !== K.rehire);
 }
 
@@ -365,11 +369,27 @@ export function advanceCareer(prev: GameState): GameState {
   }
   state = yearEndReview(state);
   const retiring = retirementView(state);
-  if (retiring.due && (retiring.racer || state.flags.includes(K.rehire))) state = retire(state, 'pension');
+  if (retiring.due) {
+    if (careerTrack(state)?.salaried) state.timers[JOB_RULES.retirementBase] ??= retiring.salary;
+    if (retiring.racer || state.flags.includes(K.rehire) || state.timers[K.deferred] <= state.turn) {
+      state = retire(state, 'pension');
+    }
+  }
   return state;
 }
 
-/** Rehire defers severance until final retirement; final pay includes the 60% contract rate. */
+/** Eligibility stays in career2; displayed and paid benefits use the frozen pre-rehire base. */
+export function retirementView(state: GameState) {
+  const view = retirementEligibility(state), track = careerTrack(state);
+  // Older saves have no snapshot: use the full rank salary, never reverse a rounded 60% payment.
+  const salary = state.timers[JOB_RULES.retirementBase] ?? track?.ranks[state.job.rank].salary ?? view.salary;
+  return { ...view, salary,
+    severance: track?.salaried ? Math.floor(salary * state.job.total / C.severanceDivisor) : 0,
+    pension: Math.floor(salary * (track?.pensionPct ?? 0) / LIFE_RULES.percent),
+    rehireSalary: Math.floor(salary * C.rehirePct / LIFE_RULES.percent) };
+}
+
+/** Rehire defers severance; the age-60 base survives until the final benefit calculation. */
 export function retire(prev: GameState, mode: RetirementMode = 'pension'): GameState {
   const view = retirementView(prev);
   if (prev.phase === 'ended' || !view.due || (view.racer ? mode !== 'pension' : !view.modes.includes(mode))) {
@@ -377,6 +397,8 @@ export function retire(prev: GameState, mode: RetirementMode = 'pension'): GameS
   }
   let state = structuredClone(prev);
   if (mode === 'rehire') {
+    state.timers[JOB_RULES.retirementBase] ??= view.salary;
+    delete state.timers[K.deferred];
     state.flags.push(K.rehire); delete state.timers[K.retry]; delete state.timers[K.bonus];
     return state;
   }
