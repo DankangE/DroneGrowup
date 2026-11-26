@@ -304,10 +304,11 @@ html #app.life2 .life2-popup-list { grid-auto-rows:48px; }
 html #app.life2 .life2-board-tilted { transform:none; }
 html #app.life2 .life2-board { box-shadow:0 10px 0 #377a53,0 18px 20px #17493550; }
 html #app.life2 .life2-tile { box-shadow:inset 0 3px 0 #ffffff60,0 6px 0 #214c65,0 9px 4px #17493540; }
-/* Share the current tile's icon cell; the label keeps its own grid row. */
-html #app.life2 .life2-tile[aria-current=location] > .life2-glyph { grid-area:1 / 1; opacity:0; }
-html #app.life2 .life2-tile[aria-current=location] > .life2-tile-label { grid-area:2 / 1; }
-html #app.life2 .life2-pawn { position:relative; grid-area:1 / 1; left:auto; top:auto; bottom:auto; width:clamp(36px,5vh,52px); height:clamp(28px,3.5vh,42px); transform:none; filter:none; }
+/* Measured open space beside the tile; its icon and label keep their own rows.
+   No position transition: movement frames must never sweep across other tiles. */
+html #app.life2 .life2-pawn { position:absolute; left:var(--pawn-x,calc(100% + 6px)); right:auto; top:var(--pawn-y,0px); bottom:auto; width:clamp(48px,6.25vh,72px); height:clamp(48px,6.25vh,72px); transform:none; filter:none; transition:none; animation:none; }
+/* Transfer animates its overview; keep the route/pawn at their measured size. */
+html #app.life2[data-phase=transfer] .life2-board { animation:none; }
 html #app.life2 .life2-change-strip { position:fixed; top:20vh; left:36vw; right:auto; padding:6px 8px; font-size:12px; }
 html #app.life2 .life2-change-strip:empty { display:none; }
 html #app.life2 .life2-popup[data-popup=my-life][data-overview] .life2-labelled-rows { grid-template-columns:repeat(3,minmax(0,1fr)); grid-auto-rows:minmax(0,1fr); gap:6px; }
@@ -358,13 +359,14 @@ html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom .life2-dice { 
 /* Tilt the painted face, while labels and 44px native hit targets keep their geometry. */
 html #app.life2 .life2-board-tilted .life2-tile { background:transparent; border-color:transparent; box-shadow:none; }
 html #app.life2 .life2-board-tilted .life2-tile::before { content:''; position:absolute; inset:0; z-index:-1; pointer-events:none; border:3px solid #fff; border-radius:12px; background:var(--face); transform:perspective(900px) rotateX(18deg); box-shadow:inset 0 3px 0 #ffffff60,0 9px 0 #214c65; }
+html #app.life2 .life2-board-tilted .life2-tile[aria-current=location]::before { border-color:#ffeb4b; box-shadow:0 0 0 3px #ffeb4b,0 9px 0 #214c65; }
 }
 /* Intrinsic content gets explicit space: no clipping or scroll containers. */
 @media(min-width:900px) {
 html #app.life2 .life2-hud { padding:8px; }
 html #app.life2 .life2-hud .life2-grade { grid-template-rows:minmax(0,1fr) 8px; align-content:stretch; }
 html #app.life2 .life2-hud .life2-grade-gauge { align-self:stretch; }
-html #app.life2 .life2-pawn .life2-hud-avatar { width:75%; height:80%; left:12.5%; padding:0; border-width:2px; transform:none; }
+html #app.life2 .life2-pawn .life2-hud-avatar { width:75%; height:75%; left:12.5%; padding:0; border-width:2px; transform:none; }
 html #app.life2 .life2-bottom,
 html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom { height:auto; flex-direction:column; gap:6px; }
 html #app.life2 .life2-bottom button,

@@ -535,24 +535,27 @@ export function auditPopupContent(panel = document.querySelector('.life2-popup')
 
 // Runs in Chromium. Check actual boxes and clipping, not merely overflow:hidden on the root.
 // Measure the pawn and its painted children, not just its positioned wrapper.
-// This catches a sprite that escapes upward into the preceding route tile.
+// The marker belongs beside its tile; every icon/label must remain uncovered.
 export function auditPawn() {
   const issues = [], pawn = document.querySelector('[data-pawn]');
   if (!pawn) return ['missing pawn'];
   const tile = pawn.closest('[data-space]'), box = pawn.getBoundingClientRect();
   if (!tile) return ['pawn has no current tile'];
   const bounds = tile.getBoundingClientRect();
+  const board = pawn.closest('[data-map]')?.getBoundingClientRect();
   const visible = node => node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true });
-  if (!visible(pawn) || box.width < 32 || box.height < 26) issues.push('pawn is hidden or too small');
+  if (!visible(pawn) || box.width < 48 || box.height < 48) issues.push('pawn is hidden or too small');
+  const gap = Math.hypot(Math.max(bounds.left - box.right, box.left - bounds.right, 0),
+    Math.max(bounds.top - box.bottom, box.top - bounds.bottom, 0));
+  if (gap > 8) issues.push('pawn is not adjacent to current tile');
   const parts = [pawn, ...pawn.querySelectorAll('svg')];
   for (const part of parts) {
     const rect = part.getBoundingClientRect();
     if (!visible(part) || rect.width <= 0 || rect.height <= 0) issues.push('pawn artwork is hidden');
-    if (rect.left < bounds.left || rect.right > bounds.right || rect.top < bounds.top || rect.bottom > bounds.bottom)
-      issues.push('pawn artwork extends outside its tile');
+    if (!board || rect.left < board.left || rect.right > board.right || rect.top < board.top || rect.bottom > board.bottom)
+      issues.push('pawn artwork extends outside board');
     for (const other of document.querySelectorAll('[data-space]')) {
       for (const content of other.querySelectorAll('.life2-glyph, .life2-tile-label')) {
-        if (other === tile && content.matches('.life2-glyph')) continue;
         const target = content.getBoundingClientRect();
         if (Math.min(rect.right, target.right) > Math.max(rect.left, target.left)
           && Math.min(rect.bottom, target.bottom) > Math.max(rect.top, target.top))
@@ -562,6 +565,8 @@ export function auditPawn() {
   }
   const label = tile.querySelector('.life2-tile-label');
   if (!label || !visible(label)) issues.push('current tile label is hidden');
+  const icon = tile.querySelector('.life2-glyph');
+  if (!icon || !visible(icon)) issues.push('current tile icon is hidden');
   return [...new Set(issues)];
 }
 
@@ -809,14 +814,15 @@ async function fix4Checks(page, load, check) {
 // F5 fixtures retain every size/target/overflow check; all navigation uses real clicks.
 async function fix5Checks(page, load, check) {
   const starter = choose(newGame(1), 'start:self').state;
-  for (const node of WORLD.filter(row => row.map === 'A')) {
+  for (const node of WORLD) {
     const s = structuredClone(starter); s.board.pos = node.id;
     s.s.money = 1017; s.s.debt = 1176;
     await load(s); await check(`pawn route ${node.id}`);
-    // All A nodes cover both vertical and horizontal segments, including A-o0.
+    // Include every map's inner routes, corners and junctions, including A-o0.
     // Picking a destination narrows the board, so inspect that geometry too.
     const picking = structuredClone(s); picking.board.step = 'pick'; picking.board.dice = [1, 1];
     await load(picking); await check(`pawn route ${node.id} destination layout`);
+    if (node.map !== 'A') continue;
     await load(s); await page.locator('[data-nav=phone]').click();
     await checkTextPages(page, '[data-action=popup-text-next]', () => check(`F5 pawn ${node.id}`));
     assert.match(await page.locator('.life2-funds').textContent(), /1,017.*1,176/);
@@ -833,7 +839,7 @@ async function fix5Checks(page, load, check) {
   assert.deepEqual(await page.evaluate(() => window.__life.state()), expected);
   await pagingChecks(page, check).checkPages('F5 all hospital family choices');
   assert.deepEqual(options(expected).filter(row => row.id.startsWith('dual:')).map(row => row.title), ['가정 중심', '맞벌이']);
-  console.log('  F5: every A pawn row, PC overlays, debt HUD and one-tap family travel with all dual choices checked');
+  console.log('  F5: every A–F pawn tile in both layouts, A phone overlays, debt HUD and one-tap family travel with all dual choices checked');
 }
 
 async function phoneKeyboardChecks(page, load) {

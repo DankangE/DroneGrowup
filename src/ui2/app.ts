@@ -4,6 +4,7 @@ import type { GameState } from '../life/types.ts';
 import { PLACES, WORLD } from '../life/world.ts';
 import { button, el, reducedMotion } from '../ui/dom.ts';
 import { board, KINDS, setBoardTilt, TILT_STYLE } from './board.ts';
+import { positionPawn } from './pawn.ts';
 import { POLISH as P } from './popups/polish-data.ts';
 import { POLISH_STYLE } from './popups/polish-style.ts';
 import { tileIcon } from './icons.ts';
@@ -220,6 +221,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
         ...(menu === 'phone' && { phoneTab: phoneModel }),
       });
     } else if (focus) (frame ? center : heading).focus({ preventScroll: true });
+    positionPawn(map);
     if (!frame) glowBefore = undefined;
   }
   function phoneModel(tab: Parameters<typeof phoneChoices>[1] = 'all') {
