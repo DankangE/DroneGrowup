@@ -55,7 +55,8 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
   let glowBefore: GameState | undefined;
   let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
   let spin: ReturnType<typeof spinMotion> | undefined, frameStartedAt = 0;
-  let travelledPath: readonly string[] = [];
+  // Steps left on the current route; counted per move frame because a route may revisit a node.
+  let stepsLeft = 0;
   root.classList.add('life2');
   const skip = (event?: MouseEvent) => {
     // The second click of a double-click lands on the freshly rendered stop control; ignore it.
@@ -100,13 +101,14 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     menu = undefined;
     const frames = movementFrames(before.board.pos, outcome.result, id === 'spin');
     const route = outcome.result.move;
-    travelledPath = route ? (route.stop ? route.path.slice(0, route.path.indexOf(route.stop) + 1) : route.path) : [];
+    stepsLeft = route ? (route.stop ? route.path.indexOf(route.stop) + 1 : route.path.length) : 0;
     const landing = WORLD.find(node => node.id === state.board.pos)!;
     if (outcome.result.move && P.calloutKinds.includes(landing.kind)) frames.push({ phase: 'move', pos: landing.id, ms: P.calloutMs, callout: true });
     const done = () => { frame = undefined; spin = undefined; before = undefined; sequence = undefined; render(true); };
     if (!frames.length || reducedMotion()) { done(); return; }
     sequence = playback(frames, next => {
       frame = next; frameStartedAt = performance.now();
+      if (next.phase === 'move' && !next.callout) stepsLeft = Math.max(0, stepsLeft - 1);
       spin = next.phase === 'spin' ? spinMotion() : undefined;
       render(true);
     }, done, undefined, (next, advance) => next.phase === 'spin' ? spin?.wait(advance) : undefined);
@@ -222,7 +224,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     // Popup docking removes the options row on mobile. Measure the tilted board
     // only after that final shell geometry is in place, including on resize.
     if (model && !dismissed) panel.classList.add('life2-popup-host');
-    const remaining = frame?.phase === 'move' ? travelledPath.length - (travelledPath.indexOf(frame.pos) + 1) : undefined;
+    const remaining = frame?.phase === 'move' ? stepsLeft : undefined;
     const display = roulette(state.board.dice, mode === 'spin', remaining);
     const hints = el('div', 'life2-key-hints');
     for (const hint of ['↑ ↓ 선택', 'Enter 결정', 'Esc 닫기']) hints.append(el('span', '', hint));
