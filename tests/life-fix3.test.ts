@@ -130,9 +130,9 @@ test('F3: retirement wins routing over job:none, and forecasts describe severanc
 });
 
 for (const id of ['go:A-o12', 'spin']) test(`F3: no-choice luck after ${id} shows applied changes once`, () => {
-  const state = choose(newGame(11), 'start:self').state;
-  // Seed 11 spins a double four; both paths land on A-o12.
-  state.board.pos = id === 'spin' ? 'A-o8' : 'A-o11';
+  const state = choose(newGame(id === 'spin' ? 1 : 11), 'start:self').state;
+  // Seed 1 spins 4 + 1 = 5 from A-o7; both paths land on A-o12.
+  state.board.pos = id === 'spin' ? 'A-o7' : 'A-o10';
   state.board.step = id === 'spin' ? 'spin' : 'pick'; state.board.dice = id === 'spin' ? [] : [1, 1];
   const expected = choose(state, id); assert.ok(expected.result.luck);
   assert.equal(expected.state.board.step, 'spin'); assert.equal(expected.state.turn, state.turn + 1);

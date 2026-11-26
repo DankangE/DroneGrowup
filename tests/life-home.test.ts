@@ -173,7 +173,7 @@ test('rent is floor(current value × 12 / 1000) per investment, unscaled by the 
 
 test('start arrival transfers only rented housing, costs 80, preserves deposit, then offers the extra action', () => {
   for (const tier of [1, 2]) {
-    const state = at('A'); state.board.pos = 'A-o27'; state.board.step = 'pick';
+    const state = at('A'); state.board.pos = 'A-o26'; state.board.step = 'pick';
     state.home = { map: 'B', tier, deposit: tier === 2 ? 1500 : 0 };
     state.board.ledger = { income: 123 };
     const arrived = choose(state, 'go:A-o0').state;
@@ -185,7 +185,7 @@ test('start arrival transfers only rented housing, costs 80, preserves deposit, 
     assert.equal(moved.s.money, arrived.s.money - 80); assert.equal(moved.board.step, 'bonus');
     assert.equal(moved.turn, state.turn); assert.equal(choose(arrived, 'skip').state.board.step, 'bonus');
     assert.throws(() => choose(moved, `home:move:${tier}`), /not available/);
-    state.board.dice = [2, 2];
+    state.board.dice = [1, 2];
     assert.ok(!options(choose(state, 'go:A-o1').state).some(o => o.id.startsWith('home:')));
   }
   const state = at('D'); state.home = { map: 'B', tier: 2, deposit: 1500 };
@@ -194,7 +194,7 @@ test('start arrival transfers only rented housing, costs 80, preserves deposit, 
 });
 
 test('start job popup resumes the relocation tile instead of losing it', () => {
-  const state = at('A'); state.status = 'jobless'; state.board.pos = 'A-o27'; state.board.step = 'pick';
+  const state = at('A'); state.status = 'jobless'; state.board.pos = 'A-o26'; state.board.step = 'pick';
   state.home = { map: 'B', tier: 2, deposit: 1500 };
   const arrived = choose(state, 'go:A-o0').state;
   assert.ok(options(arrived).some(o => o.id === 'job:none'));
@@ -205,7 +205,7 @@ test('start job popup resumes the relocation tile instead of losing it', () => {
 test('all tiers grant rest and seasonal recovery only on the residence map, with age/health caps', () => {
   for (const [tier, rest, recovery] of [[0, 60, 20], [1, 60, 20], [2, 65, 22], [3, 70, 24], [4, 75, 26], [5, 80, 28], [6, 85, 30]]) {
     for (const local of [true, false]) {
-      const state = at('A'); state.board.pos = 'A-o2'; state.board.step = 'pick'; state.s.stamina = 0;
+      const state = at('A'); state.board.pos = 'A-o1'; state.board.step = 'pick'; state.s.stamina = 0;
       state.home = { map: local ? 'A' : 'B', tier, deposit: 0 };
       state.estates = [{ map: 'A', tier: 6, paid: 78000 }];
       const landed = choose(state, 'go:A-o3');
@@ -217,7 +217,7 @@ test('all tiers grant rest and seasonal recovery only on the residence map, with
   }
   for (const [turn, cap] of [[0, 60], [164, 80]]) {
     const state = at('A'); state.turn = turn; state.s.capStamina = cap; state.s.stamina = 0;
-    state.home = { map: 'A', tier: 6, deposit: 0 }; state.board.pos = 'A-o2'; state.board.step = 'pick';
+    state.home = { map: 'A', tier: 6, deposit: 0 }; state.board.pos = 'A-o1'; state.board.step = 'pick';
     const landed = choose(state, 'go:A-o3'); assert.equal(landed.result.restGain, cap);
     assert.equal(choose(landed.state, 'end').state.s.stamina, cap);
   }

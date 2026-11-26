@@ -139,7 +139,7 @@ test('life layout choice lookup rewinds to an earlier popup page before choosing
 
 test('life layout traverses plain destination pages and rewinds before choosing', async () => {
   const state = choose(newGame(1), 'start:school').state;
-  state.board.pos = 'B-o2'; state.board.step = 'pick'; state.board.dice = [6, 6]; state.s.car = 2;
+  state.board.pos = 'B-o2'; state.board.step = 'pick'; state.board.dice = [3, 3]; state.s.car = 2;
   const page = new PagingPage(state), seen: string[][] = [];
   const { checkPages, clickChoice } = pagingChecks(page, async () => { seen.push(page.visible().map(option => option.id)); });
   assert.equal(panelAt(page.root), undefined);

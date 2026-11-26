@@ -52,7 +52,8 @@ test('start shows all three engine choices on one page without changing state or
 });
 
 test('space cards show exact engine forecasts, including branch deltas and locked choices', () => {
-  const state = choose(started(), 'spin').state; state.s.money = 0;
+  // Seed 27 spins 3 + 1 = 4 and lands on a single tile.
+  const state = choose(choose(newGame(27), 'start:school').state, 'spin').state; state.s.money = 0;
   const model = popupModel(frozen(state))!;
   assert.equal(model.kind, 'space');
   for (const view of options(state)) {

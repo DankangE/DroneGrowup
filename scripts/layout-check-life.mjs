@@ -184,7 +184,7 @@ async function tiltChecks(page, load, check) {
     await page.emulateMedia({ reducedMotion: motion });
     for (const map of Object.keys(MAPS)) {
       const state = structuredClone(starter);
-      state.board.pos = `${map}-o0`; state.board.step = 'pick'; state.board.dice = [6, 6];
+      state.board.pos = `${map}-o0`; state.board.step = 'pick'; state.board.dice = [3, 3];
       await load(state); await check(`tilt ${map} ${motion}`);
       for (const selector of ['.life2-paths', '.life2-preview']) {
         assert.equal(await page.locator(selector).evaluate(node => getComputedStyle(node).transform), 'none',
@@ -255,7 +255,7 @@ async function movementChecks(page, load, check) {
   }
   assert.equal(expected.turn, 1, 'keyboard alone completes a season');
   await check('keyboard next season');
-  const single = await startRun(11); await keys.clickChoice('spin');
+  const single = await startRun(27); await keys.clickChoice('spin'); // 3 + 1 = 4: one destination
   assert.deepEqual(await actual(), choose(single, 'spin').state);
   assert.equal(await phase(), 'space', 'reduced motion is instant; one destination never shows pick');
   assert.equal(await page.locator('[data-dest]').count(), 0);
@@ -267,12 +267,12 @@ async function movementChecks(page, load, check) {
   assert.equal(await phase(), 'spin'); await check('rolling wheels');
   await page.clock.runFor(699); assert.equal(await phase(), 'spin');
   await page.clock.runFor(1); assert.equal(await phase(), 'pick'); await check('pick after 700ms');
-  const target = page.locator('[data-space="A-o4"][data-dest]');
+  const target = page.locator('[data-space="A-o5"][data-dest]');
   await target.hover();
-  assert.equal(await page.locator('[data-path-preview]').getAttribute('data-path-preview'), 'A-o4');
-  assert.equal(await page.locator('[data-path-preview] line').count(), 4);
+  assert.equal(await page.locator('[data-path-preview]').getAttribute('data-path-preview'), 'A-o5');
+  assert.equal(await page.locator('[data-path-preview] line').count(), 5);
 
-  const earlyStopped = await startRun(11);
+  const earlyStopped = await startRun(27);
   await page.evaluate(() => {
     window.__lifePhases = [];
     window.__lifePhaseObserver = new MutationObserver(records => window.__lifePhases.push(...records.map(record => record.oldValue)));
@@ -286,7 +286,7 @@ async function movementChecks(page, load, check) {
   await page.clock.runFor(2000);
   assert.deepEqual(await actual(), choose(earlyStopped, 'spin').state, 'skip never rolls or applies movement twice');
 
-  const paid = fixture('A-o10', [2, 2]); paid.board.ledger = { wage: 125, expense: -20 };
+  const paid = fixture('A-o10', [1, 1]); paid.board.ledger = { wage: 125, expense: -20 };
   await load(paid); await press('[data-space="A-o12"][data-dest]');
   assert.equal(await phase(), 'move'); assert.equal(await pawn(), 'A-o11');
   assert.equal(await page.locator('[data-payment]').getAttribute('data-payment'), '105'); await check('salary while moving');
@@ -295,7 +295,7 @@ async function movementChecks(page, load, check) {
   await page.clock.runFor(250);
   assert.deepEqual(await actual(), choose(paid, 'go:A-o12').state);
 
-  const crossing = fixture('A-o11', [4, 4]);
+  const crossing = fixture('A-o11', [2, 2]);
   await load(crossing); await keys.checkPages('transfer destinations');
   assert.equal(await page.locator('.life2-transfer-badge[data-dest="B-o2"]').count(), 1);
   await keys.clickChoice('go:B-o2'); await page.clock.runFor(500);
@@ -310,13 +310,13 @@ async function movementChecks(page, load, check) {
 
   const immediate = fixture('A-o13', [1, 1]);
   for (const reduce of [false, true]) {
-    await load(immediate); await keys.clickChoice('go:B-o1'); assert.equal(await phase(), 'transfer');
+    await load(immediate); await keys.clickChoice('go:B-o2'); assert.equal(await phase(), 'transfer');
     if (reduce) await page.emulateMedia({ reducedMotion: 'reduce' });
     else await page.keyboard.press('Space');
     await page.waitForFunction(() => document.querySelector('#app').dataset.phase !== 'transfer');
     await page.clock.runFor(2000);
-    assert.deepEqual(await actual(), choose(immediate, 'go:B-o1').state);
-    assert.equal(await pawn(), 'B-o1', 'skip and reduced-motion changes finish immediately');
+    assert.deepEqual(await actual(), choose(immediate, 'go:B-o2').state);
+    assert.equal(await pawn(), 'B-o2', 'skip and reduced-motion changes finish immediately');
   }
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await startRun(1); await press('.life2-bottom .life2-wheel');
@@ -761,8 +761,9 @@ async function fix3Checks(page, load, check) {
   const retirement = worker(1); retirement.turn = 164;
   await load(retirement); await expect('retirement');
   for (const id of ['go:A-o12', 'spin']) {
-    const run = choose(newGame(11), 'start:self').state;
-    run.board.pos = id === 'spin' ? 'A-o8' : 'A-o11';
+    // Seed 1 spins 4 + 1 = 5 from A-o7; both paths land on A-o12.
+    const run = choose(newGame(id === 'spin' ? 1 : 11), 'start:self').state;
+    run.board.pos = id === 'spin' ? 'A-o7' : 'A-o10';
     run.board.step = id === 'spin' ? 'spin' : 'pick'; run.board.dice = id === 'spin' ? [] : [1, 1];
     await load(run);
     if (id === 'spin') await page.locator('.life2-wheel').click(); else await page.locator('[data-space="A-o12"][data-dest]').click();
@@ -1080,7 +1081,7 @@ async function main() {
           for (const step of ['pick', 'space', 'bonus']) {
             const fixture = structuredClone(started);
             fixture.board.pos = step === 'pick' ? `${map}-o0` : WORLD.find(node => node.map === map && node.kind === 'train').id;
-            fixture.board.step = step; fixture.board.dice = step === 'pick' ? [6, 6] : [1, 1];
+            fixture.board.step = step; fixture.board.dice = step === 'pick' ? [3, 3] : [1, 1];
             await load(fixture); await checkPages(`${map} ${step} menu`);
           }
           // Long rank, largest stored funds/debt, empty age-capped battery and

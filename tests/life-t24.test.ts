@@ -32,13 +32,13 @@ test('T24: driver and simulation share all human pauses; animation durations com
 
 test('T24: movement charges actual steps and F5 auto-close has one acknowledgement and no bonus reading', () => {
   const before = choose(newGame(11), 'start:self').state;
-  before.board.pos = 'A-o11'; before.board.step = 'pick'; before.board.dice = [1, 1];
+  before.board.pos = 'A-o10'; before.board.step = 'pick'; before.board.dice = [1, 1];
   const outcome = choose(before, 'go:A-o12'), model = choiceTiming(before, outcome.state, outcome.result);
   assert.equal(outcome.state.turn, 1);
-  assert.equal(model.counts.pick, 1); assert.equal(model.counts.move, 1);
+  assert.equal(model.counts.pick, 1); assert.equal(model.counts.move, 2);
   assert.equal(model.counts.result, 1); assert.equal(model.counts.callout, 1);
   assert.equal(model.counts.bonus, 0); assert.equal(model.counts.wheel, 0);
-  assert.equal(model.seconds, 3 + .25 + 2.4 + .6 + .18);
+  assert.equal(model.seconds, 3 + 2 * .25 + 2.4 + .6 + .18);
 });
 
 test('T24: six-map pure replay records model intervals including the final acknowledgement', async () => {

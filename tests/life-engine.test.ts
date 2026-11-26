@@ -166,20 +166,20 @@ test('empty movement, jobfair and unimplemented tile kinds always offer a way fo
 });
 
 test('pay/start settlement on passing or arrival clears the ledger exactly once and tracks start visits', () => {
-  for (const [origin, destination, steps] of [['A-o10', 'A-o11', 1], ['A-o27', 'A-o0', 1],
-    ['A-o10', 'A-o12', 2], ['A-o27', 'A-o1', 2]] as const) {
+  for (const [origin, destination, dice] of [['A-o9', 'A-o11', [1, 1]], ['A-o26', 'A-o0', [1, 1]],
+    ['A-o9', 'A-o12', [1, 2]], ['A-o26', 'A-o1', [1, 2]]] as const) {
     // Fix the accounting balance independently of the starting bankroll.
-    const state = at(origin, 'pick', { money: 60 }); state.board.dice = [steps, steps];
+    const state = at(origin, 'pick', { money: 60 }); state.board.dice = [...dice];
     state.board.ledger = { 급여: 95, 생활비: -25 };
     const { state: next, result } = choose(state, `go:${destination}`);
     assert.equal(next.s.money, 130); assert.deepEqual(next.board.ledger, {});
     assert.equal(result.upkeep?.total, 70); assert.equal(result.upkeep?.lines.length, 2);
     assert.equal(result.settle?.deltas.money, 70);
-    assert.equal(next.board.lapAt.A, origin === 'A-o27' ? state.turn : -1);
+    assert.equal(next.board.lapAt.A, origin === 'A-o26' ? state.turn : -1);
     assert.equal(next.board.step, ['A-o11', 'A-o0', 'A-o12'].includes(destination) ? 'bonus' : 'space');
     assert.deepEqual(state.board.ledger, { 급여: 95, 생활비: -25 });
   }
-  const shortfall = at('A-o10', 'pick', { money: 3, debt: 4 });
+  const shortfall = at('A-o9', 'pick', { money: 3, debt: 4 });
   shortfall.board.ledger = { 생활비: -25 };
   const next = choose(shortfall, 'go:A-o11').state;
   assert.equal(next.s.money, 0); assert.equal(next.s.debt, 26);
@@ -201,7 +201,7 @@ test('transfer options reflect filtered fares, and applyMove charges the selecte
 
 test('rest is automatic once, gains 60, and respects the age cap', () => {
   for (const [turn, stamina, cap, gain] of [[0, 10, 100, 60], [164, 35, 80, 45], [164, 80, 80, 0]]) {
-    const state = at('A-o2', 'pick', { stamina, capStamina: cap }); state.turn = turn;
+    const state = at('A-o1', 'pick', { stamina, capStamina: cap }); state.turn = turn;
     const { state: next, result } = choose(state, 'go:A-o3');
     assert.equal(result.restGain, gain); assert.equal(next.s.stamina, stamina + gain);
     assert.equal(next.board.step, 'bonus'); assert.equal(next.turn, turn);
@@ -237,7 +237,7 @@ test('tile menus preserve v1 kind/when filters; extra actions use place, when an
 });
 
 test('events use weighted cooldown selection, contest preference and normal fallback', () => {
-  const state = at('A-o7', 'pick');
+  const state = at('A-o6', 'pick');
   let pool: ReturnType<typeof eventCandidates> = EVENTS.filter(event => met(state, event.when) && CONTEST_EVENTS.includes(event.id));
   const expected = structuredClone(state);
   let weight = randInt(expected, pool.reduce((sum, event) => sum + event.weight, 0));
@@ -263,7 +263,7 @@ test('events use weighted cooldown selection, contest preference and normal fall
   const fallback = choose(state, 'go:A-o8').state;
   assert.equal(fallback.phase, 'event'); assert.ok(!CONTEST_EVENTS.includes(fallback.eventId!));
   // The ordinary event tile uses the full pool, with the same weighted RNG procedure.
-  state.board.pos = 'A-o4'; state.seen = {};
+  state.board.pos = 'A-o3'; state.seen = {};
   pool = eventCandidates(state);
   const normalPreview = structuredClone(state);
   weight = randInt(normalPreview, pool.reduce((sum, event) => sum + event.weight, 0));

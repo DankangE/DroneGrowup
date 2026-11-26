@@ -272,14 +272,14 @@ test('choose awards contest performance only for a winning roll on a contest til
 });
 
 test('choose stops at the eligible review tile and returns its assessment without applying a yearly award', () => {
-  for (const dice of [[1, 1], [6, 6]] as const) {
+  for (const dice of [[1, 1], [3, 3]] as const) {
     const state = worker('service', 0, { xp: 100 }); state.job.perf = 80;
-    state.board.pos = 'A-o8'; state.board.step = 'pick'; state.board.dice = [...dice];
+    state.board.pos = 'A-o7'; state.board.step = 'pick'; state.board.dice = [...dice];
     const move = engineReachable(state)[0];
     assert.ok(options(state).some(row => row.id === `go:${move.node}`));
     const next = choose(frozen(state), `go:${move.node}`);
     assert.equal(next.state.board.pos, 'A-o9');
-    assert.equal(next.result.move?.stop, dice[0] === 6 ? 'A-o9' : undefined);
+    assert.equal(next.result.move?.stop, dice[0] === 3 ? 'A-o9' : undefined);
     assert.deepEqual(next.result.review, review(state));
     assert.ok(next.result.notes.includes('우수'));
     assert.equal(next.state.s.money, state.s.money, 'arrival does not pay the year-end bonus');
@@ -511,7 +511,7 @@ function careerChoice(state: GameState, career: 'instructor' | 'racer'): string 
 }
 
 for (const career of ['instructor', 'racer'] as const) {
-  const seed = career === 'racer' ? 2 : 1; // T15's slower training needs an earlier exam route.
+  const seed = career === 'racer' ? 4 : 1; // T15's slower training needs an earlier exam route; the sum rule moves the racer seed.
   test(`seed ${seed} reaches ${career} review and retirement through choose alone and finishes 204 seasons`, t => {
     let state = newGame(seed), picks = 0, promotions = 0, stops = 0, bonuses = 0, years = 0;
     let retiredAt: number | undefined;

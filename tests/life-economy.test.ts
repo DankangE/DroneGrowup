@@ -227,7 +227,7 @@ test('lap allowance is strictly after eight seasons, records every crossing and 
 });
 test('first start crossing uses elapsed time since start; engine settles and pays the allowance once on passing/landing', () => {
   for (const destination of ['A-o0', 'A-o1']) {
-    const state = stateAt(); state.turn = 9; state.board.pos = 'A-o27'; state.board.step = 'pick'; state.board.dice = [1, 2];
+    const state = stateAt(); state.turn = 9; state.board.pos = 'A-o26'; state.board.step = 'pick'; state.board.dice = destination === 'A-o0' ? [1, 1] : [1, 2];
     state.board.ledger = { 급여: 100 };
     const next = choose(state, `go:${destination}`);
     assert.equal(next.state.s.money, 630); assert.equal(next.state.board.lapAt.A, 9);

@@ -40,9 +40,9 @@ test('single roulette uses only the first eye before both manual and automatic t
   let automatic = 0, manual = 0;
   for (let seed=1;seed<=36;seed++) {
     const state = choose(newGame(seed),'start:school').state, original = structuredClone(state);
-    const probe = structuredClone(state), dice = rollDice(probe); probe.board.dice = [dice[0],dice[0]];
+    const probe = structuredClone(state), dice = rollDice(probe); probe.board.dice = [dice[0]];
     const allowed = reachable(probe), result = choose(state,'spin','board',true);
-    assert.deepEqual(state,original); assert.deepEqual(result.state.board.dice,[dice[0],dice[0]]);
+    assert.deepEqual(state,original); assert.deepEqual(result.state.board.dice,[dice[0]]);
     if (result.result.move) { automatic++; assert.equal(allowed.length,1); assert.equal(result.result.move.node,allowed[0].node); }
     else { manual++; assert.deepEqual(reachable(result.state).map(m=>m.node),allowed.map(m=>m.node)); }
   }

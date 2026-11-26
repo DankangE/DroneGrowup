@@ -22,17 +22,17 @@ function frozen<T>(value: T): T {
   return value;
 }
 
-test('two different dice expose the engine destinations; a double with one destination bypasses pick', () => {
+test('a sum with several destinations exposes the engine destinations; a sum with one destination bypasses pick', () => {
   const multiple = choose(choose(newGame(1), 'start:school').state, 'spin');
   assert.deepEqual(multiple.state.board.dice, [4, 1]);
   assert.equal(multiple.state.board.step, 'pick');
   assert.deepEqual(movementFrames('A-o0', multiple.result, true), [{ phase: 'spin', pos: 'A-o0', ms: 700 }]);
-  const single = choose(choose(newGame(11), 'start:school').state, 'spin');
-  assert.deepEqual(single.state.board.dice, [4, 4]);
+  const single = choose(choose(newGame(7), 'start:school').state, 'spin');
+  assert.deepEqual(single.state.board.dice, [1, 1]);
   assert.equal(single.state.board.step, 'space');
   assert.ok(!options(single.state).some(option => option.id.startsWith('go:')));
   const frames = movementFrames('A-o0', frozen(single.result), true);
-  assert.deepEqual(frames.map(frame => frame.phase), ['spin', 'move', 'move', 'move', 'move']);
+  assert.deepEqual(frames.map(frame => frame.phase), ['spin', 'move', 'move']);
   assert.equal(frames.at(-1)!.pos, single.state.board.pos);
 });
 
@@ -51,19 +51,19 @@ test('every die pair at every tile animates exactly the supplied path and map cr
 });
 
 test('transfer lasts 600ms before the next map tile, including a transfer on the first step', () => {
-  const move = reachable(fixture('A-o11', [4, 4])).find(move => move.node === 'B-o2')!;
+  const move = reachable(fixture('A-o11', [2, 2])).find(move => move.node === 'B-o2')!;
   assert.deepEqual(movementFrames('A-o11', { move }), [
     { phase: 'move', pos: 'A-o12', ms: 250 }, { phase: 'move', pos: 'A-o13', ms: 250 },
     { phase: 'transfer', pos: 'A-o13', from: 'A', to: 'B', ms: 600 },
     { phase: 'move', pos: 'B-o1', ms: 250 }, { phase: 'move', pos: 'B-o2', ms: 250 },
   ]);
-  const first = reachable(fixture('A-o13', [1, 1])).find(move => move.node === 'B-o1')!;
+  const first = reachable(fixture('A-o13', [1, 1])).find(move => move.node === 'B-o2')!;
   assert.equal(movementFrames('A-o13', { move: first })[0].phase, 'transfer');
   assert.equal(TRANSFER_MS, 600); assert.equal(STEP_MS, 250); assert.equal(SPIN_MS, 700);
 });
 
 test('review stops truncate travel, retain the dotted preview and do not animate unreached transfers', () => {
-  const state = fixture('B-o15', [6, 6]); state.s.car = 2; state.flags = ['invite'];
+  const state = fixture('B-o15', [3, 3]); state.s.car = 2; state.flags = ['invite'];
   const move = reachable(state, { canPromote: () => true }).find(move => move.node === 'D-o1')!;
   assert.equal(move.stop, 'B-o16');
   assert.deepEqual(movementFrames(state.board.pos, { move }), [{ phase: 'move', pos: 'B-o16', ms: 250 }]);
@@ -72,7 +72,7 @@ test('review stops truncate travel, retain the dotted preview and do not animate
 });
 
 test('destination copy shows the engine steps, toll, map and review marker without deriving eligibility', () => {
-  const state = fixture('A-o11', [4, 4]);
+  const state = fixture('A-o11', [2, 2]);
   const moves = reachable(state), remote = moves.find(move => move.node === 'B-o2')!;
   assert.equal(destinationDetails(remote), '4걸음 · 통행료 10만');
   assert.match(destinationName(remote, state.board.pos), /^⇄ 도심 · /);
@@ -80,7 +80,7 @@ test('destination copy shows the engine steps, toll, map and review marker witho
 });
 
 test('dotted preview includes the origin but never bridges coordinates from different maps', () => {
-  const move = reachable(fixture('A-o11', [4, 4])).find(move => move.node === 'B-o2')!;
+  const move = reachable(fixture('A-o11', [2, 2])).find(move => move.node === 'B-o2')!;
   const segment = (from: string, to: string) => ({ from: gridCell(nodeAt(from)), to: gridCell(nodeAt(to)) });
   assert.deepEqual(pathSegments('A-o11', frozen(move.path), 'A'), [segment('A-o11', 'A-o12'), segment('A-o12', 'A-o13')]);
   assert.deepEqual(pathSegments('A-o11', move.path, 'B'), [segment('B-o1', 'B-o2')]);
@@ -89,7 +89,7 @@ test('dotted preview includes the origin but never bridges coordinates from diff
 });
 
 test('payment popup uses the engine settlement total once at the first passed salary/start tile', () => {
-  const state = fixture('A-o10', [2, 2]); state.board.ledger = { wage: 125, expense: -20 };
+  const state = fixture('A-o10', [1, 1]); state.board.ledger = { wage: 125, expense: -20 };
   const outcome = choose(state, 'go:A-o12');
   assert.equal(outcome.result.upkeep!.total, 105);
   assert.deepEqual(movementFrames(state.board.pos, frozen(outcome.result)), [

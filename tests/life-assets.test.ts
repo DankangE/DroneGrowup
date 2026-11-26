@@ -34,7 +34,7 @@ function rollSeed(value: number, range: number): number {
   throw new Error('test seed missing');
 }
 function cardState(id: string, prepare?: (state: GameState) => void) {
-  const state = at('A-o11', 'pick');
+  const state = at('A-o10', 'pick');
   state.rng = rollSeed(LUCK.findIndex(card => card.id === id), LUCK.length);
   prepare?.(state);
   const before = structuredClone(state); freeze(state);
@@ -261,7 +261,7 @@ test('luck again: a second movement in this season, then exactly one seasonal ac
   assert.equal(next.turn, state.turn + 1);
 });
 
-test('luck triple: next spin rolls three seeded dice and the third die offers reachable destinations', () => {
+test('luck triple: next spin rolls three seeded dice and any two of them add up to a reachable destination', () => {
   const { state } = cardState('triple');
   assert.ok(state.flags.includes(K.triple));
   const ready = state, rng = structuredClone(ready);
@@ -269,20 +269,22 @@ test('luck triple: next spin rolls three seeded dice and the third die offers re
   const next = choose(ready, 'spin').state;
   assert.deepEqual(next.board.dice, [...dice, third]); assert.equal(next.rng, rng.rng);
   assert.ok(!next.flags.includes(K.triple)); saved(next);
-  const pick = at('A-o0', 'pick'); pick.board.dice = [1, 1, 6];
+  const pick = at('A-o0', 'pick'); pick.board.dice = [1, 1, 5];
   assert.ok(reachable(pick).some(row => row.node === 'A-o6'));
-  assert.ok(!baseReachable(pick).some(row => row.node === 'A-o6'));
+  assert.ok(!baseReachable({ ...pick, board: { ...pick.board, dice: [1, 1] } }).some(row => row.node === 'A-o6'));
   assert.equal(choose(pick, 'go:A-o6').state.board.pos, 'A-o6');
   for (let car = 0; car <= 3; car++) {
     pick.s.car = car;
-    const expected: Set<string> = new Set(pick.board.dice.flatMap(die => baseReachable({ ...pick, board: { ...pick.board, dice: [die, die] } }).map(row => row.node)));
+    const [a, b, c] = pick.board.dice as [number, number, number];
+    const pairs: [number, number][] = [[a, b], [a, c], [b, c]];
+    const expected: Set<string> = new Set(pairs.flatMap(dice => baseReachable({ ...pick, board: { ...pick.board, dice } }).map(row => row.node)));
     assert.deepEqual(new Set(reachable(pick).map(row => row.node)), expected);
   }
 });
 
 test('luck transfer: first transfer is free at zero cash, special-zone gates still apply, and local travel preserves it', () => {
   const { state } = cardState('transfer');
-  state.board.pos = 'B-o21'; state.board.step = 'pick'; state.board.dice = [1, 1]; state.s.money = 0;
+  state.board.pos = 'B-o20'; state.board.step = 'pick'; state.board.dice = [1, 1]; state.s.money = 0;
   assert.ok(!reachable(state).some(row => row.node === 'D-o1'));
   assert.equal(reachable(state).find(row => row.node === 'F-o1')?.fare, 0);
   assert.ok(choose(state, 'go:B-o22').state.flags.includes(K.transfer));
@@ -324,7 +326,7 @@ test('transfer pass survives a promotion stop before the transfer and pays only 
   const stopped = at('A-o7', 'pick'); stopped.flags.push(K.transfer);
   stopped.status = 'working'; stopped.track = 'service'; stopped.job.tenure = 4;
   stopped.job.perf = 50; stopped.s.xp = 100; stopped.s.car = 2; stopped.s.money = 0;
-  stopped.board.dice = [6, 6];
+  stopped.board.dice = [3, 3];
   const candidate = reachable(stopped).find(row => row.node === 'B-o1')!;
   assert.equal(candidate.stop, 'A-o9'); assert.equal(candidate.fare, 0);
   const halted = choose(saved(stopped), 'go:B-o1').state;
@@ -332,7 +334,7 @@ test('transfer pass survives a promotion stop before the transfer and pays only 
   const node = WORLD.find(row => row.id === 'B-o1')!, original = node.next;
   node.next = ['B-o7'];
   try {
-    const state = at('A-o13', 'pick'); state.flags.push(K.transfer); state.s.money = 10; state.board.dice = [3, 3];
+    const state = at('A-o13', 'pick'); state.flags.push(K.transfer); state.s.money = 10; state.board.dice = [1, 2];
     const move = reachable(state).find(row => row.node === 'C-o1')!;
     assert.equal(move.fare, 10); assert.deepEqual(move.tolls, [0, 0, 10]);
     const next = choose(state, 'go:C-o1').state;

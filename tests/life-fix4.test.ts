@@ -176,7 +176,7 @@ test('F4 A8: review acknowledgement is 확인; annual changes and lucky copy are
   assert.ok(!card.lines.some(line => /행복 [+-]/.test(line)));
   const review = popupModel(annual.state, { kind: 'review' })!.choices.find(row => row.id === 'job:none')!;
   assert.equal(review.title, '확인'); assert.doesNotMatch(review.summary, /비용|지나간다/);
-  const lucky = choose(newGame(11), 'start:self').state; lucky.board.pos = 'A-o8';
+  const lucky = choose(newGame(1), 'start:self').state; lucky.board.pos = 'A-o7';
   const outcome = choose(lucky, 'spin'), queue = resultPopups(lucky, outcome.state, outcome.result);
   const luck = queue.find(row => row.kind === 'luck')!;
   assert.equal(luck.lines.filter(line => line === outcome.result.luck!.text).length, 1);
@@ -220,16 +220,16 @@ test('F4 B1/B2: stage and rank animation stop on click/Escape; reduced motion di
 test('F4 B4: landing callout reuses the tile icon for 600ms and can be skipped without replaying the engine', ctx => {
   ctx.mock.timers.enable({ apis: ['setTimeout'] });
   browserDOM(browser => {
-    const s = choose(newGame(11), 'start:self').state; s.board.pos = 'A-o11'; s.board.step = 'pick'; s.board.dice = [1, 1];
+    const s = choose(newGame(11), 'start:self').state; s.board.pos = 'A-o10'; s.board.step = 'pick'; s.board.dice = [1, 1];
     const root = new TestNode('main'); mountLife(root.element(), 11, true); browser.__life!.load(s);
-    root.querySelector('[data-option="go:A-o12"]')!.fire('click'); ctx.mock.timers.tick(250);
+    root.querySelector('[data-option="go:A-o12"]')!.fire('click'); ctx.mock.timers.tick(250); ctx.mock.timers.tick(250);
     const callout = root.querySelector('[data-tile-callout=luck]')!; assert.ok(callout.querySelector('[data-tile-icon=luck]'));
     assert.match(textOf(callout), /복권|행운/); ctx.mock.timers.tick(599); assert.ok(root.querySelector('[data-tile-callout]'));
     root.fire('keydown', 'Escape'); assert.equal(root.querySelector('[data-tile-callout]'), undefined);
     assert.deepEqual(browser.__life!.state(), choose(s, 'go:A-o12').state); ctx.mock.timers.tick(1);
     assert.equal(panelAt(root).dataset.popup, 'luck');
     browser.__life!.load(s); root.querySelector('[data-option="go:A-o12"]')!.fire('click');
-    ctx.mock.timers.tick(250); assert.ok(root.querySelector('[data-tile-callout]'));
+    ctx.mock.timers.tick(250); ctx.mock.timers.tick(250); assert.ok(root.querySelector('[data-tile-callout]'));
     ctx.mock.timers.tick(600); assert.equal(root.querySelector('[data-tile-callout]'), undefined);
     assert.equal(panelAt(root).dataset.popup, 'luck');
     assert.deepEqual(browser.__life!.state(), choose(s, 'go:A-o12').state);
@@ -242,10 +242,11 @@ for (const kind of ['event', 'contest', 'rankup'] as const) test(`F4 B4: ${kind}
   browserDOM(browser => {
     const s = choose(newGame(11), 'start:self').state;
     const tile = WORLD.find(node => node.map === 'A' && node.kind === kind)!;
-    s.board.pos = WORLD.find(node => node.map === 'A' && node.next.includes(tile.id))!.id;
+    const before = WORLD.find(node => node.map === 'A' && node.next.includes(tile.id))!.id;
+    s.board.pos = WORLD.find(node => node.map === 'A' && node.next.includes(before))!.id;
     s.board.step = 'pick'; s.board.dice = [1, 1];
     const root = new TestNode('main'); mountLife(root.element(), 11, true); browser.__life!.load(s);
-    root.querySelector(`[data-space="${tile.id}"][data-dest]`)!.fire('click'); ctx.mock.timers.tick(250);
+    root.querySelector(`[data-space="${tile.id}"][data-dest]`)!.fire('click'); ctx.mock.timers.tick(250); ctx.mock.timers.tick(250);
     const callout = root.querySelector(`[data-tile-callout=${kind}]`)!;
     assert.ok(callout.querySelector(`[data-tile-icon=${kind}]`));
     root.fire('keydown', 'Escape'); assert.deepEqual(browser.__life!.state(), choose(s, `go:${tile.id}`).state);

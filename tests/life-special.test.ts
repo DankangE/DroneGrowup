@@ -201,7 +201,8 @@ for (const [rank, pct] of [[0, 100], [1, 150], [2, 200], [3, 300]]) {
     for (let seed = 1; seed <= 30; seed++) {
       const state = worker('racer', 'D', rank, seed); state.s.skill = 330;
       const contest = WORLD.find(node => node.map === 'D' && node.kind === 'contest')!;
-      state.board.pos = WORLD.find(node => node.next.includes(contest.id))!.id;
+      const before = WORLD.find(node => node.next.includes(contest.id))!.id;
+      state.board.pos = WORLD.find(node => node.next.includes(before))!.id;
       state.board.step = 'pick'; state.board.dice = [1, 1];
       const landed = choose(state, `go:${contest.id}`).state;
       assert.equal(landed.eventId, 'club', 'reuse the existing racing event on racer contest tiles');
