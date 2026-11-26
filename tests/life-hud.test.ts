@@ -240,3 +240,44 @@ test('UX1c money and debt chips/readouts share benefit tone while preserving num
     assert.equal(unchanged.querySelectorAll('[data-hud-delta-stat]').length, 0);
   }
 }));
+
+test('UX1f compact HUD keeps identity, accessible status, S grades and both signed delta fixtures', () => withDOM(() => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const viewport = { innerWidth: 360, innerHeight: 700 };
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: viewport });
+  try {
+    const initial = render(newGame(11));
+    assert.equal(initial.querySelector('.life2-hud-status')!.textContent, '진로');
+    assert.equal(initial.querySelector('.life2-hud-status')!.attributes['aria-label'], '진로 선택 전');
+    const late = render(lateHudFixture('A', true));
+    assert.equal(late.querySelector('[data-pick-prompt]')!.textContent, '도착칸');
+    assert.equal(late.querySelector('[data-pick-prompt]')!.attributes['aria-label'], COPY.pickDestination);
+    assert.ok(late.querySelector('.life2-stats')!.contains(late.querySelector('[data-pick-prompt]')!));
+    assert.ok(late.querySelector('.life2-hud-rank')!.contains(late.querySelector('[data-hud-avatar]')!));
+    for (const id of ['loan:500', `repay:${LIFE_RULES.statMax}`]) {
+      const before = hudChangeFixture(id), after = choose(before, id, 'phone').state;
+      const top = render(after, before);
+      for (const stat of ['money', 'debt'] as const) {
+        const delta = after.s[stat] - before.s[stat];
+        assert.equal(top.querySelector(`[data-hud-delta-stat=${stat}]`)!.textContent,
+          `${STAT_LABEL[stat]} ${delta > 0 ? '+' : ''}${delta}만`);
+      }
+      for (const stat of Object.keys(HUD_GRADE_NAMES)) {
+        const chip = top.querySelector(`[data-grade=${stat}]`)!;
+        assert.equal(chip.querySelector('.life2-grade-letter')!.textContent, 'S');
+        assert.ok(chip.querySelector('.life2-grade-short')!.textContent);
+      }
+    }
+    // Resizing across either boundary restores the full prompt in the route row.
+    for (const [width, height, compact] of [[320, 700, true], [480, 739, true], [499, 739, true],
+      [500, 700, false], [360, 740, false]] as const) {
+      viewport.innerWidth = width; viewport.innerHeight = height;
+      const top = render(lateHudFixture('A', true)), prompt = top.querySelector('[data-pick-prompt]')!;
+      assert.equal(prompt.textContent, compact ? '도착칸' : COPY.pickDestination);
+      assert.ok(top.querySelector(compact ? '.life2-stats' : '.life2-hud-footer')!.contains(prompt));
+    }
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'window', original);
+    else Reflect.deleteProperty(globalThis, 'window');
+  }
+}));

@@ -9,6 +9,8 @@ import { button, el } from '../ui/dom.ts';
 import { fundsChangeTone, GRADE_COLOURS, HUD_GRADE_NAMES, lifeProgress, LIFE_MILESTONES, LIFE_ROUTE_SEGMENTS } from './hud-model.ts';
 import { creditCoin, pilotAvatar, progressDrone } from './hud-art.ts';
 
+const COMPACT_HUD_MAX = { width: 499, height: 739 };
+
 export const HUD_STYLE = `
 .life2 .life2-shell { grid-template-rows:110px minmax(0,1fr) clamp(50px,18dvh,136px) 44px; }
 .life2 .life2-bottom { position:relative; z-index:11; }
@@ -144,6 +146,45 @@ export const HUD_STYLE = `
   .life2 .life2-pager { grid-area:pager; gap:4px; font-size:11px; }
   .life2 .life2-pager button { padding:0 6px; }
 }
+@media (max-width:${COMPACT_HUD_MAX.width}px) and (max-height:${COMPACT_HUD_MAX.height}px) {
+  /* Keep 60px: 2 border + 4 padding + 54 content. At 320px the inner width
+     is 302 = 226 player + 2 gap + 74 calendar/route. The player has 114px
+     for rank/stamina/five grades + 2 gap + 110 funds (including deltas).
+     At 360px those widths are 342 / 266 / 154; each grade is 30px wide.
+     11px system money at 9,000,000 needs 91.38 + 12 coin + 2 gap + 4 padding.
+     The existing app resize handler renders the compact DOM placement again. */
+  .life2 .life2-hud,.life2 .life2-hud:has([data-pick-prompt]) {
+    padding:2px; gap:0 2px;
+    grid-template:'player date' 24px 'player route' 30px / minmax(0,1fr) 74px;
+  }
+  .life2 .life2-date,.life2 .life2-hud:has([data-pick-prompt]) .life2-date {
+    height:24px; grid-template:'calendar' 12px 'season' 12px / minmax(0,1fr); gap:0;
+  }
+  .life2 .life2-hud-map { display:none; }
+  .life2 .life2-hud-season { margin-left:0; }
+  .life2 .life2-player-card {
+    padding:1px 0; grid-template-columns:minmax(0,1fr) 110px;
+    grid-template-rows:16px 14px 20px; gap:1px 2px;
+  }
+  .life2 .life2-hud-identity { display:contents; }
+  .life2 .life2-hud-rank { grid-column:1; grid-row:1; gap:2px; }
+  .life2 .life2-hud-avatar { flex:none; width:16px; height:16px; }
+  .life2 .life2-rank-pill,.life2 .life2-money { font-weight:700; }
+  .life2 .life2-rank-pill { padding:0 2px; }
+  .life2 .life2-stats { grid-column:1; grid-row:2; gap:2px; }
+  .life2 .life2-hud-status { margin-left:auto; padding:0 1px; }
+  .life2 .life2-funds,.life2 .life2-player-card[data-hud-delta] .life2-funds {
+    grid-column:2; grid-row:1 / 4; align-self:start;
+  }
+  .life2 .life2-grades,.life2 .life2-player-card[data-hud-delta] .life2-grades {
+    grid-column:1; grid-row:3; gap:1px;
+  }
+  .life2 .life2-grade-letter { font-size:12px; }
+  .life2 .life2-hud-footer { grid-template-rows:30px; }
+  /* At 74px only the 35-year label fits. Keep its tick and the full-size drone. */
+  .life2 .life2-progress-label[data-route-end] { display:none; }
+  .life2 .life2-progress-label[data-age="35"] { display:block; }
+}
 @media (min-width:900px) {
   .life2 .life2-shell { grid-template-rows:138px minmax(0,1fr) 44px;
     grid-template-columns:minmax(0,1fr) clamp(380px,40vw,480px); }
@@ -169,15 +210,17 @@ export const HUD_STYLE = `
   .life2 .life2-progress-label { top:22px; line-height:14px; }
   .life2 .life2-progress-drone { width:32px; height:20px; left:clamp(0px,calc(var(--life-progress) - 16px),calc(100% - 32px)); }
   .life2 [data-pick-prompt] { line-height:16px; }
-  .life2 .life2-player-card[data-hud-delta] .life2-funds { grid-template-rows:20px 14px 26px; }
-  .life2 .life2-player-card[data-hud-delta] .life2-coin-chip { height:20px; }
-  .life2 .life2-player-card[data-hud-delta] .life2-money { line-height:20px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-funds { grid-template-rows:19px 14px 27px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-coin-chip { height:19px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-money { line-height:19px; }
   .life2 .life2-player-card[data-hud-delta] .life2-debt { line-height:14px; }
-  .life2 .life2-player-card[data-hud-delta] .life2-change-strip { grid-template-rows:13px 13px; font-size:12px; line-height:13px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-change-strip { grid-template-rows:13px 13px; row-gap:1px; font-size:12px; line-height:13px; }
 }
 `;
 export function hud(state: GameState, view: Derived, offered: OptionView[], choose: (id: string) => void,
   open?: (menu: 'my-life' | 'phone') => void, before?: GameState) {
+  const compact = typeof window !== 'undefined'
+    && window.innerWidth <= COMPACT_HUD_MAX.width && window.innerHeight <= COMPACT_HUD_MAX.height;
   const changes = before ? statChanges(before, state) : [];
   const mark = (cell: HTMLElement, stat: string, label = cell.textContent ?? '') => {
     cell.setAttribute('role', 'group');
@@ -255,7 +298,10 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
     else mark(cell, stat, label);
     grades.append(cell);
   }
-  player.append(pilotAvatar(), identity, funds, grades);
+  const avatar = pilotAvatar();
+  if (compact) rank.insertBefore(avatar, rank.firstElementChild);
+  else player.append(avatar);
+  player.append(identity, funds, grades);
   const timeline = el('div', 'life2-progress'); timeline.dataset.hudProgress = '';
   timeline.setAttribute('role', 'progressbar'); timeline.setAttribute('aria-label', '인생 항로');
   timeline.setAttribute('aria-valuemin', '0'); timeline.setAttribute('aria-valuemax', String(progress.total));
@@ -282,7 +328,13 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
   }
   timeline.append(progressDrone());
   const footer = el('div', 'life2-hud-footer');
-  if (picking) footer.append(status); else date.insertBefore(status, season);
+  if (compact) {
+    status.setAttribute('role', picking ? 'status' : 'group');
+    status.setAttribute('aria-label', status.textContent!);
+    status.title = status.textContent!;
+    status.textContent = picking ? '도착칸' : starting ? '진로' : view.period;
+    stats.append(status);
+  } else if (picking) footer.append(status); else date.insertBefore(status, season);
   footer.append(timeline);
   const cards = el('div', 'life2-hud-cards'); cards.dataset.hudSlot = 'cards'; cards.hidden = true;
   top.append(el('style', '', HUD_STYLE), date, player, footer, cards);

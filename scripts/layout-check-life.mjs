@@ -382,7 +382,7 @@ async function hudChangeChecks(page, load, check) {
 // HUD checks are separate from board geometry; timed play keeps its existing audit cost.
 export function auditHud() {
   const issues = [], vw = innerWidth, vh = innerHeight;
-  // UX1: run on every audited map/phase at all six SIZES, even behind a sheet.
+  // UX1: every audited map/phase at all six SIZES, plus the narrow/short HUD regression.
   const hud = document.querySelector('.life2-hud');
   if (!hud) issues.push('HUD: missing');
   else {
@@ -883,7 +883,8 @@ async function main() {
     const base = server.resolvedUrls?.local[0];
     assert.ok(base, 'preview has a local URL');
     browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, channel: process.env.CHROME_PATH ? undefined : 'chrome' });
-    for (const [width, height] of SIZES) {
+    for (const [width, height] of [...SIZES, [360, 700]]) {
+      const hudOnly = width === 360 && height === 700;
       const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce', locale: 'ko-KR' });
       try {
         const page = await context.newPage(), size = `${width}x${height}`;
@@ -897,7 +898,7 @@ async function main() {
         const load = async state => page.evaluate(run => window.__life.load(run), state);
         const check = async name => {
           views++;
-          for (const auditView of [audit, auditHud]) {
+          for (const auditView of hudOnly ? [auditHud] : [audit, auditHud]) {
             for (const issue of await page.evaluate(auditView)) failures.push(`${size} ${name}: ${issue}`);
           }
         };
@@ -908,6 +909,12 @@ async function main() {
         assert.deepEqual(await page.evaluate(() => window.__life.state()), newGame(11), 'default entry starts exactly newGame(seed)');
         assert.equal(await page.evaluate(() => window.__game === undefined), true, 'v1 is not mounted');
         assert.equal(await page.locator('#app').getAttribute('data-screen'), 'play');
+        if (hudOnly) {
+          await load(lateHudFixture('A', true)); await check('late S grades with maximum funds');
+          await hudChangeChecks(page, load, check);
+          console.log(`  ${size}: HUD only; late S grades with maximum funds and both signed delta fixtures checked`);
+          continue;
+        }
         await checkPages('start choices');
         await clickChoice('start:school');
         const started = choose(newGame(11), 'start:school').state;
