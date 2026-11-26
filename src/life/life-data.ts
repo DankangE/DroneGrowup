@@ -121,6 +121,11 @@ export const FAMILY_RULES = {
   weddingPlaces: ['wedding', 'resort'] as readonly string[], babyPlace: 'hospital',
   feat: (kid: number) => `kid_independent:${kid}`,
 } as const;
+/** Forced stops on the way (like the review stop): a student ready for the licence exam stops at
+ * the exam site, and an open marriage or birth step stops at the first map's local life tile. */
+export const STOP_RULES = {
+  examAction: 'st_exam', familyEvents: ['proposal', 'baby_news'] as readonly string[],
+} as const;
 export const FAMILY_KEYS = {
   dual: 'family_choose_dual', season: 'family_season', year: 'family_year',
   exhausted: 'family_exhausted', lastExhausted: 'family_last_exhausted',

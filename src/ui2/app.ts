@@ -13,7 +13,7 @@ import { townScene } from './pc-scenery.ts';
 import { choiceDetail, highlightChoices } from './choice-detail.ts';
 import { placeArt } from './art.ts';
 import { roulette, spinMotion, wheel, WHEEL_STYLE } from './wheel.ts';
-import { destinationDetails, destinationName, pick, PICK_STYLE } from './pick.ts';
+import { destinationDetails, destinationName, pick, PICK_STYLE, stopLabel } from './pick.ts';
 import { movementFrames, playback, MOVE_STYLE, STEP_MS } from './move.ts';
 import type { Frame } from './move.ts';
 import { transfer, TRANSFER_STYLE } from './transfer.ts';
@@ -56,7 +56,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
   let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
   let spin: ReturnType<typeof spinMotion> | undefined, frameStartedAt = 0;
   // Steps left on the current route; counted per move frame because a route may revisit a node.
-  let stepsLeft = 0;
+  let stepsLeft = 0, stopNote = '';
   root.classList.add('life2');
   const skip = (event?: MouseEvent) => {
     // The second click of a double-click lands on the freshly rendered stop control; ignore it.
@@ -102,6 +102,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     const frames = movementFrames(before.board.pos, outcome.result, id === 'spin');
     const route = outcome.result.move;
     stepsLeft = route ? (route.stop ? route.path.indexOf(route.stop) + 1 : route.path.length) : 0;
+    stopNote = route ? stopLabel(route) : '';
     const landing = WORLD.find(node => node.id === state.board.pos)!;
     if (outcome.result.move && P.calloutKinds.includes(landing.kind)) frames.push({ phase: 'move', pos: landing.id, ms: P.calloutMs, callout: true });
     const done = () => { frame = undefined; spin = undefined; before = undefined; sequence = undefined; render(true); };
@@ -225,7 +226,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     // only after that final shell geometry is in place, including on resize.
     if (model && !dismissed) panel.classList.add('life2-popup-host');
     const remaining = frame?.phase === 'move' ? stepsLeft : undefined;
-    const display = roulette(state.board.dice, mode === 'spin', remaining);
+    const display = roulette(state.board.dice, mode === 'spin', remaining, remaining === undefined ? undefined : stopNote);
     const hints = el('div', 'life2-key-hints');
     for (const hint of ['↑ ↓ 선택', 'Enter 결정', 'Esc 닫기']) hints.append(el('span', '', hint));
     shell.append(bands.top, map, display, panel, bands.bottom, hints);

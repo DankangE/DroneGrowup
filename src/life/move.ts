@@ -14,10 +14,25 @@ const RNG = { increment: 0x6d2b79f5, firstShift: 15, secondShift: 7, lastShift: 
 const MAP_INDEX: Record<MapId, number> = { A: 0, B: 1, C: 2, D: 3, E: 4, F: 5 };
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 
-export type MoveOptions = { canPromote?: (state: GameState, node: WorldNode) => boolean };
+export type StopReason = 'review' | 'exam' | 'life';
+/** canPromote stops on review tiles; stopFor names any other forced stop on the way. */
+export type MoveOptions = { canPromote?: (state: GameState, node: WorldNode) => boolean;
+  stopFor?: (state: GameState, node: WorldNode) => StopReason | undefined };
 // tolls[i] is the cumulative fare once path[i] is entered; fare === tolls.at(-1).
 type Route = { node: string; steps: number; path: string[]; tolls: number[]; fare: number; via: string | null; invite?: true };
-export type Move = Route & { passed: { pay: string[]; start: string[] }; stop?: string };
+export type Move = Route & { passed: { pay: string[]; start: string[] }; stop?: string; stopReason?: StopReason };
+
+/** The first intermediate tile that forces a stop. The origin and destination never do. */
+export function firstStop(state: GameState, path: readonly string[], opts: MoveOptions):
+  { stop: string; stopReason: StopReason } | undefined {
+  for (const id of path.slice(0, -1)) {
+    const node = BY_ID.get(id)!;
+    if (node.kind === 'rankup' && opts.canPromote?.(state, node)) return { stop: id, stopReason: 'review' };
+    const stopReason = opts.stopFor?.(state, node);
+    if (stopReason) return { stop: id, stopReason };
+  }
+  return undefined;
+}
 
 // mulberry32, matching v1 without depending on its engine. Only integers enter state.
 function nextRandom(state: GameState): number {
@@ -76,7 +91,7 @@ function travelledPath(move: Route & { stop?: string }): string[] {
   return move.stop ? move.path.slice(0, move.path.indexOf(move.stop) + 1) : move.path;
 }
 
-/** Enumerates complete preview paths; promotion stops only shorten actual travel. */
+/** Enumerates complete preview paths; forced stops only shorten actual travel. */
 export function reachable(state: GameState, opts: MoveOptions = {}): Move[] {
   const steps = stepsFor(state.board.dice, carLevel(state));
   if (!steps.length) return [];
@@ -110,12 +125,7 @@ export function reachable(state: GameState, opts: MoveOptions = {}): Move[] {
   walk({ node: state.board.pos, steps: 0, path: [], tolls: [], fare: 0, via: null });
 
   return [...best.values()].map(route => {
-    // The origin and destination themselves never force an intermediate stop.
-    const stop = route.path.slice(0, -1).find(id => {
-      const node = BY_ID.get(id)!;
-      return node.kind === 'rankup' && opts.canPromote?.(state, node);
-    });
-    const move: Move = { ...route, passed: { pay: [], start: [] }, ...(stop ? { stop } : {}) };
+    const move: Move = { ...route, passed: { pay: [], start: [] }, ...firstStop(state, route.path, opts) };
     for (const id of travelledPath(move)) {
       const { kind } = BY_ID.get(id)!;
       if (kind === 'pay' || kind === 'start') move.passed[kind].push(id);
@@ -129,7 +139,7 @@ export function applyMove(state: GameState, nodeId: string, opts: MoveOptions = 
   if (!move) throw new Error(`${UNREACHABLE}: ${nodeId}`);
   const next = structuredClone(state);
   next.board.pos = move.stop ?? move.node;
-  // A promotion stop before a transfer means the later toll is never paid.
+  // A forced stop before a transfer means the later toll is never paid.
   next.s.money -= move.stop ? move.tolls[move.path.indexOf(move.stop)] : move.fare;
   next.board.visited |= 1 << MAP_INDEX[BY_ID.get(next.board.pos)!.map];
   // A preview can transfer after a promotion stop; only actual entry consumes an invite.

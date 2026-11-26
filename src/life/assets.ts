@@ -8,7 +8,7 @@ import { performance, special } from './jobs.ts';
 import { ASSET_KEYS as K, ASSET_RULES as R, ASSET_TEXT as T, BOARD_CHOICES,
   FUNDS, LIFE_RULES, LUCK, SHOPS } from './life-data.ts';
 import type { ShopDef } from './life-data.ts';
-import { applyMove, carLevel, randInt, reachable, rollDice, stepsFor } from './move.ts';
+import { applyMove, carLevel, firstStop, randInt, reachable, rollDice, stepsFor } from './move.ts';
 import type { Move, MoveOptions } from './move.ts';
 import { WORLD } from './world.ts';
 import type { Choice, Effect, GameState, SpaceKind } from './types.ts';
@@ -191,13 +191,10 @@ const bestMoves = (moves: Move[]): Move[] => {
   return [...best.values()].sort((a, b) => a.steps - b.steps || a.node.localeCompare(b.node));
 };
 function route(path: string[], tolls: number[], via: string | null, state: GameState, opts: MoveOptions): Move {
-  const stop = path.slice(0, -1).find(id => {
-    const node = WORLD.find(row => row.id === id)!;
-    return node.kind === 'rankup' && opts.canPromote?.(state, node);
-  });
-  const travelled = stop ? path.slice(0, path.indexOf(stop) + 1) : path;
+  const forced = firstStop(state, path, opts);
+  const travelled = forced ? path.slice(0, path.indexOf(forced.stop) + 1) : path;
   return { node: path.at(-1)!, steps: path.length, path, tolls, fare: tolls.at(-1) ?? 0, via,
-    ...(stop && { stop }), passed: {
+    ...forced, passed: {
       pay: travelled.filter(id => WORLD.find(node => node.id === id)!.kind === 'pay'),
       start: travelled.filter(id => WORLD.find(node => node.id === id)!.kind === 'start'),
     } };

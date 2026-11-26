@@ -511,7 +511,7 @@ function careerChoice(state: GameState, career: 'instructor' | 'racer'): string 
 }
 
 for (const career of ['instructor', 'racer'] as const) {
-  const seed = career === 'racer' ? 4 : 1; // T15's slower training needs an earlier exam route; the sum rule moves the racer seed.
+  const seed = career === 'racer' ? 4 : 1; // T15's slower training needs an earlier exam route. Under the sum rule and the exam stop, racer seeds 1-30 pass 7/30 (19/30 before the sum rule); seed 2 no longer reaches retirement.
   test(`seed ${seed} reaches ${career} review and retirement through choose alone and finishes 204 seasons`, t => {
     let state = newGame(seed), picks = 0, promotions = 0, stops = 0, bonuses = 0, years = 0;
     let retiredAt: number | undefined;
@@ -530,10 +530,17 @@ for (const career of ['instructor', 'racer'] as const) {
       const next = choose(state, id);
       integers(next.state);
       if (next.result.move?.stop) {
-        stops++;
         assert.equal(next.state.board.pos, next.result.move.stop);
-        assert.ok(next.result.review);
-        assert.ok(options(next.state).some(row => row.id === 'promo' && row.enabled));
+        if (next.result.move.stopReason === 'review') {
+          stops++;
+          assert.ok(next.result.review);
+          assert.ok(options(next.state).some(row => row.id === 'promo' && row.enabled));
+        } else {
+          // A student ready for the licence exam stops at the exam site short of the destination.
+          assert.equal(next.result.move.stopReason, 'exam');
+          assert.equal(state.status, 'student'); assert.equal(nodes.get(next.result.move.stop)!.place, 'exam');
+          assert.notEqual(next.result.move.stop, next.result.move.node);
+        }
       }
       if (id === 'promo') {
         assert.equal(next.result.roll!.chance, options(state).find(row => row.id === id)!.roll!.chance);

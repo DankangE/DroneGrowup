@@ -1,4 +1,4 @@
-import type { Move } from '../life/move.ts';
+import type { Move, StopReason } from '../life/move.ts';
 import type { MapId } from '../life/types.ts';
 import { MAPS, PLACES, WORLD } from '../life/world.ts';
 import { button, el, svg } from '../ui/dom.ts';
@@ -6,8 +6,12 @@ import { GRID, gridCell, projectBoardPaths } from './board.ts';
 import { COPY } from './popups/data.ts';
 
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
+/** Why the token stops short of the rolled sum; older moves without a reason were review stops. */
+export const STOP_LABEL: Record<StopReason, string> = { review: '심사 정차', exam: '시험장 정차', life: '결혼·출산 정차' };
+export const stopLabel = (move: Pick<Move, 'stop' | 'stopReason'>): string =>
+  move.stop ? STOP_LABEL[move.stopReason ?? 'review'] : '';
 export const destinationDetails = (move: Move): string =>
-  `${move.steps}걸음${move.fare ? ` · 통행료 ${move.fare}만` : ''}${move.stop ? ' · 심사 정차' : ''}`;
+  `${move.steps}걸음${move.fare ? ` · 통행료 ${move.fare}만` : ''}${move.stop ? ` · ${stopLabel(move)}` : ''}`;
 export function destinationName(move: Move, origin: string): string {
   const node = BY_ID.get(move.node)!;
   return `${node.map !== BY_ID.get(origin)!.map ? `⇄ ${MAPS[node.map].name} · ` : ''}${node.kind === 'start' && node.map !== 'A' ? '출발 광장' : PLACES[node.place].name}`;
@@ -52,7 +56,8 @@ export function pick(frame: HTMLElement, origin: string, moves: readonly Move[],
     control.dataset.dest = move.node;
     control.title = `${destinationName(move, origin)} · ${destinationDetails(move)}`;
     control.setAttribute('aria-label', control.title);
-    if (move.stop) control.dataset.reviewStop = move.stop;
+    if (move.stop && (move.stopReason ?? 'review') === 'review') control.dataset.reviewStop = move.stop;
+    if (move.stop) control.dataset.stop = move.stop;
     control.addEventListener('focus', () => show(move));
     control.addEventListener('pointerenter', () => show(move));
   }

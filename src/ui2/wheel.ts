@@ -57,7 +57,7 @@ function spinValue(value: string) {
   return face;
 }
 
-export function roulette(dice: readonly number[], spinning: boolean, remaining?: number) {
+export function roulette(dice: readonly number[], spinning: boolean, remaining?: number, stop?: string) {
   const display = el('div', 'life2-roulette');
   display.setAttribute('aria-hidden', 'true');
   if (spinning) display.dataset.spinning = '';
@@ -65,7 +65,7 @@ export function roulette(dice: readonly number[], spinning: boolean, remaining?:
   const value = diceDisplay(dice);
   hub.append(spinValue(value.numbers));
   if (value.total !== undefined) hub.append(el('span', 'life2-roll-value life2-spin-total', ` = ${value.total}`));
-  if (remaining !== undefined) hub.append(el('small', 'life2-remaining', `남은 걸음 ${remaining}`));
+  if (remaining !== undefined) hub.append(el('small', 'life2-remaining', `남은 걸음 ${remaining}${stop ? ` · ${stop}` : ''}`));
   display.append(el('span', 'life2-roulette-disc'), hub);
   return display;
 }
