@@ -1,7 +1,7 @@
 # AGENTS.md — DroneGrowup (파일럿 키우기)
 
 ## What this is
-Static browser game, Korean text, mobile first. Vite 5 + TypeScript strict, vanilla DOM + inline SVG.
+Static browser game, Korean text, PC first (phones: not a design constraint, must not crash). Vite 5 + TypeScript strict, vanilla DOM + inline SVG.
 No framework, no runtime dependencies (devDependencies only). Node 22+ runs .ts scripts and tests directly.
 The default client is src/ui2; src/main.ts boots it without a query flag.
 The v2 spec is docs/design/life-board.md. It is the source of truth for rules and numbers; do one ticket
