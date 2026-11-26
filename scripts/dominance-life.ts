@@ -114,7 +114,7 @@ export function dialDominanceReport() {
   const dominated = new Set<string>(), groups: Record<string, number> = {}, compared: Record<string, number> = {};
   let pairs = 0, samples = 0;
   for (const track of ['pilot', 'employee', 'racer'] as const)
-    for (const skill of [30, 150, 1000]) for (const cond of [20, 70]) for (const stamina of [20, 80])
+    for (const skill of [30, 150, 1000]) for (const cond of [20, 70, 80, 90, 100]) for (const stamina of [20, 80])
       for (const dream of [false, true]) for (const step of ['space', 'bonus'] as const) {
     const state = choose(newGame(1), 'start:self').state;
     state.status = 'working'; state.track = track; state.flags.push('licensed');

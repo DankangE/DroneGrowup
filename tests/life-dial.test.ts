@@ -135,7 +135,7 @@ test('identical final wedges at 95 lock safe or bold, expose the reason and fall
 });
 
 test('zero-base-tire override stays within spec and applies only to bold before its tire delta', () => {
-  assert.deepEqual(DIAL_ZERO_TIRE_BOLD, { chanceDelta: -10, crashDelta: 10, payPct: 126 });
+  assert.deepEqual(DIAL_ZERO_TIRE_BOLD, { chanceDelta: -5, crashDelta: 10, payPct: 126 });
   for (const key of ['chanceDelta', 'crashDelta', 'payPct'] as const) {
     const value = DIAL_ZERO_TIRE_BOLD[key]; assert.ok(Number.isInteger(value));
     assert.ok(value >= (key === 'payPct' ? 80 : -15) && value <= (key === 'payPct' ? 130 : 15));
@@ -154,6 +154,19 @@ test('zero-base-tire override stays within spec and applies only to bold before 
       assert.equal(row.success.add.money, Math.floor(flightPay(s, action.roll!.success.add!.money!) * setting.payPct / 100));
     }
   }
+});
+
+test('condition-100 job_wind keeps a money versus crash tradeoff between middle and zero-base-tire bold', () => {
+  const s = ready(); Object.assign(s.s, { cond: 100, skill: 150, stamina: 20, drone: 4 });
+  const rows = get(s, 'act:job_wind').dial!.settings;
+  const mid = rows.find(row => row.notch === 'mid')!, bold = rows.find(row => row.notch === 'bold')!;
+  assert.equal(mid.enabled, true); assert.equal(bold.enabled, true);
+  assert.equal(mid.tire, 0); assert.equal(bold.tire, 0);
+  assert.equal(mid.chance, 62); assert.equal(bold.chance, 57);
+  const expectedMoney = (row: typeof mid) => forecast(s, row.id).branches.reduce((sum, branch) => sum
+    + (branch.id === 'sure' ? 100 : row.ticks[branch.id]) * (branch.deltas.money ?? 0), 0);
+  assert.ok(expectedMoney(bold) > expectedMoney(mid), 'middle must not dominate bold at full condition');
+  assert.ok(bold.ticks.crash > mid.ticks.crash, 'bold keeps a greater crash risk');
 });
 
 test('18/19 stamina bonus offers affordable bold, preserves middle locks and agrees with forecast and bots', () => {
@@ -236,6 +249,7 @@ test('dial dominance guard rejects empty comparisons and every missing action/no
   }
   const report = dialDominanceReport();
   assert.ok(report.samples > 0); assert.ok(report.pairs > 0);
+  assert.deepEqual([report.samples, report.pairs], [690, 2800]);
   assert.deepEqual(report.coverageFailures, []); assert.deepEqual(report.dominated, []);
   assert.deepEqual(Object.keys(report.compared).sort(), keys.sort());
 });

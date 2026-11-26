@@ -386,7 +386,7 @@ export const DIAL_SETTINGS: readonly DialSetting[] = [
   { id: 'bold', label: '대담', chanceDelta: -10, crashDelta: 10, payPct: 120, tire: -2 },
 ];
 // Tile actions keep their base tire of zero; compensate only bold's lost stamina saving.
-export const DIAL_ZERO_TIRE_BOLD = { chanceDelta: -10, crashDelta: 10, payPct: 126 } as const;
+export const DIAL_ZERO_TIRE_BOLD = { chanceDelta: -5, crashDelta: 10, payPct: 126 } as const;
 export const DIAL_TEXT = { noEffect: '보통 눈금과 성공·실패·추락 칸 수가 같아 선택할 수 없습니다.' } as const;
 export const DIAL_RISK_PROFILES = {
   cautious: { spare: 2, condition: 85, stamina: 60, chance: 80, preferred: 'mid' },
