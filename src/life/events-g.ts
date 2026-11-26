@@ -1,4 +1,5 @@
 // §9.2 G. Event travel is a relocation, not a lap: no fare, pass reward or landing action.
+import { cardReward } from './cards.ts';
 import { careerAge, careerTrack, jobConditionLocks } from './career2.ts';
 import { jobChoices, openJobOffers } from './jobs.ts';
 import { answer } from './events-a.ts';
@@ -35,7 +36,7 @@ export const EVENTS_G: LifeEvent[] = [
       answer('용돈 송금', { happy: 4 }, 100), answer('전화만', { happy: 1 })] },
   { id: 'fast_track', title: '패스트트랙 선발', text: '특구의 전문 인력을 위한 집중 과정에 선발됐다.', place: 'grad_school', when: {}, weight: 4,
     eligible: s => s.board.pos[0] === SPECIAL_RULES.map && specialist(s),
-    choices: [s => eventAnswer('집중 과정', { [TRAVEL_RULES.main[s.track!] ?? 'theory']: 30, stamina: -30 }, 600, { tenure: 4 }), answer('평소대로', {}, 0, { perf: 4 })] },
+    choices: [s => cardReward(eventAnswer('집중 과정', { [TRAVEL_RULES.main[s.track!] ?? 'theory']: 30, stamina: -30 }, 600, { tenure: 4 }), 'team_letter'), answer('평소대로', {}, 0, { perf: 4 })] },
   { id: 'd_scout', title: '특구 스카우트', text: '특구의 채용 담당자가 전문직 자리를 소개하겠다고 한다.', place: 'startup_hub', when: {}, weight: 4,
     eligible: s => s.board.pos[0] === SPECIAL_RULES.map && !specialist(s)
       && TRACKS.some(track => track.tier === JOB_RULES.specialistTier && !jobConditionLocks(s, track.entry).length),

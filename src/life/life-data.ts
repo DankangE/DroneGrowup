@@ -207,7 +207,7 @@ export const INITIAL_STATE: GameState = {
     lapAt: { A: -1, B: -1, C: -1, D: -1, E: -1, F: -1 }, visited: 1, laps: 0, contests: 0, rankups: 0 },
   s: { ...Object.fromEntries(STATS.map(stat => [stat, 0])), ...LIFE_RULES.start } as Record<Stat, number>,
   job: { rank: 0, perf: 0, tenure: 0, total: 0, warn: 0, changedAt: -1, tracks: [] },
-  home: null, estates: [], holdings: [],
+  home: null, estates: [], holdings: [], hand: [],
   family: { partnerAt: null, marriedAt: null, dual: false, kids: [] },
   fund: { kind: 0, amount: 0 }, life: 0, timers: {}, flags: [], feats: [],
   eventId: null, seen: {}, ending: null, score: 0, log: [],
@@ -238,8 +238,8 @@ export const ASSET_RULES = {
 } as const;
 export const ASSET_KEYS = {
   lastLuck: 'asset_last_luck', popup: 'asset_popup', shortcut: 1, promotion: 2,
-  triple: 'luck_triple', transfer: 'luck_transfer', benefactor: 'luck_benefactor',
-  coupon: 'luck_discount', dream: 'luck_dream', fundYear: 'asset_fund_year',
+  triple: 'card_active_triple', transfer: 'card_active_transfer', benefactor: 'card_active_benefactor',
+  coupon: 'card_active_discount', dream: 'card_active_dream', fundYear: 'asset_fund_year',
 } as const;
 export type LuckDef = { id: string; title: string; text: string; add?: StatMap; flag?: string;
   action?: 'again' | 'shortcut' | 'promotion' | 'demotion'; fallback?: StatMap };

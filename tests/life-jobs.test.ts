@@ -443,7 +443,7 @@ test('200 seeded T04 runs finish 204 seasons with luck rerolls, abroad skips, in
         assert.equal(next.state.turn, Math.min(204, state.turn + 2));
         for (let turn = state.turn + 1; turn < next.state.turn; turn++) abroadSkips[turn]++;
       } else assert.ok(next.state.turn <= state.turn + 1, 'only abroad skips seasons');
-      if (next.result.luck?.id === 'again') extraSpins[state.turn]++;
+      if (next.result.optionId === 'card:use:again') extraSpins[state.turn]++;
       if (before) { assert.deepEqual(state, before); integers(next.state); }
       if (isJob) {
         assert.equal(next.state.turn, state.turn);
