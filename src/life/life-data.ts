@@ -375,3 +375,24 @@ export const ENDING_TEXT = {
   counted: (title: string, count: number) => `${title} · ${count}회`,
   named: (title: string, name: string) => `${title} · ${name}`,
 } as const;
+
+// UX3a: owner-confirmed starting values; balance measurement belongs to UX3b.
+export type DialNotch = 'safe' | 'mid' | 'bold';
+export type DialSetting = { id: DialNotch; label: string; chanceDelta: number; crashDelta: number; payPct: number; tire: number };
+export const DIAL_BONUS_CAP = 30;
+export const DIAL_SETTINGS: readonly DialSetting[] = [
+  { id: 'safe', label: '안정', chanceDelta: 10, crashDelta: -10, payPct: 85, tire: 2 },
+  { id: 'mid', label: '보통', chanceDelta: 0, crashDelta: 0, payPct: 100, tire: 0 },
+  { id: 'bold', label: '대담', chanceDelta: -10, crashDelta: 10, payPct: 120, tire: -2 },
+];
+export const DIAL_RISK_PROFILES = {
+  cautious: { spare: 2, condition: 85, stamina: 60, chance: 80, preferred: 'mid' },
+  balanced: { spare: 1, condition: 65, stamina: 40, chance: 65, preferred: 'mid' },
+  daring: { spare: 0, condition: 45, stamina: 20, chance: 45, preferred: 'bold' },
+} as const;
+export const BOT_DIAL_PROFILES = {
+  clerk_family: 'cautious', service_frugal: 'balanced', mechanic: 'balanced', official: 'cautious',
+  pilot: 'balanced', employee: 'cautious', instructor_academy: 'cautious', solo_ceo: 'daring',
+  chairman: 'cautious', engineer: 'balanced', specialist_field: 'balanced', racer_creator: 'daring',
+  investor: 'cautious', bon_vivant: 'balanced', drifter: 'daring', random: 'daring',
+} as const;

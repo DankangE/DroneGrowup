@@ -1,3 +1,4 @@
+import { baseOptionId } from '../src/life/dial.ts';
 // T15: compare public forecasts with real seeded choices, including every event response branch.
 import { cardChoice, CARDS, grantCard } from '../src/life/cards.ts';
 import { isDeepStrictEqual } from 'node:util';
@@ -80,7 +81,13 @@ export function checkOutcome(before: GameState, option: OptionView, menu: 'board
   const equal=(name:string,a:unknown,b:unknown)=>{if(!isDeepStrictEqual(a,b)) failures.push(`${name}: ${JSON.stringify(a)} != ${JSON.stringify(b)}`);};
   equal('price',[preview.cost,preview.tire],[option.cost,option.tire]);
   equal('odds',preview.chance,option.roll?.chance);
-  const wanted=preview.branches.map(b=>b.id).filter(id=>id!=='crash'||(option.roll?.crashPct??0)>0);
+  equal('ticks',preview.ticks,option.roll?.ticks);
+  if (before.phase === 'event') {
+    equal('event has no dial', option.dial, undefined);
+    equal('event has no crash wedge', option.roll?.crashPct, undefined);
+  }
+  const wanted=preview.branches.map(b=>b.id);
+  if (option.roll?.ticks) equal('crash reachability', wanted.includes('crash'), option.roll.ticks.crash > 0);
   for(let seed=0;seed<(force?4096:1)&&covered.size<wanted.length;seed++) {
     const state={...before,rng:force?seed:before.rng}, result=choose(state,option.id,menu);
     const actual=result.result, branch=actual.crashed?'crash':actual.roll?(actual.roll.success?'success':'fail'):'sure';
@@ -90,6 +97,7 @@ export function checkOutcome(before: GameState, option: OptionView, menu: 'board
     const expected=forecast(state,option.id,menu).branches.find(b=>b.id===branch);
     if(!expected){failures.push(`missing forecast branch ${branch}`);continue;}
     equal(`${branch} odds`,actual.roll?.chance,preview.chance);
+    equal(`${branch} ticks`,actual.roll?.ticks,preview.ticks);
     equal(`${branch} deltas`,actual.deltas,expected.deltas);
     if(expected.effects) equal(`${branch} persistent effects`,actual.effects,expected.effects);
     equal(`${branch} ends season`,!!actual.season,expected.endsSeason);
@@ -108,11 +116,17 @@ export function outcomeReport() {
     const card=id.startsWith('card:')?cardChoice(state,id):null;
     const option: OptionView | undefined=card ? { id,kind:'board',place:WORLD.find(n=>n.id===state.board.pos)!.place,
       title:card.choice.title,desc:card.choice.desc,cost:0,tire:0,free:true,enabled:!card.locks.length,locks:card.locks,missing:[],
-      sure:{text:card.choice.effect!.text,add:card.choice.effect!.add??{}} } : options(state,menu).find(o=>o.id===id);
+      sure:{text:card.choice.effect!.text,add:card.choice.effect!.add??{}} } : options(state,menu).find(o=>o.id===baseOptionId(id));
     if(!option?.enabled){failures.push(`${key}: unavailable ${option?.locks.join(', ')??id}`);return;}
-    const result=checkOutcome(state,option,menu,force);choices++;cases+=result.cases;
-    result.branches.forEach(branch=>coverage.add(`${key}/${branch}`));
-    failures.push(...result.failures.map(f=>`${key}: ${f}`));
+    const variants: OptionView[] = [option, ...(option.dial?.settings.filter(row => row.enabled).map(row => ({
+      ...option, id: row.id, tire: row.tire, locks: row.locks, missing: row.missing,
+      roll: { ...option.roll!, chance: row.chance, crashPct: row.crashPct, ticks: row.ticks, success: row.success },
+    })) ?? [])];
+    for (const variant of variants) {
+      const result=checkOutcome(state,variant,menu,force);choices++;cases+=result.cases;
+      result.branches.forEach(branch=>coverage.add(`${key}/${variant.id}/${branch}`));
+      failures.push(...result.failures.map(f=>`${key}/${variant.id}: ${f}`));
+    }
   };
   for(const event of ALL_EVENTS) {
     const state=eventFixture(event.id);
