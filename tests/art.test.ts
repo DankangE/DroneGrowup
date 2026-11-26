@@ -190,7 +190,7 @@ test('place and job renderers return named SVGs or local raster images with stab
 test('all six boards use kind icons while preserving all 212 tile names and pawn hooks', () => withArtDOM(() => {
   for (const map of Object.keys(MAPS)) {
     const state = newLife(1); state.board.pos = `${map}-o0`;
-    const grid = drawn(board(state)).children[0];
+    const grid = drawn(board(state)).children.find(node => node.dataset.map)!;
     assert.equal(grid.dataset.map, map);
     const tiles = grid.children.filter(node => node.dataset.space);
     const expected = WORLD.filter(node => node.map === map);

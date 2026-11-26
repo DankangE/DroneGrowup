@@ -1,6 +1,6 @@
 # DroneGrowup — 파일럿 키우기
 
-A Korean, mobile-first life board game: start at age 19, play 204 seasons across six maps and
+A Korean, PC-first life board game (phones: not a design constraint, must not crash): start at age 19, play 204 seasons across six maps and
 212 spaces, and settle at age 70. There are 19 careers, 120 events and 21 endings. Each season
 has one spin, at most one tile action and one extra action. The life board is the default entry;
 existing `?life=1` URLs remain valid. Rules and numbers: `docs/design/life-board.md`.

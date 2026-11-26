@@ -1,0 +1,398 @@
+/* PC game stage: viewport-scaled overlays over an original illustrated town. */
+html #app.life2 { --pc-text:clamp(16px,1.05vw,24px); --pc-small:clamp(12px,.9vw,20px); --pc-title:clamp(24px,2vw,42px); --pc-ink:#172f42; --pc-yellow:#ffe538; padding:0; width:100vw; height:100dvh; max-width:none; color:#fff; background:#71cf79; font:800 var(--pc-text)/1.35 'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif; }
+html #app.life2 * { box-sizing:border-box; }
+html #app.life2 button { min-width:44px; min-height:44px; font-size:var(--pc-text);font-weight:800;line-height:1.3; font-family:inherit; cursor:pointer; }
+html #app.life2 button:focus-visible { outline:4px solid #fff; outline-offset:3px; }
+html #app.life2 .life2-shell { position:relative; display:block; width:100%; height:100%; max-width:none; isolation:isolate; }
+html #app.life2 .life2-board-frame { position:absolute; inset:0; display:block; container-type:normal; }
+html #app.life2 .life2-town { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+html #app.life2 .life2-board { position:absolute; left:25%; top:25%; width:71%; height:65%; display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); grid-template-rows:repeat(9,minmax(0,1fr)); gap:5px; background:none; border-radius:0; }
+html #app.life2 .life2-paths line { stroke:#fff8da; stroke-width:.12; }
+html #app.life2 .life2-tile { --face:#13b9ec; color:white; border:3px solid #fff; background:var(--face); border-radius:10px; box-shadow:0 6px 0 #1f627c,0 9px 8px #13453555; gap:0; text-shadow:0 2px #163449; }
+html #app.life2 .life2-tile[data-kind=train] { --face:#2686f0; }
+html #app.life2 .life2-tile[data-kind=job] { --face:#00afae; }
+html #app.life2 .life2-tile[data-kind=pay],html #app.life2 .life2-tile[data-kind=start] { --face:#ffb51f; }
+html #app.life2 .life2-tile[data-kind=contest],html #app.life2 .life2-tile[data-kind=luck] { --face:#ff7729; }
+html #app.life2 .life2-tile[data-kind=event] { --face:#e4558e; }
+html #app.life2 .life2-tile[data-kind=rankup],html #app.life2 .life2-tile[data-kind=jobfair] { --face:#8652e8; }
+html #app.life2 .life2-tile[data-kind=rest],html #app.life2 .life2-tile[data-kind=life] { --face:#37bc67; }
+html #app.life2 .life2-tile[data-kind=shop],html #app.life2 .life2-tile[data-kind=biz] { --face:#f16a50; }
+html #app.life2 .life2-tile[data-kind=estate],html #app.life2 .life2-tile[data-kind=invest] { --face:#cd5cc5; }
+html #app.life2 .life2-tile[data-kind=station] { --face:#137ec3; }
+html #app.life2 .life2-board-tilted .life2-tile { border-color:transparent; background:none; box-shadow:none; }
+html #app.life2 .life2-board-tilted .life2-tile::before { border:3px solid #fff; border-radius:10px; background:var(--face); box-shadow:0 8px 0 #254d66,0 11px 6px #153e4055; }
+html #app.life2 .life2-tile .life2-glyph { width:clamp(24px,2.1vw,42px)!important; height:clamp(24px,2.1vw,42px)!important; stroke-width:2.3; filter:drop-shadow(0 2px 0 #22384f); }
+html #app.life2 .life2-tile-label { font-size:clamp(12px,.95vw,19px); line-height:1.2; font-weight:900; }
+html #app.life2 .life2-pawn { position:absolute; z-index:4; left:50%; right:auto; top:auto; bottom:60%; width:clamp(55px,5vw,100px); height:clamp(75px,7vw,135px); transform:translateX(-50%); pointer-events:none; filter:drop-shadow(0 5px 2px #143e6455); }
+html #app.life2 .life2-pawn .life2-hud-avatar { width:75%; height:70%; position:absolute; inset:0 12.5% auto; padding:4px; background:#fff; border:5px solid #ffcf24; border-radius:45% 45% 45% 0; transform:rotate(-8deg); }
+html #app.life2 .life2-pawn .life2-progress-drone { position:absolute; left:0; top:auto; bottom:0; width:100%; height:40%; }
+/* Pilot card and detached calendar retain all HUD model semantics. */
+html #app.life2 .life2-hud { position:absolute; z-index:12; left:2vw; top:2.2vh; width:28.2vw; min-width:355px; height:20vh; min-height:148px; display:grid; grid-template:'player' minmax(0,1fr) 'route' 4.5vh / 1fr; gap:8px; padding:10px; border:3px solid #fff; border-radius:22px; background:#183948ed; box-shadow:0 6px 0 #173b4d70; font-size:var(--pc-small); line-height:1.25; }
+html #app.life2 .life2-date { position:fixed; top:2.4vh; right:2.5vw; width:27vw; height:10vh; display:flex; flex-wrap:wrap; align-content:center; gap:5px 12px; padding:12px 20px; background:#173549ed; border:3px solid #fff; border-radius:24px; font-size:var(--pc-text); line-height:1.3; }
+html #app.life2 .life2-date h1 { font-size:clamp(24px,2vw,40px); line-height:1.2; }
+html #app.life2 .life2-date > span { font-size:var(--pc-small); line-height:1.3; }
+html #app.life2 .life2-hud-map { width:100%; order:3; color:#b4f6ff; }
+html #app.life2 .life2-hud-season { margin-left:auto; }
+html #app.life2 .life2-player-card { grid-template: 'avatar identity funds' 1fr 'avatar grades grades' 1fr / 19% minmax(0,1fr) auto; padding:0; gap:6px; background:none; box-shadow:none; }
+html #app.life2 .life2-hud-avatar { grid-area:avatar; width:100%; height:auto; max-height:100%; background:#35d5dc; border-radius:16px; border:3px solid #fff; }
+html #app.life2 .life2-hud-identity { grid-area:identity; display:flex; flex-direction:column; gap:5px; justify-content:center; }
+html #app.life2 .life2-hud-rank { gap:6px; flex-wrap:wrap; }
+html #app.life2 .life2-pilot-name { display:block; color:#73eff3; font-size:var(--pc-small); }
+html #app.life2 .life2-rank-pill { background:#fff; color:#183849; border-radius:20px; padding:3px 10px; font-size:var(--pc-small); line-height:1.3; }
+html #app.life2 .life2-stats,html #app.life2 .life2-stamina { font-size:clamp(11px,.8vw,16px); line-height:1.25; height:auto; gap:4px; }
+html #app.life2 .life2-stamina > span { height:auto; }
+html #app.life2 .life2-battery { width:36px; height:12px; }
+html #app.life2 .life2-funds,html #app.life2 .life2-player-card[data-hud-delta] .life2-funds { grid-area:funds; grid-template-rows:auto auto; gap:2px; }
+html #app.life2 .life2-coin-chip { height:auto; background:none; padding:0; }
+html #app.life2 .life2-credit-coin { width:24px; height:24px; }
+html #app.life2 .life2-money { font-size:clamp(19px,1.65vw,34px); line-height:1.2; color:#ffe668; }
+html #app.life2 .life2-debt { font-size:clamp(12px,.8vw,17px); line-height:1.25; }
+html #app.life2 .life2-change-strip { position:absolute; top:calc(100% + 7px); right:0; padding:4px; border-radius:8px; background:#183948; line-height:1.2; }
+html #app.life2 .life2-player-card[data-hud-delta] .life2-change-strip { grid-template-rows:auto auto; }
+html #app.life2 .life2-grades,html #app.life2 .life2-player-card[data-hud-delta] .life2-grades { grid-area:grades; gap:4px; }
+html #app.life2 .life2-grade { border:0; background:none; grid-template-columns:auto auto; grid-template-rows:1fr 6px; gap:2px; font-size:clamp(11px,.8vw,16px); line-height:1.2; }
+html #app.life2 .life2-grade-letter { height:auto; font-size:clamp(23px,2vw,40px); line-height:1.2; text-shadow:0 2px #000; }
+html #app.life2 .life2-grade-gauge { height:6px; }
+html #app.life2 .life2-hud-footer { display:flex; gap:8px; align-items:center; }
+html #app.life2 .life2-progress { height:100%; font-size:var(--pc-small); }
+html #app.life2 .life2-progress-track { height:12px; top:7px; box-shadow:0 0 0 2px #fff; }
+html #app.life2 .life2-progress-tick { top:6px; height:14px; }
+html #app.life2 .life2-progress-label { top:25px; font-size:clamp(11px,.8vw,17px); line-height:1.2; }
+html #app.life2 .life2-progress-drone { width:40px; height:26px; top:-2px; left:clamp(0px,calc(var(--life-progress) - 20px),calc(100% - 40px)); }
+html #app.life2 .life2-hud-status { background:#087b8e; padding:4px 8px; line-height:1.2; }
+/* Stacked console commands, a full wheel and key chips. */
+html #app.life2 .life2-bottom { position:absolute; left:2.5vw; bottom:3vh; width:19vw; min-width:220px; display:flex; flex-direction:column; gap:1vh; z-index:15; }
+html #app.life2 .life2-bottom button { position:relative; border:2px solid #ffffffb0; border-radius:50px; color:#fff; background:#183347ed; padding:12px 20px; min-height:6.2vh; font-size:clamp(18px,1.55vw,31px); text-align:left; box-shadow:0 5px 0 #18394855; }
+html #app.life2 .life2-bottom .life2-spin,html #app.life2 .life2-bottom [aria-pressed=true] { color:#183347; background:repeating-linear-gradient(125deg,#ffe638 0 9px,#fff15d 9px 14px); border-color:#fff; }
+html #app.life2 .life2-bottom .life2-spin::after { content:'◀'; position:absolute; right:-18px; color:#fff; -webkit-text-stroke:2px #173c51; font-size:38px; filter:drop-shadow(0 3px #173c51); }
+html #app.life2 .life2-bottom > .life2-wheel,html #app.life2 .life2-turn-controls { order:-1; }
+html #app.life2 .life2-turn-controls { display:contents; }
+html #app.life2 .life2-bottom [data-action=end-season] { order:3; }
+html #app.life2 .life2-bottom .life2-wheel { justify-content:flex-start; }
+html #app.life2 .life2-wheel-face { background:#fff; border:3px solid #17a9c0; width:clamp(30px,2.4vw,48px); height:clamp(30px,2.4vw,48px); font-size:clamp(20px,1.6vw,34px); color:#173347; }
+html #app.life2 .life2-bottom .life2-dice { background:#173347ed; border:2px solid #fff; border-radius:50px; min-height:6vh; }
+html #app.life2 .life2-roulette { position:absolute; left:5vw; top:31vh; width:14vw; height:14vw; max-height:26vh; max-width:26vh; border:8px solid #fff; border-radius:50%; background:conic-gradient(#ff687a 0 60deg,#ffc936 60deg 120deg,#41d9c1 120deg 180deg,#28b3eb 180deg 240deg,#a678ee 240deg 300deg,#ff9444 300deg); box-shadow:0 9px 0 #18475b,0 14px 18px #164f4c55; display:grid; place-items:center; z-index:2; transform:rotate(-12deg); }
+html #app.life2 .life2-roulette::before { content:'▼'; position:absolute; top:-25px; color:#fff; -webkit-text-stroke:3px #173549; font-size:40px; }
+html #app.life2 .life2-roulette strong { border:5px solid #fff; border-radius:50%; width:52%; height:52%; display:grid; place-content:center; background:#173549; color:#fff; font-size:clamp(27px,3vw,60px); transform:rotate(12deg); }
+html #app.life2 .life2-roulette[data-spinning] { animation:pc-wheel .7s linear infinite; }
+html #app.life2 .life2-key-hints { position:absolute; right:2vw; bottom:2vh; display:flex; gap:8px; z-index:16; font-size:var(--pc-small); }
+html #app.life2 .life2-key-hints span { padding:7px 12px; background:#183347ee; border:2px solid #fff; border-radius:30px; }
+/* Choice overlays share a list + illustrated detail grammar. */
+html #app.life2 .life2-options { position:absolute; left:27vw; right:3vw; bottom:7vh; height:auto; min-height:12vh; padding:18px; background:#193746ed; color:white; border:3px solid #fff; border-top:8px solid #35d6de; border-radius:20px; display:grid; grid-template-rows:auto 1fr auto; gap:10px; z-index:8; }
+html #app.life2 .life2-options:has(.life2-option-list:empty) { display:none; }
+html #app.life2 .life2-options:not(:has(.life2-option)):not(.life2-popup-host) { left:37vw; bottom:3vh; min-height:0; height:auto; padding:10px 18px; }
+html #app.life2 .life2-options h2 { font-size:var(--pc-title); margin:0; }
+html #app.life2 .life2-options.life2-popup-host { display:contents; }
+html #app.life2 .life2-option-list { gap:8px; font-size:var(--pc-text); }
+html #app.life2 .life2-option { border:0; border-radius:10px; min-height:55px; padding:12px 18px; background:#284c60; color:#fff; }
+html #app.life2 .life2-option strong { font-size:var(--pc-text); line-height:1.3; }
+html #app.life2 .life2-option small { font-size:var(--pc-small); line-height:1.3; }
+html #app.life2 .life2-popup,html #app.life2 .life2-popup[data-fullscreen],html #app.life2 .life2-popup[data-card],html #app.life2 .life2-popup[data-reading],html #app.life2 .life2-popup[data-notification],html #app.life2 .life2-popup[data-stage] { position:fixed; inset:23vh 3vw 5vh 25vw; width:auto; height:auto; max-height:none; padding:clamp(14px,1.5vw,30px); border:3px solid #ffffffb0; border-top:10px solid #39d8e5; border-bottom:10px solid #39d8e5; border-radius:24px; background:#172f40; color:#fff; display:grid; grid-template:'header header' auto 'list scene' minmax(0,1fr) 'copy copy' auto 'footer footer' auto / 44% minmax(0,1fr); gap:1.2vh 1.5vw; align-content:stretch; font-size:var(--pc-text);font-weight:800;line-height:1.4; font-family:inherit; box-shadow:0 10px 0 #17354955; }
+html #app.life2 .life2-popup-header { grid-area:header; min-height:44px; gap:12px; }
+html #app.life2 .life2-popup h2 { font-size:var(--pc-title); line-height:1.2; color:#fff; }
+html #app.life2 .life2-popup button,html #app.life2 .life2-pager button { color:#fff; background:#315367; border:2px solid #6d96a7; border-radius:12px; font-size:var(--pc-text);font-weight:800;line-height:1.3; font-family:inherit; padding:9px 15px; }
+html #app.life2 .life2-popup button:disabled { color:#bed0d8; background:#263e4c; border-color:#4d6674; }
+html #app.life2 .life2-popup-list { grid-area:list; align-content:start; gap:.65vh; }
+html #app.life2 .life2-popup-row { display:block; min-height:0; }
+html #app.life2 .life2-popup-choice { width:100%; min-height:44px; padding:8px 18px; border-color:transparent; background:transparent; }
+html #app.life2 .life2-popup-choice strong { font-size:clamp(17px,1.4vw,28px); line-height:1.25; }
+html #app.life2 .life2-popup-choice small { display:none; }
+html #app.life2 .life2-popup-choice[aria-current=true],html #app.life2 .life2-option[aria-current=true] { color:#173347; background:repeating-linear-gradient(125deg,#ffe638 0 9px,#fff15d 9px 14px); border-color:#fff; box-shadow:0 4px 0 #b18a13; }
+html #app.life2 .life2-popup-choice[aria-current=true] strong::before { content:'➤ '; }
+html #app.life2 .life2-choice-detail { grid-area:scene; min-height:0; display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:16px; background:#0c2338a6; border:2px solid #567e8a; }
+html #app.life2 .life2-choice-scene { position:relative; min-height:0; flex:1; border-radius:12px; background:#25a9c7; }
+html #app.life2 .life2-choice-scene > .life2-place-art { width:100%; height:100%; position:absolute; inset:0; object-fit:cover; border-radius:12px; }
+html #app.life2 .life2-choice-scene > .life2-job-portrait { position:absolute; right:4%; bottom:0; width:45%; height:85%; object-fit:contain; filter:drop-shadow(0 5px 0 #18334770); }
+html #app.life2 .life2-choice-detail h3 { margin:0; color:#69eef4; font-size:clamp(20px,1.6vw,32px); line-height:1.25; }
+html #app.life2 .life2-choice-metrics { display:flex; flex-wrap:wrap; gap:6px; }
+html #app.life2 .life2-choice-metrics span { border-radius:9px; background:#244d64; color:#ffea6d; padding:6px 10px; font-size:clamp(16px,1.25vw,26px); }
+html #app.life2 .life2-choice-detail [data-action=popup-details] { align-self:flex-end; font-size:var(--pc-small); padding:5px 12px; min-height:44px; }
+html #app.life2 .life2-popup-copy { grid-area:copy; min-height:8vh; background:#0e273a; border-left:7px solid #ffe638; padding:12px 18px; border-radius:12px; gap:12px; }
+html #app.life2 .life2-popup-copy p { font-size:var(--pc-text); line-height:1.45; }
+html #app.life2 .life2-popup-copy > .life2-place-art,html #app.life2 .life2-popup-copy > .life2-job-portrait { display:none; }
+html #app.life2 .life2-popup-footer { grid-area:footer; min-height:44px; gap:12px; }
+html #app.life2 .life2-popup-footer button { flex:1; }
+html #app.life2 .life2-popup [data-result-wheel] { width:clamp(100px,10vw,200px); height:clamp(100px,10vw,200px); border:8px solid #fff; outline:8px solid #f6b82e; color:#fff; background:conic-gradient(#e75681,#6c56e2,#1ac5d2,#e75681); font-size:clamp(46px,5vw,100px); }
+html #app.life2 .life2-popup[data-reading],html #app.life2 .life2-popup[data-details] { grid-template:'header header' auto 'scene copy' minmax(0,1fr) 'footer footer' auto / 45% minmax(0,1fr); }
+html #app.life2 .life2-popup[data-reading] .life2-popup-copy,html #app.life2 .life2-popup[data-details] .life2-popup-copy { align-items:center; flex-wrap:wrap; }
+html #app.life2 .life2-popup[data-card] .life2-card-hero { grid-area:scene; min-height:0; align-content:center; }
+html #app.life2 .life2-card-heading { flex-direction:column; text-align:center; min-height:0; gap:12px; }
+html #app.life2 .life2-card-heading > img,html #app.life2 .life2-card-heading > svg { width:100%; height:28vh; object-fit:contain; }
+html #app.life2 .life2-card-heading strong { font-size:clamp(26px,3vw,60px); line-height:1.2; color:#ffe75b; text-shadow:0 4px #101e31; }
+html #app.life2 .life2-stage-banner { background:#116d86; color:#fff; }
+html #app.life2 .life2-stage-banner strong { font-size:var(--pc-text); }
+html #app.life2 .life2-stage-banner span { font-size:var(--pc-small); }
+html #app.life2 .life2-popup > .life2-stage-banner { grid-area:header; margin-right:13vw; }
+html #app.life2 .life2-popup[data-stage] .life2-popup-header h2 { visibility:hidden; }
+html #app.life2 .life2-labelled-rows { gap:8px; }
+html #app.life2 .life2-labelled-row,html #app.life2 .life2-popup[data-summary] .life2-labelled-row { background:#29495c; border:1px solid #4d7384; border-radius:12px; padding:10px 14px; display:block; }
+html #app.life2 .life2-labelled-row dt,html #app.life2 .life2-popup[data-summary] .life2-labelled-row dt { font-size:var(--pc-small); color:#9de8ed; line-height:1.3; }
+html #app.life2 .life2-labelled-row dd,html #app.life2 .life2-popup[data-summary] .life2-labelled-row dd { font-size:var(--pc-text); color:#fff; line-height:1.4; }
+html #app.life2 .life2-accounting h3 { font-size:var(--pc-title); line-height:1.3; }
+/* Full-screen life/phone backdrop; left tabs remain separate from the command stack. */
+html #app.life2 .life2-popup[data-popup=my-life],html #app.life2 .life2-popup[data-popup=phone] { inset:24vh 3vw 7vh 25vw; }
+html #app.life2 .life2-shell:has([data-popup=my-life])::before,html #app.life2 .life2-shell:has([data-popup=phone])::before { content:''; position:absolute; inset:0; z-index:9; background-color:#009f9c; background-image:radial-gradient(ellipse at 30% 30%,transparent 10px,#ffffff13 11px 16px,transparent 17px),radial-gradient(ellipse at 70% 70%,transparent 10px,#ffffff13 11px 16px,transparent 17px),repeating-linear-gradient(135deg,transparent 0 55px,#ffffff05 55px 110px); background-size:90px 90px,90px 90px,auto; }
+html #app.life2 .life2-popup[data-popup=my-life] { grid-template:'header' auto 'copy' minmax(0,1fr) / 1fr; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-popup-copy { align-items:start; min-height:0; border-left:0; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-rows { grid-template-columns:repeat(3,minmax(0,1fr)); align-content:start; }
+html #app.life2 .life2-popup-tabs { position:fixed; left:2.5vw; top:26vh; width:19vw; display:flex; flex-direction:column; gap:8px; }
+html #app.life2 .life2-popup-tabs button { flex:none; width:100%; border-radius:40px; min-height:5.8vh; font-size:var(--pc-text); }
+html #app.life2 .life2-popup-tabs [aria-selected=true] { background:repeating-linear-gradient(125deg,#ffe638 0 9px,#fff15d 9px 14px); color:#173347; border-color:#fff; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom { flex-direction:row; width:19vw; gap:6px; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom { width:50vw; bottom:1vh; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom button { font-size:var(--pc-small); padding:8px; flex:1; }
+html #app.life2 .life2-life-columns { grid-area:copy; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; min-height:0; }
+html #app.life2 .life2-life-column { padding:18px; background:#173b4de8; border-top:8px solid #39dce0; border-radius:18px; }
+html #app.life2 .life2-life-column h3 { font-size:var(--pc-title); color:#ffdf51; margin:0 0 18px; }
+html #app.life2 .life2-life-column p { font-size:var(--pc-text); margin:12px 0; }
+html #app.life2 .life2-tile-callout { background:#173549ed; color:#fff; border:5px solid #ffdb37; }
+html #app.life2 .life2-tile-callout strong { font-size:var(--pc-title); line-height:1.3; }
+html #app.life2 .ng-gate { position:relative; width:100%; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; gap:20px; padding:8vw; background:linear-gradient(90deg,#12344ff2,#12344f33); }
+html #app.life2 .ng-gate h1 { font-size:clamp(64px,7vw,140px); color:#fff; text-shadow:0 7px #12344f,5px 0 #12344f,-5px 0 #12344f; margin:0 0 24px; }
+html #app.life2 .ng-gate button { background:#ffdc32; color:#173347; border:4px solid #fff; border-radius:40px; padding:18px 40px; font-size:clamp(24px,2vw,40px); min-width:28vw; }
+html #app.life2 .life2-ending { background:#117c8f; color:#fff; width:100%; height:100%; max-width:none; padding:4vh 6vw; }
+html #app.life2 .life2-ending h1 { font-size:clamp(38px,4vw,80px); color:#fff; }
+html #app.life2 .life2-ending button { background:#ffe638; color:#173347; border:3px solid #fff; padding:12px 20px; font-size:var(--pc-text); border-radius:30px; }
+@keyframes pc-wheel { to { transform:rotate(348deg); } }
+@media(prefers-reduced-motion:reduce) { html #app.life2 *,html #app.life2 *::before,html #app.life2 *::after { animation:none!important; transition:none!important; } }
+@media(max-width:899px) { html #app.life2 { min-width:900px; min-height:700px; overflow:auto; } }
+html #app.life2 .life2-destinations { top:28vh; bottom:8vh; grid-template:'heading heading' auto 'list scene' minmax(0,1fr) 'pager pager' auto / 44% minmax(0,1fr); }
+html #app.life2 .life2-destinations > h2 { grid-area:heading; }
+html #app.life2 .life2-destinations > .life2-option-list { grid-area:list; align-content:start; }
+html #app.life2 .life2-destinations > .life2-pager { grid-area:pager; }
+html #app.life2 .life2-choice-lock { margin:0; font-size:var(--pc-small); color:#ffc58d; }
+html #app.life2 .life2-choice-lock[hidden] { display:none; }
+html #app.life2 .life2-choice-detail:has(.life2-choice-metrics:empty) .life2-choice-metrics { display:none; }
+html #app.life2 .life2-player-card { grid-template:'avatar identity' auto 'avatar funds' auto 'avatar grades' minmax(0,1fr) / 19% minmax(0,1fr); gap:4px 8px; }
+html #app.life2 .life2-hud-identity { flex-direction:row; justify-content:space-between; align-items:center; }
+html #app.life2 .life2-pilot-name { display:none; }
+html #app.life2 .life2-funds,html #app.life2 .life2-player-card[data-hud-delta] .life2-funds { display:flex; align-items:center; justify-content:space-between; }
+html #app.life2 .life2-grade-letter { font-size:clamp(21px,1.65vw,34px); }
+html #app.life2 .life2-popup-list { grid-auto-rows:minmax(44px,1fr); align-content:stretch; }
+html #app.life2 .life2-popup-choice { min-height:44px; height:100%; }
+html #app.life2 .life2-popup[data-popup=my-life][data-overview] { grid-template:'header header' auto 'copy scene' minmax(0,1fr) / 57% minmax(0,1fr); }
+html #app.life2 .life2-popup[data-popup=my-life][data-overview] .life2-labelled-rows { grid-template-columns:repeat(2,minmax(0,1fr)); }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row { padding:6px 10px; border-bottom:5px solid #37c9b9; }
+html #app.life2 .life2-life-overview { grid-area:scene; display:grid; gap:10px; min-height:0; }
+html #app.life2 .life2-life-overview .life2-life-column { padding:10px 14px; border-top-width:5px; }
+html #app.life2 .life2-life-overview h3 { font-size:var(--pc-text); margin:0 0 6px; }
+html #app.life2 .life2-life-overview p { font-size:var(--pc-small); margin:4px 0; }
+html #app.life2 .life2-ending-screen { width:100%; height:100%; max-width:none; padding:4vh 6vw; background:radial-gradient(circle at 25% 40%,#1cc7b8,#145879); color:white; grid-template-rows:auto minmax(0,1fr) auto; gap:3vh; }
+html #app.life2 .life2-ending-screen h1 { font-size:clamp(34px,3vw,60px); color:white; background:#173347; padding:12px 25px; border-radius:20px; border-bottom:8px solid #ffdf38; }
+html #app.life2 .life2-ending-content { background:#173347e8; color:#fff; border:3px solid #fff; border-radius:24px; padding:2vw; }
+html #app.life2 .life2-ending-content h2 { font-size:clamp(28px,2.8vw,56px); color:#ffe64d; }
+html #app.life2 .life2-ending-copy p { font-size:var(--pc-text); line-height:1.65; }
+html #app.life2 .life2-ending-screen button { color:#173347; background:#ffdc3a; border:3px solid #fff; border-radius:20px; padding:12px 20px; font-size:var(--pc-text); }
+html #app.life2 .life2-ending-art { width:100%; height:100%; max-height:45vh; }
+html #app.life2 .life2-ending-art img,html #app.life2 .life2-ending-art svg { width:100%; height:100%; max-height:45vh; object-fit:contain; }
+html #app.life2 .life2-ending-card { background:#234f67; color:#fff; }
+html #app.life2 .life2-ending-card strong { font-size:var(--pc-text); }
+html #app.life2 .life2-ending-card span { font-size:var(--pc-small); }
+html #app.life2 .life2-hud .life2-grade,html #app.life2 .life2-hud .life2-stats,html #app.life2 .life2-hud .life2-stamina,html #app.life2 .life2-hud .life2-progress-label { font-size:clamp(12px,.8vw,17px); }
+html #app.life2 .life2-card-heading > img,html #app.life2 .life2-card-heading > svg { height:23vh; }
+html #app.life2 .life2-popup-copy .life2-selected-description { color:#ffe47c; }
+html #app.life2 .life2-ending-content[data-ending] { grid-template:'art title' auto 'art story' minmax(0,1fr) / 45% minmax(0,1fr); align-content:stretch; }
+html #app.life2 .life2-ending-content[data-ending] > .life2-ending-art { grid-area:art; align-self:center; }
+html #app.life2 .life2-ending-content[data-ending] > h2 { grid-area:title; line-height:1.3; }
+html #app.life2 .life2-ending-content[data-ending] > .life2-ending-copy { grid-area:story; align-content:center; }
+html #app.life2 .life2-ending-cards { grid-template-columns:repeat(3,minmax(0,1fr)); }
+html #app.life2 .life2-ending-card { flex-direction:column; }
+html #app.life2 .life2-ending-card .life2-ending-art { height:28vh; }
+html #app.life2 .life2-ending-card .life2-ending-art img,html #app.life2 .life2-ending-card .life2-ending-art svg { width:100%; height:100%; }
+html #app.life2 .life2-bottom .life2-spin::after { content:none; }
+html #app.life2 .life2-bottom .life2-menu-marker { position:absolute; left:auto; right:-28px; top:50%; width:56px; height:38px; transform:translateY(-50%) rotate(-12deg); filter:drop-shadow(0 3px 0 #173347); }
+html #app.life2 :is(.life2-popup h2,.life2-bottom button,.ng-gate h1,.life2-card-heading strong) { font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif; font-weight:900; }
+html #app.life2 .life2-shell:has([data-popup=my-life])::before,html #app.life2 .life2-shell:has([data-popup=phone])::before { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='100' viewBox='0 0 120 100'%3E%3Cg fill='none' stroke='%23ffffff' opacity='.12' stroke-width='3'%3E%3Cpath d='M24 20l32 32m0-32L24 52'/%3E%3Ccircle cx='24' cy='20' r='10'/%3E%3Ccircle cx='56' cy='20' r='10'/%3E%3Ccircle cx='24' cy='52' r='10'/%3E%3Ccircle cx='56' cy='52' r='10'/%3E%3Crect x='30' y='28' width='20' height='16' rx='6'/%3E%3C/g%3E%3C/svg%3E"); background-size:120px 100px; background-color:#009d9c; }
+html #app.life2 .life2-date { display:grid; grid-template:'calendar season' auto 'map status' auto / minmax(0,1fr) auto; height:auto; min-height:10vh; }
+html #app.life2 .life2-date h1 { grid-area:calendar; }
+html #app.life2 .life2-hud-map { grid-area:map; }
+html #app.life2 .life2-hud-season { grid-area:season; }
+html #app.life2 .life2-date .life2-hud-status { grid-area:status; justify-self:end; }
+html #app.life2 .life2-choice-scene [data-result-wheel] { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); }
+
+/* Round 2: reserve separate HUD, route and command regions at every PC size. */
+@media(min-width:900px) {
+html #app.life2 { font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif; }
+html #app.life2 :is(h1,h2,h3,button,strong,b) { font-family:inherit; }
+html #app.life2 .life2-board { left:26%; top:35%; width:70%; height:62%; gap:2px; border-radius:45px; background:#86d555; }
+html #app.life2 .life2-board-tilted { transform:perspective(1800px) rotateX(25deg); transform-origin:center center; transform-style:flat; }
+html #app.life2 .life2-board-tilted .life2-tile,html #app.life2 .life2-board-tilted .life2-tile:active { transform:none; border:3px solid #fff; background:var(--face); box-shadow:0 7px 0 #214c65; }
+html #app.life2 .life2-board-tilted .life2-tile::before { content:none; }
+html #app.life2 .life2-infields { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+html #app.life2 .life2-paths { overflow:visible; }
+html #app.life2 .life2-paths line { vector-effect:non-scaling-stroke; stroke-linecap:round; stroke-linejoin:round; }
+html #app.life2 .life2-road-side { transform:translateY(.12px); }
+html #app.life2 .life2-road-side line { stroke:#27576a; stroke-width:7.3vh; }
+html #app.life2 .life2-road-curb line { stroke:#fff9df; stroke-width:7.1vh; }
+html #app.life2 .life2-road-ribbon line { stroke:#f9ad28; stroke-width:6.2vh; }
+html #app.life2 .life2-tile { place-self:center; width:min(100%,9vh); height:100%; min-height:44px; border-radius:16px; z-index:1; background:linear-gradient(145deg,#ffffff30,transparent 60%),var(--face); }
+html #app.life2 .life2-tile .life2-glyph { width:clamp(28px,3.5vh,42px)!important; height:clamp(28px,3.5vh,42px)!important; fill:#ffed8b; stroke:#173e59; filter:drop-shadow(0 2px 0 #fff); }
+html #app.life2 .life2-tile-label { font-size:clamp(11px,1.5vh,17px); }
+html #app.life2 .life2-tile:is([data-kind=luck],[data-kind=contest],[data-kind=rankup])::after { content:'✦'; position:absolute; right:-10px; top:-12px; color:#fff8a6; font-size:28px; text-shadow:0 2px #db8520; }
+html #app.life2 .life2-tile[aria-current] { z-index:5; box-shadow:0 0 0 5px #ffeb4b,0 8px 0 #2d566a; }
+html #app.life2 .life2-pawn { width:11vh; height:12vh; bottom:30%; z-index:8; }
+html #app.life2 .life2-pawn .life2-hud-avatar { width:64%; height:62%; left:18%; border-radius:50% 50% 50% 8%; border-width:4px; }
+html #app.life2 .life2-pawn .life2-progress-drone { height:48%; width:100%; }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) { inset:3vh 32vw auto 36vw; height:auto; max-height:90px; min-height:0; padding:8px 14px; border-top-width:4px; grid-template-rows:auto; gap:3px; border-radius:20px; }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) h2 { font-size:clamp(14px,1.1vw,21px); }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) .life2-option-list { display:block; }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) :is(.life2-option,p) { margin:0; padding:0; min-height:44px; font-size:clamp(11px,.8vw,16px); }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) .life2-option small { display:none; }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) .life2-option strong { font-size:clamp(13px,1vw,19px); }
+html #app.life2 .life2-pager[hidden],html #app.life2 .life2-popup-footer[data-single-page] { display:none; }
+html #app.life2 .life2-shell:has(.life2-destinations) .life2-board { left:25%; width:42%; }
+html #app.life2 .life2-destinations { inset:26vh 2vw 7vh 70vw; padding:12px; grid-template:'heading' auto 'list' auto 'scene' minmax(0,1fr) 'pager' auto / minmax(0,1fr); gap:8px; }
+html #app.life2 .life2-destinations h2 { font-size:clamp(18px,1.45vw,28px); }
+html #app.life2 .life2-destinations .life2-option { min-height:44px; padding:6px 12px; }
+html #app.life2 .life2-destinations .life2-choice-detail { padding:8px; gap:4px; }
+html #app.life2 .life2-shell:has(.life2-popup) .life2-roulette,html #app.life2 .life2-shell:has(.life2-destinations) .life2-roulette { display:none; }
+html #app.life2 .life2-popup { top:26vh!important; }
+html #app.life2 .life2-popup-list { grid-auto-rows:clamp(48px,7.1vh,88px); align-content:start; }
+html #app.life2 .life2-popup-row,html #app.life2 .life2-popup-choice { height:100%; min-height:44px; }
+html #app.life2 .life2-popup-copy { display:flex; flex-direction:column; justify-content:center; align-items:stretch; gap:5px; text-align:left; }
+html #app.life2 .life2-popup-copy p,html #app.life2 .life2-popup-copy .life2-selected-description { color:#fff; font-size:clamp(16px,1.25vw,26px); text-align:left; margin:0; }
+html #app.life2 .life2-popup-copy:has(.life2-selected-description) > p:not(.life2-selected-description) { font-size:var(--pc-small); color:#9de8ed; }
+html #app.life2 .life2-choice-metrics .life2-chance { font-size:clamp(28px,2.7vw,52px); color:#fff; background:#078b99; line-height:1; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom { flex-direction:column; width:19vw; bottom:2vh; gap:.6vh; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom button { flex:none; font-size:var(--pc-text); min-height:5.5vh; padding:6px 14px; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom .life2-dice { min-height:5vh; }
+html #app.life2 .life2-popup-tabs { gap:.65vh; }
+html #app.life2 .life2-popup-tabs button { min-height:5.2vh; }
+html #app.life2 .life2-hud { width:32.4vw; height:23vh; }
+html #app.life2 .life2-hud-identity { background:#087f91; border-radius:10px; padding:4px 7px; }
+html #app.life2 .life2-pilot-name { display:block; color:#fff; }
+html #app.life2 .life2-grade-gauge { height:8px; background:#496376; grid-column:1 / -1; position:relative; border-radius:8px; }
+html #app.life2 .life2-grade-gauge::after { content:''; position:absolute; inset:0 auto 0 0; width:var(--grade-progress); background:#ffdb35; border-radius:8px; }
+html #app.life2 .life2-grade-letter { color:#ffe35a; font-size:clamp(25px,2vw,40px); }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-popup-copy { height:100%; padding:12px; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-rows { height:100%; width:100%; align-content:stretch; grid-auto-rows:1fr; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row { display:flex; flex-direction:column; justify-content:center; padding:5px 10px; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row dd { font-size:clamp(23px,2.2vw,43px); font-weight:900; line-height:1.1; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row dt { font-size:clamp(12px,1vw,20px); }
+}
+
+@media(min-width:900px) {
+html #app.life2 .life2-popup[class] { padding:14px 20px; gap:.7vh 1.2vw; bottom:3vh; }
+html #app.life2 .life2-popup-list { grid-auto-rows:clamp(44px,6.7vh,80px); gap:.5vh; }
+html #app.life2 .life2-popup-copy { min-height:6vh; padding:8px 14px; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row[data-ability-grade] { border-bottom:0; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row[data-ability-grade]::after { content:''; display:block; width:100%; height:8px; min-height:8px; border-radius:8px; margin-top:5px; background:linear-gradient(to right,#ffe14b var(--ability-level),#102e40 var(--ability-level)); }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom .life2-dice { display:none; }
+html #app.life2 .life2-key-hints { bottom:.6vh; font-size:clamp(11px,.8vw,15px); }
+html #app.life2 .life2-key-hints span { padding:4px 9px; }
+}
+
+@media(min-width:900px) {
+html #app.life2 .life2-key-hints { top:15vh; bottom:auto; right:3vw; }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) { padding:5px 12px; gap:1px; }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) h2 { line-height:1.15; }
+html #app.life2 .life2-options:not(.life2-destinations):not(.life2-popup-host) .life2-option-list > p { min-height:0; line-height:1.25; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+html #app.life2 [data-action=popup-page-next][data-single-page] { display:none; }
+html #app.life2 .life2-popup-footer[data-single-page] { min-height:0; }
+html #app.life2 .life2-grade-letter { grid-row:1; }
+html #app.life2 .life2-scene-building,html #app.life2 .life2-scene-character { overflow:visible; }
+}
+@media(min-width:900px) and (max-height:900px) {
+html #app.life2 .life2-board-tilted { transform:perspective(1800px) rotateX(18deg); }
+
+html #app.life2 .life2-popup[class] { padding:10px 16px; }
+html #app.life2 .life2-popup-list { grid-auto-rows:48px; }
+}
+
+/* PC finish: readable routes, independent consoles and complete popup copy. */
+@media(min-width:900px) {
+html #app.life2 .life2-board-tilted { transform:none; }
+html #app.life2 .life2-board { box-shadow:0 10px 0 #377a53,0 18px 20px #17493550; }
+html #app.life2 .life2-tile { box-shadow:inset 0 3px 0 #ffffff60,0 6px 0 #214c65,0 9px 4px #17493540; }
+/* Measured open space beside the tile; its icon and label keep their own rows.
+   No position transition: movement frames must never sweep across other tiles. */
+html #app.life2 .life2-pawn { position:absolute; left:var(--pawn-x,calc(100% + 6px)); right:auto; top:var(--pawn-y,0px); bottom:auto; width:clamp(48px,6.25vh,72px); height:clamp(48px,6.25vh,72px); transform:none; filter:none; transition:none; animation:none; }
+/* Transfer animates its overview; keep the route/pawn at their measured size. */
+html #app.life2[data-phase=transfer] .life2-board { animation:none; }
+html #app.life2 .life2-change-strip { position:fixed; top:20vh; left:36vw; right:auto; padding:6px 8px; font-size:12px; }
+html #app.life2 .life2-change-strip:empty { display:none; }
+html #app.life2 .life2-popup[data-popup=my-life][data-overview] .life2-labelled-rows { grid-template-columns:repeat(3,minmax(0,1fr)); grid-auto-rows:minmax(0,1fr); gap:6px; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row dd { font-size:clamp(21px,2vw,36px); }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row { min-height:0; }
+html #app.life2 .life2-popup-copy > p { flex:none; }
+html #app.life2 .life2-popup-list { grid-auto-rows:minmax(44px,1fr); align-content:stretch; min-height:0; }
+html #app.life2 .life2-popup-copy:has(.life2-selected-description) { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; align-items:center; }
+html #app.life2 .life2-popup-copy:has(.life2-selected-description) > p { display:block; font-size:var(--pc-small); line-height:1.35; }
+html #app.life2 .life2-popup-choice strong { font-size:clamp(15px,1.2vw,24px); }
+html #app.life2 .life2-destinations .life2-option-list { display:grid; grid-auto-rows:44px; gap:5px; }
+html #app.life2 .life2-destinations .life2-option { padding:4px 9px; }
+html #app.life2 .life2-destinations .life2-option strong { font-size:var(--pc-small); }
+html #app.life2 .life2-destinations .life2-option small { display:none; }
+html #app.life2 .life2-destinations .life2-choice-detail h3 { font-size:var(--pc-small); }
+html #app.life2 .life2-destinations .life2-choice-metrics span { padding:3px 6px; font-size:12px; }
+html #app.life2 .life2-bottom button:hover { border-color:#ffe638; }
+html #app.life2 .life2-bottom button:focus-visible { outline:3px solid #fff; outline-offset:3px; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom .life2-spin { background:#183347; color:#fff; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-menu-marker { display:none; }
+}
+/* The title and finale use the same original full-bleed drone town. */
+html #app.life2[data-screen=title] .ng-gate { max-width:none; margin:0; border:0; border-radius:0; box-shadow:none; gap:14px; padding:5vh 7vw; background:linear-gradient(90deg,#12344ff5 0%,#12344fcc 40%,#12344f05 78%); }
+html #app.life2 .ng-gate .life2-title-kicker { color:#78f5ed; letter-spacing:.16em; margin:0; font-size:16px; }
+html #app.life2 .ng-gate .life2-title-tagline { font-size:clamp(18px,1.6vw,30px); margin:0 0 3vh; }
+html #app.life2 .ng-gate h1 { max-width:7em; font-size:clamp(72px,7.5vw,144px); line-height:1.16; margin:0; color:#ffe650; text-shadow:0 6px 0 #a36f15,0 12px 0 #163747; }
+html #app.life2 .ng-gate button { min-height:64px; padding:12px 36px; border-radius:18px; box-shadow:0 7px 0 #996c17,0 10px 16px #112f4650; }
+html #app.life2 .life2-ending-screen { position:relative; padding:3vh 5vw; background:linear-gradient(90deg,#10354d99,#10354d44); gap:2vh; }
+html #app.life2 .life2-ending-screen h1 { justify-self:start; margin:0; font-size:clamp(28px,2.8vw,54px); }
+html #app.life2 .life2-ending-content[data-ending] { grid-template:'art title' auto 'art stats' auto 'art story' minmax(0,1fr) / 36% minmax(0,1fr); padding:2vh 2vw; gap:1.5vh 2vw; background:#173347; }
+html #app.life2 .life2-ending-stats { grid-area:stats; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+html #app.life2 .life2-ending-stat { display:flex; flex-direction:column; padding:12px 16px; border:2px solid #56b5bd; border-bottom:5px solid #24a5ac; border-radius:16px; background:#235269; }
+html #app.life2 .life2-ending-stat span { font-size:var(--pc-small); color:#b4f8f0; }
+html #app.life2 .life2-ending-stat strong { font-size:clamp(28px,2.8vw,50px); line-height:1.2; color:#ffe650; }
+html #app.life2 .life2-ending-content[data-ending] > .life2-ending-copy { min-height:0; align-content:start; }
+html #app.life2 .life2-ending-content[data-ending] > .life2-ending-art { border-radius:20px; overflow:hidden; }
+html #app.life2 .life2-ending-content[data-ending] > .life2-ending-art :is(img,svg) { width:min(100%,45vh); height:auto; aspect-ratio:1; align-self:center; border-radius:inherit; }
+html #app.life2 .life2-ending-copy p { font-size:clamp(14px,1.05vw,20px); line-height:1.5; min-height:0; }
+html #app.life2 .life2-ending-controls button { min-height:60px; box-shadow:0 6px 0 #997325; }
+@media(min-width:900px) {
+html #app.life2 .life2-hud { grid-template-rows:minmax(0,1fr) max(44px,4.5vh); }
+html #app.life2 .life2-hud-identity { padding:2px 6px; }
+html #app.life2 .life2-rank-pill { padding:1px 7px; }
+html #app.life2 .life2-hud .life2-grade-letter { display:block; font-size:clamp(18px,1.45vw,28px); line-height:1.4; }
+html #app.life2 .life2-hud .life2-progress-drone { top:0; }
+html #app.life2 .life2-progress-label { top:28px; }
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom .life2-dice { display:flex; min-height:44px; }
+/* Tilt the painted face, while labels and 44px native hit targets keep their geometry. */
+html #app.life2 .life2-board-tilted .life2-tile { background:transparent; border-color:transparent; box-shadow:none; }
+html #app.life2 .life2-board-tilted .life2-tile::before { content:''; position:absolute; inset:0; z-index:-1; pointer-events:none; border:3px solid #fff; border-radius:12px; background:var(--face); transform:perspective(900px) rotateX(18deg); box-shadow:inset 0 3px 0 #ffffff60,0 9px 0 #214c65; }
+html #app.life2 .life2-board-tilted .life2-tile[aria-current=location]::before { border-color:#ffeb4b; box-shadow:0 0 0 3px #ffeb4b,0 9px 0 #214c65; }
+}
+/* Intrinsic content gets explicit space: no clipping or scroll containers. */
+@media(min-width:900px) {
+html #app.life2 .life2-hud { padding:8px; }
+html #app.life2 .life2-hud .life2-grade { grid-template-rows:minmax(0,1fr) 8px; align-content:stretch; }
+html #app.life2 .life2-hud .life2-grade-gauge { align-self:stretch; }
+html #app.life2 .life2-pawn .life2-hud-avatar { width:75%; height:75%; left:12.5%; padding:0; border-width:2px; transform:none; }
+html #app.life2 .life2-bottom,
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom { height:auto; flex-direction:column; gap:6px; }
+html #app.life2 .life2-bottom button,
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom button,
+html #app.life2 .life2-popup-tabs button { min-height:44px; flex-shrink:0; }
+html #app.life2 .life2-bottom [data-nav=life] { order:0; }
+html #app.life2 .life2-bottom [data-nav=phone] { order:1; }
+html #app.life2 .life2-bottom [data-action=end-season] { order:2; }
+html #app.life2 .life2-bottom .life2-dice,
+html #app.life2 .life2-shell:has(.life2-popup-tabs) .life2-bottom .life2-dice {
+  position:absolute; bottom:calc(100% + 8px); left:0; width:100%; height:48px;
+  display:flex; flex-direction:row; align-items:center; justify-content:center; gap:8px;
+}
+html #app.life2 .life2-popup-header h2 { margin-right:auto; }
+html #app.life2 .life2-popup-header button { flex:none; }
+html #app.life2 .life2-popup button { min-height:44px; }
+html #app.life2 .life2-popup-list { gap:4px; min-height:calc(var(--life-choice-count,1) * 48px - 4px); }
+html #app.life2 .life2-popup:has(.life2-popup-list) { grid-template-rows:auto minmax(min-content,1fr) auto auto; }
+html #app.life2 .life2-popup .life2-popup-choice { padding:6px 10px; }
+html #app.life2 .life2-popup-copy,
+html #app.life2 .life2-popup[data-reading] .life2-popup-copy,
+html #app.life2 .life2-popup[data-details] .life2-popup-copy { flex-wrap:nowrap; min-width:0; }
+html #app.life2 .life2-popup-copy:has(.life2-selected-description) { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-popup-copy { height:auto; align-items:stretch; justify-content:flex-start; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-rows { height:auto; min-height:0; flex:1; grid-auto-rows:minmax(0,1fr); }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row dd { flex:none; font-size:clamp(16px,1.15vw,22px); line-height:1.4; }
+html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row[data-ability-grade] dd { font-size:clamp(20px,1.6vw,30px); }
+html #app.life2 .life2-ending-copy [data-action=ending-text-next] { justify-self:end; width:auto; min-width:76px; min-height:44px; padding:6px 14px; border-width:2px; border-radius:12px; color:#fff; background:#315367; }
+}

@@ -2,6 +2,8 @@ import type { GameState, SpaceKind, WorldNode } from '../life/types.ts';
 import { MAPS, PLACES, WORLD } from '../life/world.ts';
 import { el, svg } from '../ui/dom.ts';
 import { tileIcon } from './icons.ts';
+import { townScene, boardInfields } from './pc-scenery.ts';
+import { pilotAvatar, progressDrone } from './hud-art.ts';
 
 export const GRID = { columns: 7, rows: 9 } as const;
 export const TILT = { degrees: 38, perspective: 6000, clearance: 2 } as const;
@@ -31,6 +33,7 @@ export function groundPoint(x: number, y: number) {
 }
 export function projectBoardPaths(grid: HTMLElement): void {
   if (!grid.offsetWidth) return;
+  const pc = typeof window !== 'undefined' && window.innerWidth >= 900;
   const tilted = grid.className.includes('life2-board-tilted');
   for (const layer of grid.querySelectorAll<SVGSVGElement>('.life2-paths,.life2-preview')) {
     for (const line of layer.querySelectorAll('line')) for (const end of ['1', '2']) {
@@ -38,8 +41,8 @@ export function projectBoardPaths(grid: HTMLElement): void {
       const x = Number(line.dataset[xKey] ??= line.getAttribute(`x${end}`)!);
       const y = Number(line.dataset[yKey] ??= line.getAttribute(`y${end}`)!);
       const point = groundPoint((x / GRID.columns - .5) * grid.offsetWidth, (y / GRID.rows - .5) * grid.offsetHeight);
-      line.setAttribute(`x${end}`, String(tilted ? (point.x / grid.offsetWidth + .5) * GRID.columns : x));
-      line.setAttribute(`y${end}`, String(tilted ? (point.y / grid.offsetHeight + .5) * GRID.rows : y));
+      line.setAttribute(`x${end}`, String(tilted && !pc ? (point.x / grid.offsetWidth + .5) * GRID.columns : x));
+      line.setAttribute(`y${end}`, String(tilted && !pc ? (point.y / grid.offsetHeight + .5) * GRID.rows : y));
     }
   }
 }
@@ -111,15 +114,20 @@ export function board(state: GameState, position = state.board.pos): HTMLElement
   grid.dataset.map = current.map;
   grid.style.setProperty('--columns', String(GRID.columns));
   grid.style.setProperty('--rows', String(GRID.rows));
+  grid.append(boardInfields(current.map));
   const paths = svg('svg', { viewBox: `0 0 ${GRID.columns} ${GRID.rows}`, preserveAspectRatio: 'none',
     class: 'life2-paths', 'aria-hidden': 'true' });
-  for (const node of nodes) {
-    const from = gridCell(node);
-    for (const id of node.next) {
-      const to = gridCell(nodes.find(next => next.id === id)!);
-      paths.append(svg('line', { x1: from.column - .5, y1: from.row - .5,
-        x2: to.column - .5, y2: to.row - .5 }));
+  for (const layer of ['side', 'curb', 'ribbon']) {
+    const group = svg('g', { class: `life2-road-${layer}` });
+    for (const node of nodes) {
+      const from = gridCell(node);
+      for (const id of node.next) {
+        const to = gridCell(nodes.find(next => next.id === id)!);
+        group.append(svg('line', { x1: from.column - .5, y1: from.row - .5,
+          x2: to.column - .5, y2: to.row - .5 }));
+      }
     }
+    paths.append(group);
   }
   grid.append(paths);
   for (const node of nodes) {
@@ -134,13 +142,14 @@ export function board(state: GameState, position = state.board.pos): HTMLElement
     tile.append(tileIcon(node.kind, node.place), el('span', 'life2-tile-label', label));
     if (node.id === current.id) {
       tile.setAttribute('aria-current', 'location');
-      const pawn = svg('svg', { viewBox: '0 0 20 24', class: 'life2-pawn', role: 'img', 'aria-label': '내 위치' });
+      const pawn = el('div', 'life2-pawn');
       pawn.dataset.pawn = node.id;
-      pawn.append(svg('circle', { cx: 10, cy: 6, r: 4 }), svg('path', { d: 'M6 11h8l3 10H3z' }));
+      pawn.setAttribute('aria-label', '내 위치');
+      pawn.append(pilotAvatar(), progressDrone());
       tile.append(pawn);
     }
     grid.append(tile);
   }
-  frame.append(grid);
+  frame.append(townScene(current.map), grid);
   return frame;
 }

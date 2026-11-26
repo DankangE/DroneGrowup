@@ -55,7 +55,7 @@ test('T24: six-map pure replay records model intervals including the final ackno
 });
 
 function measuredFixture(): TimingMeasurement {
-  return { fingerprint: TIMING_FINGERPRINT, measuredAt: '2026-11-26T00:00:00.000Z', viewport: '390x844', seed: 11,
+  return { fingerprint: TIMING_FINGERPRINT, measuredAt: '2026-11-26T00:00:00.000Z', viewport: '1366x768', seed: 11,
     samples: MAP_IDS.map(map => ({ map, measured: Array(12).fill(15), modeled: Array(12).fill(15) })) };
 }
 test('T24: calibration requires current sources and every positive season on all six maps', () => {
@@ -65,6 +65,7 @@ test('T24: calibration requires current sources and every positive season on all
   for (const mutate of [
     (m: TimingMeasurement) => { m.fingerprint = 'pre-F5'; },
     (m: TimingMeasurement) => { m.viewport = '360x740'; },
+    (m: TimingMeasurement) => { m.viewport = '390x844'; },
     (m: TimingMeasurement) => { m.seed = 1; },
     (m: TimingMeasurement) => { m.samples.pop(); },
     (m: TimingMeasurement) => { m.samples[1].map = 'A'; },

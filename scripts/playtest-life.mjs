@@ -8,7 +8,7 @@ export async function main() {
   await withLifeBrowser(async open => {
     // Fresh runs: the debug hook is read-only here; fixtures are only for map timing/layout.
     for (const seed of [1, 11]) {
-      const page = await open([390, 844], seed);
+      const page = await open([1366, 768], seed);
       try {
         const run = await playSeasons(browserDriver(page), { stopAtRankup: true });
         assert.ok(run.promotions || run.seasonTimes.length === 12);

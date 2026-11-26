@@ -10,6 +10,7 @@ import type { LifeSummaryView } from './life-model.ts';
 import { choicePage } from './model.ts';
 import { featLabels, itemPages } from './polish-model.ts';
 import { POLISH as P } from './polish-data.ts';
+import { celebrationScene } from '../pc-scenery.ts';
 
 export type EndingSummary = LifeSummaryView & { grade?: string; featScore?: number };
 export type EndingCollection = { gallery: readonly string[]; bestByEnding?: Readonly<Record<string, number>> };
@@ -54,7 +55,8 @@ function pagedCopy(lines: readonly string[]) {
 function screen(host: HTMLElement, name: 'ending' | 'gallery', title: string, content: HTMLElement, controls: HTMLElement) {
   host.classList.add('life2'); host.dataset.screen = name; host.dataset.phase = 'chapter';
   const main = el('main', 'life2-ending-screen'), heading = el('h1', '', title); heading.tabIndex = -1;
-  main.append(heading, content, controls); host.replaceChildren(el('style', '', ENDING_STYLE), main);
+  main.append(heading, content, controls);
+  host.replaceChildren(el('style', '', ENDING_STYLE), ...(name === 'ending' ? [celebrationScene()] : []), main);
   heading.focus({ preventScroll: true });
 }
 
@@ -66,7 +68,15 @@ export function mountEnding(host: HTMLElement, state: GameState, actions: Ending
   const model = endingModel(state, summary), content = el('section', 'life2-ending-content');
   content.dataset.ending = model.id ?? '';
   if (model.ending) content.append(art(model.ending));
-  content.append(el('h2', '', model.title), pagedCopy(model.lines));
+  const totals = { ...settlementSummary(state), ...summary };
+  const stats = el('div', 'life2-ending-stats');
+  for (const [label, value] of [['최종 성적', totals.grade], ['최종 점수', state.score], ['순자산', totals.netWorth]]) {
+    const stat = el('div', 'life2-ending-stat');
+    stat.append(el('span', '', label as string), el('strong', '', String(value)));
+    stats.append(stat);
+  }
+  // Score and grade already have stat tiles; retain them in the public model.
+  content.append(el('h2', '', model.title), stats, pagedCopy(model.lines.slice(2)));
   const controls = el('nav', 'life2-ending-controls');
   controls.append(nav(E.home, 'title', actions.title), nav(E.gallery, 'gallery', actions.collection),
     nav(E.restart, 'restart', actions.restart));

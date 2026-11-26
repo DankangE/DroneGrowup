@@ -73,7 +73,7 @@ function readChoices(host: TestNode, model: PopupModel, size?: number) {
   assert.deepEqual(seen, model.choices.map(choice => choice.id));
 }
 
-for (const [width, height] of [[390, 844], [360, 740], [1280, 800], [1366, 768]]) {
+for (const [width, height] of [[1920, 1080], [1536, 864], [1366, 768], [1280, 800]]) {
   test(`F5 pager: fresh layout.html start at ${width}x${height} reaches all eight choices`, () => {
     withSheet(width, height, false, host => {
       const model = popupModel(state, { kind: 'start', offered })!;

@@ -761,7 +761,7 @@ PR #1의 월급 간격은 2.5계절이었다. 새 지도는 2.7~4.4계절이라 
 
 ## 11. 화면
 
-### 11.1 2D 탑 뷰를 권한다
+### 11.1 PC-first 2D 입체 보드
 
 | | 2D 탑 뷰(권장) | 3D |
 | --- | --- | --- |
@@ -769,37 +769,24 @@ PR #1의 월급 간격은 2.5계절이었다. 새 지도는 2.7~4.4계절이라 
 | 그림 | PR #1의 탑 뷰 타일, 말, 등각 장면 18장을 그대로 쓴다. 새로 필요한 것은 칸 아이콘 8종과 장소 그림 | 지도 여섯 장의 모델이나 입체 타일, 캐릭터 모델, 조명. 지금 그림은 대부분 못 쓴다 |
 | 화면 규칙 | 7×9 격자가 한 화면에 들어가 스크롤 금지 규칙과 `npm run layout:life`이 그대로 선다 | 카메라가 움직여야 칸이 보인다. 누름 영역 44px과 잘림 검사를 새로 만들어야 한다 |
 | 조작 | 도착 칸을 직접 누른다. 칸이 평면이라 겹치지 않는다 | 원근 때문에 먼 칸이 작아져 누르기 어렵다 |
-| 성능 | 저가 휴대폰에서도 문제없다 | 발열과 배터리, WebGL 미지원 기기 대비 필요 |
+| 성능 | PC 뷰포트에 맞춰 큰 벡터 장면을 그린다 | 발열과 배터리, WebGL 미지원 기기 대비 필요 |
 | 검증 | `playtest`, `layout`, `outcomes`, `check:board`가 DOM 훅으로 돈다 | 캔버스 안은 훅이 닿지 않아 검사 도구를 다시 짜야 한다 |
 | 비용 | 화면 티켓 6개(T16~T21, 모두 M) | 위에 더해 3~4주 분량(M 티켓 5개 이상)과 그림 작업 대부분 재작업 |
 
 보드게임다운 입체감은 2D 위에서 싸게 낸다: 보드 층에 `transform: perspective() rotateX(28deg)`를 주는 **기울임 보기**를 설정 토글로 두고(누름 판정은 기울이기 전 좌표로 계산), 말과 건물 아이콘은 세워서 그린다. 이 옵션은 S 크기이고 마지막 티켓에 넣는다.
 
-### 11.2 한 화면
+### 11.2 PC-first 한 화면
 
-플레이 중에는 `data-screen="play"` 하나만 있다. 타이틀, 엔딩, 엔딩 모음은 지금처럼 별도 화면이다.
+대상: **1920×1080, 1536×864, 1366×768, 1280×800**. 네 크기에서 페이지와 내부 패널 스크롤 없음. 900px 미만은 최소 동작만 보장한다.
 
-```
-세로(390×844)                         가로(1366×768)
-┌──────────────────────────┐          ┌───────────────┬────────────────┐
-│ 27세 · 가을   도심   ⚙    │ 상단 띠  │               │ 27세 · 가을 도심 │
-│ 자금 2,340  체력 ▮▮▮▯ 과장 │          │               │ 자금 · 체력 · 직급│
-├──────────────────────────┤          │   보드        │ 능력치 등급      │
-│                          │          │   7×9 격자    ├────────────────┤
-│        보드 7×9 격자      │          │   (정사각 칸)  │ 팝업이 뜨는 자리 │
-│   (지도 한 장이 다 보인다)  │          │               │ (없을 때는 최근  │
-│                          │          │               │  기록 3줄)      │
-├──────────────────────────┤          ├───────────────┴────────────────┤
-│ [내 인생] (룰렛 ⦿⦿) [휴대폰]│ 하단 띠  │ [내 인생]   (룰렛 ⦿⦿)   [휴대폰] │
-└──────────────────────────┘          └────────────────────────────────┘
-```
-
-- 세로 화면의 팝업은 아래에서 올라오는 시트(화면 높이의 55%까지)이고 보드의 위쪽 절반과 말은 계속 보인다. 가로 화면에서는 오른쪽 칸에 뜬다. 전체 화면을 덮는 것은 승급 · 좌천 카드, 지도 전환, 중간 결산, 정년뿐이다.
-- 내용이 길면 지금처럼 탭이나 쪽 넘김을 쓴다. 팝업 한 장의 선택지는 최대 3개(직업 카드, 집 카드는 3개씩 쪽 넘김).
+전체 뷰포트를 독창적인 드론 마을 SVG가 채운다. 여섯 지도마다 색과 랜드마크가 다르며 넓은 7×9 입체 도로 타일 사이에도 건물, 나무, 연못, 드론 항구가 보인다.
+왼쪽 위 파일럿 카드와 무지개 인생 항로, 오른쪽 위 나이·계절·지도, 왼쪽 아래 세로 알약 메뉴가 세계 위에 뜬다. 1920px에서 본문은 20px 이상이다.
+팝업은 어두운 반투명 패널: 왼쪽 선택 목록, 오른쪽 큰 장면·비용·체력·확률·조건, 아래 설명. 마우스 호버/키보드 초점/위아래 방향키로 미리보기를 바꾸며 `data-option` 클릭은 바로 선택한다.
+내 인생과 휴대폰은 청록색 프로펠러 패턴 전체 화면 메뉴와 왼쪽 탭을 쓴다. 결과와 승급·연말 결산은 큰 배너와 그림으로 표시한다. `prefers-reduced-motion`을 지킨다.
 
 ### 11.3 한 계절의 흐름
 
-`data-phase` 값과 그때 화면에 있는 것.
+`data-phase` 값과 그때 화면에 있는 것. PC 선택지는 한 페이지 최대 6개이며 모든 선택은 쪽 넘김으로 접근한다.
 
 | 단계 `data-phase` | 화면 | 다음 |
 | --- | --- | --- |
@@ -820,7 +807,7 @@ PR #1의 월급 간격은 2.5계절이었다. 새 지도는 2.7~4.4계절이라 
 ### 11.4 훅과 검사
 
 - PR #1의 `data-option`, `data-pick`, `data-nav`, `data-tab`, `data-action`, `data-screen`, `data-phase`를 유지한다. 새로 `data-dest="<칸 id>"`(도착 칸), `data-map="A..F"`(지금 지도), `data-popup="<이름>"`(위 스무 가지)을 더한다.
-- `npm run layout:life`은 지도 여섯 장 × 네 크기와 팝업 스무 가지를 돈다. `check:board timed`는 16계절 대신 지도마다 12계절을 재서 14.9초 모형과 비교한다.
+- `npm run layout:life`은 지도 여섯 장 × PC 네 크기(1920×1080, 1536×864, 1366×768, 1280×800)와 팝업 스무 가지를 돈다. `check:board timed`는 16계절 대신 지도마다 12계절을 재서 14.9초 모형과 비교한다.
 - UI는 지금처럼 `options(state)`를 그리고 `choose(state, id)`를 부를 뿐이다. 도착 칸 목록, 직업 후보, 집 값, 인사평가 결과는 모두 엔진이 계산해 준다.
 
 ### 11.5 비행 다이얼: 확률을 바꾸는 룰렛 (결정 2026-11-26, 구현 전 명세)
@@ -1057,7 +1044,7 @@ type GameState = {
 # AGENTS.md — DroneGrowup (파일럿 키우기)
 
 ## What this is
-Static browser game, Korean text, mobile first. Vite 5 + TypeScript strict, vanilla DOM + inline SVG.
+Static browser game, Korean text, PC-first. Vite 5 + TypeScript strict, vanilla DOM + inline SVG.
 No framework, no runtime dependencies (devDependencies only). Node 22+ runs .ts scripts and tests directly.
 The default client is src/ui2; src/main.ts boots it without a query flag.
 The v2 spec is docs/design/life-board.md. It is the source of truth for rules and numbers; do one ticket
@@ -1087,7 +1074,7 @@ from its section 14.3 per session and do not go beyond that ticket's scope.
   It never computes odds, pay, eligibility or endings.
 
 ## UI rules
-- Nothing scrolls, on any screen at any size (390x844, 360x740, 1280x800, 1366x768). More content = tab or pager.
+- Nothing scrolls, on any screen at any size (1920x1080, 1536x864, 1366x768, 1280x800). More content = tab or pager.
 - Tap targets >= 44 px, text >= 11 px.
 - Keep the hooks: data-option, data-pick, data-nav, data-tab, data-action, data-screen, data-phase,
   and the v2 hooks data-dest, data-map, data-popup.

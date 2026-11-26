@@ -11,7 +11,10 @@ export function displayRows(rows: readonly DisplayRow[]) {
   for (const row of rows) {
     const item = el('div', 'life2-labelled-row');
     if (row.stat) { item.dataset.changedStat = row.stat; item.dataset.direction = row.direction; }
-    item.append(el('dt', '', row.label), el('dd', '', row.value)); list.append(item);
+    item.append(el('dt', '', row.label), el('dd', '', row.value));
+    const letter = /^([A-GS]) \(/.exec(row.value)?.[1];
+    if (letter) { item.dataset.abilityGrade = letter; item.style.setProperty('--ability-level', `${(8 - 'SABCDEFG'.indexOf(letter)) * 12.5}%`); }
+    list.append(item);
   }
   return list;
 }

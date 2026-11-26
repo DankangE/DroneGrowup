@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+import { LEGACY_PLACE_SCENES, LEGACY_JOB_PORTRAITS } from '../src/ui2/art.ts';
 // DOM-only assertions; this double deliberately does not claim to measure browser layout.
 export class TestNode {
   className = ''; textContent = ''; disabled = false;
@@ -20,6 +22,7 @@ export class TestNode {
     } });
   }
   get lastChild() { return this.children.at(-1); }
+  getAttribute(key: string) { return this.attributes[key] ?? null; }
   setAttribute(key: string, value: string) {
     this.attributes[key] = value;
     if (key === 'class') this.className = value;
@@ -92,3 +95,16 @@ export const action = (host: TestNode, id: string) => controls(host).find(node =
 export const visible = (host: TestNode) => controls(host).filter(node => node.dataset.option);
 export const panelAt = (host: TestNode) => host.querySelectorAll('section').find(node => node.dataset.popup)!;
 export const textOf = (host: TestNode): string => [host, ...host.querySelectorAll('*')].map(node => node.textContent).join(' ');
+
+/** Copy must never become markup; only renderer-owned, shipped artwork is allowed. */
+export function assertTrustedSceneImages(host: TestNode) {
+  const sets = { 'life2-place-art': Object.values(LEGACY_PLACE_SCENES),
+    'life2-job-portrait': Object.values(LEGACY_JOB_PORTRAITS) };
+  for (const image of host.querySelectorAll('img')) {
+    const files = sets[image.className as keyof typeof sets];
+    assert.ok(files, `untrusted image class: ${image.className}`);
+    const src = (image as TestNode & { src?: string }).src;
+    assert.ok(files.some(file => src === `/art/${file}.webp`), `untrusted image source: ${src}`);
+    assert.ok(Object.keys(image.attributes).every(name => !/^on/i.test(name)), 'no inline event handlers');
+  }
+}
