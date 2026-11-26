@@ -38,16 +38,18 @@ import type { Move } from './move.ts';
 import { PLACES, WORLD } from './world.ts';
 import type { ActionDef, Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
 import { restore as restoreBase } from './restore.ts';
+import { applyCardChoice, cardChoice, cardGainText, CARD_KEYS, CARD_TEXT, grantCard, offeredCard } from './cards.ts';
+export { cards } from './cards.ts';
 export { jobOffers } from './jobs.ts';
 export { settlementSummary } from './ending.ts';
 export const estateOffers = eventEstateOffers;
 export const LIFE_EVENTS = [...EVENTS_A, ...EVENTS_B, ...EVENTS_C, ...EVENTS_D, ...EVENTS_E, ...EVENTS_F, ...EVENTS_G, ...EVENTS_H];
 export const ALL_EVENTS = [...EVENTS, ...LIFE_EVENTS];
 type EventState = Pick<GameState, 'job' | 'home' | 'estates' | 'holdings' | 'family' | 'timers' | 'flags' | 'feats'
-  | 'fund' | 'turn' | 'board' | 'phase' | 'eventId' | 'seen'> & { position: string };
+  | 'fund' | 'turn' | 'board' | 'phase' | 'eventId' | 'seen' | 'hand'> & { position: string };
 const eventState = (s: GameState): EventState => structuredClone({ job: s.job, home: s.home, estates: s.estates,
   holdings: s.holdings, family: s.family, timers: s.timers, flags: s.flags, feats: s.feats, position: s.board.pos,
-  fund: s.fund, turn: s.turn, board: s.board, phase: s.phase, eventId: s.eventId, seen: s.seen });
+  fund: s.fund, turn: s.turn, board: s.board, phase: s.phase, eventId: s.eventId, seen: s.seen, hand: s.hand });
 /** Validate new event saves through the existing strict boundary, including every nested integer. */
 export function restore(raw: unknown): GameState | null {
   // v2 has no total-score cap. Retain the strict legacy shape checks without its v1 score ceiling.
@@ -204,7 +206,7 @@ function outcome(state: GameState, effect: Effect, flight = false, prize = false
 }
 
 type Resolved = { kind: OptionKind; place: PlaceId; choice: LifeChoice; flight: boolean; free?: boolean;
-  jobLocks?: string[]; home?: EstateOffer; family?: boolean; eventPopup?: boolean; life?: boolean };
+  jobLocks?: string[]; home?: EstateOffer; family?: boolean; eventPopup?: boolean; life?: boolean; card?: boolean };
 // §13.3: scale positive ability gains once, before study/zone multipliers. Costs and losses stay intact.
 function balanceAction(action: ActionDef): ActionDef {
   const effect = (row: Effect): Effect => ({ ...row, ...(row.add && { add: Object.fromEntries(
@@ -228,11 +230,12 @@ function view(state: GameState, id: string, r: Resolved): OptionView {
     cost, tire, enabled: !locks.length, locks, missing };
   if (choice.roll) {
     const staminaPct = r.jobLocks ? 0 : staminaBonus(state);
-    let chance = choice.roll.base + staminaPct + luckChanceBonus(state, id);
+    let chance = choice.roll.base + staminaPct;
     for (const mod of choice.roll.mods ?? []) {
       chance += clamp(Math.floor((state.s[mod.stat] - mod.over) / mod.per) * mod.pct, 0, mod.cap);
     }
     if (flight) chance += flightOdds(state, choice).bonus - eventFlightPenalty(state);
+    chance += luckChanceBonus(state, id);
     option.roll = { chance: clamp(chance, RULES.chanceMin, RULES.chanceMax), staminaPct,
       success: outcome(state, choice.roll.success, flight,
         kind === 'event' && nodeAt(state).kind === 'contest' && CONTEST_EVENTS.includes(state.eventId!)),
@@ -256,6 +259,11 @@ function resolve(state: GameState, interactive = false): Map<string, Resolved> {
   if (state.phase === 'ended') return choices;
   const node = nodeAt(state);
   const board = (id: string, choice: Choice) => choices.set(id, { kind: 'board', place: node.place, choice, flight: false });
+  if (offeredCard(state)) {
+    choices.set('skip', { kind: 'board', place: node.place, choice: cardChoice(state, 'skip')!.choice,
+      flight: false, free: true, card: true });
+    return choices;
+  }
   if (state.timers[E2K.fundPopup] !== undefined) {
     for (const { id, locks, ...service } of fundEventChoices(state)) choices.set(id, {
       ...service, free: true, flight: false, jobLocks: locks, eventPopup: true });
@@ -363,6 +371,13 @@ function phoneServices(state: GameState): ReturnType<typeof economyChoices> {
 }
 
 function resolveOption(state: GameState, id: string, menu: 'board' | 'phone', interactive = false) {
+  if (menu === 'board' && (id.startsWith('card:') || id === 'skip' && offeredCard(state))) {
+    const card = cardChoice(state, id);
+    if (!card) throw new Error(TEXT.unavailable(id));
+    const r: Resolved = { kind: 'board', place: nodeAt(state).place, choice: card.choice,
+      jobLocks: card.locks, flight: false, free: true, card: true };
+    return { r, v: view(state, id, r) };
+  }
   let r = menu === 'board' ? resolve(state, interactive).get(id) : undefined;
   if (!r) {
     const service = phoneServices(state).find(choice => choice.id === id);
@@ -527,7 +542,11 @@ function arrive(state: GameState, move: Move, result: Result, origin: string): G
       paid.lines.push({ label: ECONOMY_TEXT.lap, amount }); paid.total += amount;
     }
   }
-  state = land(state, result);
+  if (state.timers[CARD_KEYS.again] === state.turn) {
+    // A card armed before rolling gives two moves but only the final tile action.
+    delete state.timers[CARD_KEYS.again]; state.board.step = 'spin'; state.board.dice = [];
+    result.notes.push(CARD_TEXT.again);
+  } else state = land(state, result);
   if (move.passed.start.length) state = afterStartPass(state);
   return state;
 }
@@ -580,6 +599,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   const result: Result = { optionId: v.id, title: v.title, place: v.place, free: v.free, text: effect.text,
     deltas: {}, crashed, notes: [], statusFrom: state.status, statusTo: state.status, trackFrom: state.track, trackTo: state.track };
   state.s.money -= v.cost; state.s.stamina = Math.max(0, state.s.stamina - v.tire);
+  if (r.card) state = applyCardChoice(state, v.id);
   state = consumeLuck(state, v.id, !!v.roll, !v.free);
   if (branch !== 'sure' && !r.jobLocks) {
     setStat(state, success ? 'wins' : 'losses', state.s[success ? 'wins' : 'losses'] + 1);
@@ -615,7 +635,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   }
   if (v.id.startsWith('lifestyle:')) state = applyEconomyChoice(state, v.id);
   if (r.home) state = afterEventHome(applyHomeChoice(state, r.home), r.home);
-  if (/^(biz:|fund:|luck:)/.test(v.id) || v.id === 'skip') {
+  if (!r.card && (/^(biz:|fund:|luck:)/.test(v.id) || v.id === 'skip')) {
     state = afterEventAsset(applyAssetChoice(state, v.id, v.cost), v.id, v.cost);
     state = afterFundEvent(state, v.id);
   }
@@ -680,7 +700,11 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   else state.board.step = 'bonus';
   // Empty extra-action menus are an automatic close, never another confirmation.
   // Resolve all pending family/job/event choices first; disabled activities cannot block a close.
-  if (automatic && state.phase === 'action' && state.board.step === 'bonus') {
+  if (effect.grantCard) {
+    state = grantCard(state, effect.grantCard);
+    result.notes.push(cardGainText(state, effect.grantCard));
+  }
+  if (automatic && !r.card && state.phase === 'action' && state.board.step === 'bonus') {
     const enabled = options(state).filter(option => option.enabled);
     if (enabled.length === 1 && enabled[0].id === 'end') state = endSeason(state, result, runHooks);
   }
@@ -690,7 +714,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   if (Object.keys(settlement).length || result.season || result.upkeep || result.restGain !== undefined) result.settle = { deltas: settlement };
   if (state.log.length > LIFE_RULES.logMax) state.log.splice(0, state.log.length - LIFE_RULES.logMax);
   state = eventIncomeState(state);
-  if (r.life || r.eventPopup || hunterBonus !== undefined || v.id === ENDING_RULES.earlyId) result.effects = eventState(state);
+  if (r.card || effect.grantCard || r.life || r.eventPopup || hunterBonus !== undefined || v.id === ENDING_RULES.earlyId) result.effects = eventState(state);
   return { state, result };
 }
 

@@ -1,4 +1,5 @@
 // T15: compare public forecasts with real seeded choices, including every event response branch.
+import { cardChoice, CARDS, grantCard } from '../src/life/cards.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { ALL_EVENTS, choose, eventCandidates, forecast, newGame, options } from '../src/life/engine.ts';
@@ -104,7 +105,10 @@ export function checkOutcome(before: GameState, option: OptionView, menu: 'board
 export function outcomeReport() {
   const failures:string[]=[], coverage=new Set<string>(); let cases=0, choices=0;
   const inspect=(key:string,state:GameState,id:string,menu:'board'|'phone'='board',force=true)=>{
-    const option=options(state,menu).find(o=>o.id===id);
+    const card=id.startsWith('card:')?cardChoice(state,id):null;
+    const option: OptionView | undefined=card ? { id,kind:'board',place:WORLD.find(n=>n.id===state.board.pos)!.place,
+      title:card.choice.title,desc:card.choice.desc,cost:0,tire:0,free:true,enabled:!card.locks.length,locks:card.locks,missing:[],
+      sure:{text:card.choice.effect!.text,add:card.choice.effect!.add??{}} } : options(state,menu).find(o=>o.id===id);
     if(!option?.enabled){failures.push(`${key}: unavailable ${option?.locks.join(', ')??id}`);return;}
     const result=checkOutcome(state,option,menu,force);choices++;cases+=result.cases;
     result.branches.forEach(branch=>coverage.add(`${key}/${branch}`));
@@ -130,6 +134,12 @@ export function outcomeReport() {
       state.board.pos=node.id;state.board.step=step as 'space'|'bonus';
       inspect(`action:${action.id}:${step}`,state,`act:${action.id}`);
     }
+  }
+  for (const card of CARDS) {
+    const state = grantCard(choose(newGame(1), 'start:self').state, card.id);
+    state.s.drone = 1; state.s.cond = 50;
+    inspect(`card:${card.id}:use`, state, `card:use:${card.id}`);
+    inspect(`card:${card.id}:drop`, state, `card:drop:${card.id}`);
   }
   // Actual service/board choices retain context (discounts, job popups, year end and retirement).
   const sampled=new Set<string>();

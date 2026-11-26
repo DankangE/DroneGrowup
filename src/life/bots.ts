@@ -1,5 +1,7 @@
 // §13.1. Goal-directed policies; decisions use only the current public state and offered odds.
 import { ACTIONS } from './compat.ts';
+import { shortcutMoves } from './assets.ts';
+import { cardChoice, cards } from './cards.ts';
 import { currentEvent, met } from './engine.ts';
 import type { OptionView } from './engine.ts';
 import type { LifeEffect } from './events-a.ts';
@@ -63,7 +65,7 @@ function toPlace(place: string, kind?: SpaceKind): Map<string, number> {
   placeDistances.set(key, distance); return distance;
 }
 const actions = new Map([...ACTIONS, ...TRACK_TRAIN, ...TRACK_WORK, ...TRACK_PREP].map(a => [`act:${a.id}`, a]));
-export type BotContext = { phoneUsed: boolean; tried: readonly string[]; noBank?: boolean; salaryIncome: number; invested: number };
+export type BotContext = { phoneUsed: boolean; tried: readonly string[]; noBank?: boolean; noCards?: boolean; salaryIncome: number; invested: number };
 export const bankChoice = (id: string) => /^(loan:|repay:)/.test(id) || id.endsWith(':mortgage');
 export function targetTracks(id: PolicyId, state: GameState): TrackId[] {
   if (id === 'racer_creator') return state.turn < (45 - LIFE_RULES.startAge) * LIFE_RULES.seasons.length ? ['pilot', 'racer'] : ['creator'];
@@ -112,7 +114,7 @@ function utility(p: Policy, s: GameState, o: OptionView, needed: Stat[]): number
   return Math.floor((o.roll ? (value(o.roll.success) * o.roll.chance + value(o.roll.fail) * (LIFE_RULES.percent - o.roll.chance))
     / LIFE_RULES.percent : value(o.sure)) - o.cost / R.moneyDiv - o.tire / R.tireDiv);
 }
-export function pickBot(id: PolicyId, s: GameState, offered: readonly OptionView[], context: BotContext): OptionView {
+function pickOrdinary(id: PolicyId, s: GameState, offered: readonly OptionView[], context: BotContext): OptionView {
   const p: Policy = POLICIES[id], tracks = targetTracks(id, s);
   const usable = offered.filter(o => o.enabled && !(context.noBank && bankChoice(o.id))
     && !(context.tried.includes(o.id) && (o.free || o.id.startsWith('job:')) && !['job:none','skip','end'].includes(o.id)));
@@ -181,6 +183,10 @@ export function pickBot(id: PolicyId, s: GameState, offered: readonly OptionView
         && s.turn < (FAMILY_RULES.babyMaxAge - LIFE_RULES.startAge) * 4 ? 'hospital' : undefined));
   const choice = (o: OptionView): number => {
     const key = o.id, parts = key.split(':');
+    if (key.startsWith('luck:shortcut:')) {
+      const move = shortcutMoves(s).find(move => nodes.get(move.node)!.kind === parts[2]);
+      return move ? choice({ ...o, id: `go:${move.node}` }) : R.reject;
+    }
     if (key.startsWith('go:') || key.startsWith('express:')) {
       const node = nodes.get(parts[1])!, priority = p.kinds.indexOf(node.kind);
       if (key.startsWith('express:') && (node.map !== map || node.map === s.board.pos[0] || o.cost > spendable)) return R.reject;
@@ -309,6 +315,65 @@ export function pickBot(id: PolicyId, s: GameState, offered: readonly OptionView
   let best = usable[0], score = choice(best);
   for (const option of usable.slice(1)) { const next = choice(option); if (next > score) { best = option; score = next; } }
   return best;
+}
+// Card retention follows each policy's trait. Unlisted cards have equal low priority;
+// ties drop the oldest card first. Use only when the selected action benefits, or before
+// a move; a full-hand offer replaces the weakest only when the newcomer is stronger.
+export const BOT_CARD_TRAITS: Record<PolicyId, readonly string[]> = {
+  clerk_family: ['peer_intro', 'benefactor', 'shortcut'], // Family: introductions, career, local errands.
+  service_frugal: ['discount', 'benefactor', 'triple'], // Frugal: purchases, promotion, route choice.
+  mechanic: ['field_patch', 'stick_drill', 'benefactor'], // Mechanic: repair and hands-on skill.
+  official: ['route_notes', 'benefactor', 'peer_intro'], // Public service: theory and promotion contacts.
+  pilot: ['dream', 'field_patch', 'stick_drill'], // Pilot: flight risk, condition, skill.
+  employee: ['benefactor', 'team_letter', 'triple'], // Employee: promotion and reputation.
+  instructor_academy: ['peer_intro', 'team_letter', 'route_notes'], // Teacher: contacts, reputation, theory.
+  solo_ceo: ['discount', 'peer_intro', 'dream'], // Founder: equipment savings, sales contacts, risky jobs.
+  chairman: ['peer_intro', 'team_letter', 'benefactor'], // Association: network and public standing.
+  engineer: ['route_notes', 'benefactor', 'transfer'], // Engineer: theory, rank, gated travel.
+  specialist_field: ['field_patch', 'dream', 'team_letter'], // Specialist: equipment and reliable field work.
+  racer_creator: ['stick_drill', 'dream', 'team_letter'], // Racer/creator: skill, contests, reputation.
+  investor: ['discount', 'transfer', 'benefactor'], // Investor: savings, travel, salaried cashflow.
+  bon_vivant: ['shortcut', 'transfer', 'peer_intro'], // Leisure: reach outings and meet people.
+  drifter: ['transfer', 'triple', 'again'], // Wanderer: move broadly and keep route options.
+  random: [], // Random: seeded choice among useful cards; retain their current useful effect value.
+};
+const CARD_BOT = { base: 10, priority: 10, repairBelow: 85, maxChance: 95 } as const;
+export function pickBot(id: PolicyId, s: GameState, offered: readonly OptionView[], context: BotContext): OptionView {
+  const ordinary = pickOrdinary(id, s, offered, context), hand = cards(s);
+  // Phone calls pass only free services; cards remain a board action, outside phone accounting.
+  if (context.noCards || !offered.some(o => !o.free || o.id === 'skip' || o.id === 'spin')) return ordinary;
+  const rank = (cardId: string) => {
+    const trait = BOT_CARD_TRAITS[id], index = trait.indexOf(cardId);
+    const card = hand.held.find(c => c.id === cardId) ?? hand.offered;
+    const immediate = Object.entries(card?.add ?? {}).reduce((n, [stat, value]) =>
+      n + (stat === 'cond' && (!s.s.drone || s.s.cond >= CARD_BOT.repairBelow) ? 0 : value), 0);
+    return CARD_BOT.base + (index < 0 ? 0 : (trait.length - index) * CARD_BOT.priority) + immediate;
+  };
+  const asOption = (key: string): OptionView => {
+    const { choice, locks } = cardChoice(s, key)!;
+    return { id: key, kind: 'board', place: nodes.get(s.board.pos)!.place, title: choice.title, desc: choice.desc,
+      cost: 0, tire: 0, free: true, enabled: !locks.length, locks, missing: [],
+      sure: { text: choice.effect!.text, add: choice.effect!.add ?? {} } };
+  };
+  if (hand.offered) {
+    const duplicate = hand.held.find(card => card.id === hand.offered!.id && !card.stackable);
+    if (duplicate) return ordinary; // Replacing the same card gains nothing; keep its original acquisition date.
+    const weakest = [...hand.held].sort((a, b) => rank(a.id) - rank(b.id) || a.at - b.at)[0];
+    return weakest && rank(hand.offered.id) > rank(weakest.id) ? asOption(weakest.dropId) : ordinary;
+  }
+  if (ordinary.id.startsWith('luck:shortcut:') || s.board.step === 'space' && !hand.held.some(c => c.usable)) return ordinary;
+  const useful = hand.held.filter(card => card.usable && (
+    card.id === 'dream' ? !!ordinary.roll && ordinary.roll.chance < CARD_BOT.maxChance
+    : card.id === 'benefactor' ? ordinary.id === 'promo'
+    : card.id === 'discount' ? /^(buy:|biz:buy:)/.test(ordinary.id) && ordinary.cost > 0
+    : card.id === 'transfer' ? s.board.step === 'spin' && desiredMap(POLICIES[id], s, targetTracks(id, s)) !== s.board.pos[0]
+    : card.id === 'triple' || card.id === 'again' ? ordinary.id === 'spin'
+    : card.id === 'shortcut' ? ordinary.id === 'spin' && desiredMap(POLICIES[id], s, targetTracks(id, s)) === s.board.pos[0]
+    : card.id === 'field_patch' ? s.s.cond < CARD_BOT.repairBelow
+    : Object.entries(card.add ?? {}).some(([stat]) => s.s[stat as Stat] < LIFE_RULES.statMax)));
+  const selected = id === 'random' ? useful[randInt({ ...s }, useful.length || 1)]
+    : useful.sort((a, b) => rank(b.id) - rank(a.id))[0];
+  return selected ? asOption(selected.useId) : ordinary;
 }
 /** Optional phone action once per season; leave board popups in control of their own continuation. */
 export function phoneWanted(id: PolicyId, s: GameState, c: BotContext): boolean {

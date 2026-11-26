@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { CARDS } from '../src/life/cards.ts';
 import { ITEMS } from '../src/life/data.ts';
 import { assetChoices, drawLuck, fundYearEnd, shopIncome, shortcutMoves } from '../src/life/assets.ts';
 import { CAREER_KEYS } from '../src/life/career2.ts';
@@ -41,6 +42,13 @@ function cardState(id: string, prepare?: (state: GameState) => void) {
   assert.equal(next.result.luck?.id, id); assert.equal(next.state.turn, state.turn);
   assert.deepEqual(state, before); assert.deepEqual(choose(saved(state), 'go:A-o12'), next);
   saved(next.state);
+  if (CARDS.some(card => card.id === id)) {
+    assert.deepEqual(next.state.hand, [{ id, at: state.turn }]);
+    // This helper tests activation separately from the luck-tile storage transaction.
+    next.state.board.step = id === 'triple' ? 'spin' : 'space';
+    if (id === 'triple') next.state.board.dice = [];
+    return { before: state, ...choose(next.state, `card:use:${id}`) };
+  }
   return { before: state, ...next };
 }
 function action(state: GameState, id: string, menu: 'board' | 'phone' = 'board') {
@@ -256,7 +264,7 @@ test('luck again: a second movement in this season, then exactly one seasonal ac
 test('luck triple: next spin rolls three seeded dice and the third die offers reachable destinations', () => {
   const { state } = cardState('triple');
   assert.ok(state.flags.includes(K.triple));
-  const ready = choose(state, 'end').state, rng = structuredClone(ready);
+  const ready = state, rng = structuredClone(ready);
   const dice = rollDice(rng), third = randInt(rng, 6) + 1;
   const next = choose(ready, 'spin').state;
   assert.deepEqual(next.board.dice, [...dice, third]); assert.equal(next.rng, rng.rng);

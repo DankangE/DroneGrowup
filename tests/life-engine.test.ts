@@ -440,7 +440,7 @@ function randomRun(seed: number, check: boolean): GameState {
     assert.ok(count.spin <= 1 + count.again && count.tile <= 1 && count.extra <= 1);
     const before = check && seed <= 20 ? structuredClone(state) : null;
     const next = choose(state, option.id);
-    if (next.result.luck?.id === 'again') count.again++;
+    if (next.result.optionId === 'card:use:again') count.again++;
     if (next.state.turn > state.turn + 1) {
       assert.equal(state.eventId, 'abroad'); assert.equal(next.state.turn - state.turn, 2);
       for (let turn = state.turn + 1; turn < next.state.turn; turn++) turns[turn].skipped++;

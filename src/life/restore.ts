@@ -3,6 +3,7 @@ import { RULES, STAT_LABEL as V1_STAT_LABEL } from './data.ts';
 import { EVENTS } from './compat.ts';
 import { CAREER_KEYS } from './career2.ts';
 import { DIRECTOR_RULES } from './tracks.ts';
+import { migrateCards, validCards } from './cards.ts';
 import { ENDING_IDS, FUND_KINDS, HOLDING_LEVELS, INITIAL_STATE, KID_STAGES, LIFE_LEVELS, LIFE_RULES,
   LOG_TONES, MAP_IDS, PHASE_IDS, STAT_MAX, STATS, STATUS_IDS, STEP_IDS, TRACK_IDS } from './life-data.ts';
 import { WORLD } from './world.ts';
@@ -102,6 +103,7 @@ export function restore(raw: unknown): GameState | null {
   }
   const termStart = state.timers[CAREER_KEYS.chairStarted];
   if (termStart !== undefined && !int(termStart, 0, state.turn)) return null;
+  if (!validCards(state)) return null;
   // Clone the validated shape: callers and future choose() calls own entirely separate graphs.
-  return structuredClone(state);
+  return migrateCards(state);
 }

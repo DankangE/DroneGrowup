@@ -77,7 +77,7 @@ test('T24: calibration requires current sources and every positive season on all
 test('T24: all twenty time gates fail without measurement, use measured correction, and retain exact bounds', () => {
   const report = runLife('service_frugal', 1).report;
   const base = POLICY_IDS.map(policy => ({ ...report, policy, seconds: [16 * 60, 20 * 60, 14 * 60] }));
-  const out = { base, single: base, noBank: base, failures: [] };
+  const out = { base, single: base, noBank: base, noCards: base, failures: [] };
   const time = (data: ReturnType<typeof calibration>) => evaluateCriteria(out, 1, data).filter(c => c.id.startsWith('time:'));
   assert.equal(time(calibration(null)).length, 20);
   assert.ok(time(calibration(null)).every(c => c.status === 'FAIL' && Number.isNaN(c.value)));

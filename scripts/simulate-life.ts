@@ -22,7 +22,7 @@ export { TIME_MODEL } from './life-time-model.ts';
 export const AGES = [25, 30, 40, 50, 60, 70];
 const TARGETS = [1200, 3500, 12000, 28000, 45000, 55000];
 const C = { runs: 300, coverageRuns: 3000, minute: 60, percent: 100, scoreCap: 59970, workers: 10 };
-export type Experiment = 'base' | 'single' | 'no-bank';
+export type Experiment = 'base' | 'single' | 'no-bank' | 'no-cards';
 export type TraceStep = { before: GameState; after: GameState; option: OptionView; result: Result; menu: 'board' | 'phone' };
 export type RunReport = {
   policy: PolicyId; seed: number; experiment: Experiment; turn: number; steps: number; score: number; worth: number;
@@ -30,7 +30,7 @@ export type RunReport = {
   income: number; spending: number; cashHeavy: boolean; firstJob: number | null; top: boolean; demoted: boolean;
   dismissed: boolean; specials: number; jobs: string[]; maps: number[]; visited: number; choices: number; forks: number;
   noCar: number; seconds: number[]; activities: Record<string, number>; wealth: Record<string, number>;
-  events: Record<string, number>; promotions: { cohort: 'specialist' | 'ordinary'; rank: number; seasons: number }[];
+  events: Record<string, number>; cardUses: Record<string, number>; promotions: { cohort: 'specialist' | 'ordinary'; rank: number; seasons: number }[];
   earlyS: boolean; zone: Record<string, { income: number; seasons: number }>; bankUses: number; violations: number; rerolls: number; skipped: number;
 };
 const counts = timingCounts;
@@ -52,10 +52,10 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     feat: 0, grade: '', ending: '', noLoan: true, debtSeasons: 0, income: 0, spending: 0, cashHeavy: false,
     firstJob: null, top: false, demoted: false, dismissed: false, specials: 0, jobs: [], maps: MAP_IDS.map(() => 0),
     visited: 0, choices: 0, forks: 0, noCar: 0, seconds: LIFE_RULES.periods.map(() => 0), activities: counts(),
-    wealth: {}, events: {}, promotions: [], earlyS: false, zone: {}, bankUses: 0, violations: 0, rerolls: 0, skipped: 0 };
+    wealth: {}, events: {}, cardUses: {}, promotions: [], earlyS: false, zone: {}, bankUses: 0, violations: 0, rerolls: 0, skipped: 0 };
   while (state.phase !== 'ended') {
     if (++seasonSteps > (config.stepLimit ?? BOT_LIMITS.stepsPerSeason)) throw new Error(`stuck ${policy}/${seed}/${experiment} turn=${state.turn} ${state.board.step}`);
-    const before = state, context: BotContext = { phoneUsed, tried, noBank: experiment === 'no-bank', salaryIncome, invested };
+    const before = state, context: BotContext = { phoneUsed, tried, noBank: experiment === 'no-bank', noCards: experiment === 'no-cards', salaryIncome, invested };
     let menu: 'board' | 'phone' = 'board', offered: OptionView[] = [];
     if (phoneWanted(policy, state, context)) {
       phoneUsed = true;
@@ -73,6 +73,7 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
       report.earlyS ||= Object.entries(GRADE_STEPS).some(([stat, steps]) => stat !== 'stamina' && state.s[stat as keyof typeof state.s] >= steps.at(-1)!);
     }
     const result = next.result, elapsed = state.turn - before.turn;
+    if (id.startsWith('card:use:')) { const card = id.slice('card:use:'.length); report.cardUses[card] = (report.cardUses[card] ?? 0) + 1; }
     if (bankChoice(id)) report.bankUses++;
     if (id.startsWith('fund:in:')) invested += Number(id.split(':')[2]);
     if (id.startsWith('home:buy:') && before.home && before.home.tier >= 3) invested += option.cost;
@@ -84,8 +85,8 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     const timed = menu === 'board' && emptyBonus(state) ? interactiveChoose(before, id, menu, experiment === 'single') : next;
     const activity = id === 'end' && emptyBonus(before) ? counts()
       : choiceTiming(before, timed.state, timed.result, options(before, menu), menu).counts;
-    if (id === 'spin') spin++;
-    if (result.luck?.id === 'again') { rerolls++; report.rerolls++; }
+    if (id === 'spin' || id === 'card:use:shortcut' && before.board.step === 'spin') spin++;
+    if (id === 'card:use:again') { rerolls++; report.rerolls++; }
     if (id === 'spin' || moves) {
       // Auto-travel has one destination. Pick menus count once when the destination is chosen.
       const count = moves || (state.board.step !== 'pick' ? 1 : 0);
@@ -160,7 +161,7 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
 export function table(title: string, headers: string[], rows: (string | number)[][]): string {
   return `${title}\n| ${headers.join(' | ')} |\n| ${headers.map(() => '---').join(' | ')} |\n${rows.map(row => `| ${row.join(' | ')} |`).join('\n')}\n`;
 }
-export function reportTables(base: RunReport[], single: RunReport[], noBank: RunReport[]): string {
+export function reportTables(base: RunReport[], single: RunReport[], noBank: RunReport[], noCards: RunReport[] = []): string {
   const planners = base.filter(planned), notRandom = base.filter(r => r.policy !== 'random');
   const avg = (rows: RunReport[], get: (r: RunReport) => number) => mean(rows.map(get));
   const ratio = (rows: RunReport[], a: (r: RunReport) => number, b: (r: RunReport) => number) => percent(sum(rows.map(a)), sum(rows.map(b)));
@@ -199,7 +200,7 @@ export function reportTables(base: RunReport[], single: RunReport[], noBank: Run
     table('직업 경험률', ['직업','경험 판','비율'], TRACKS.map(t=>[t.id,base.filter(r=>r.jobs.includes(t.id)).length,rate(base,r=>r.jobs.includes(t.id))])),
     table('같은 출발 직급의 승급 간격 (계절, 완결된 승급만)', ['직급','D 전문 표본','D 평균','일반 표본','일반 평균','비율'], promotionRows),
     table('21종 엔딩', ['엔딩','판','비율'], ENDINGS2.map(e=>[e.id,base.filter(r=>r.ending===e.id).length,rate(base,r=>r.ending===e.id)])),
-    table('강제 실험', ['실험','완주','점수 평균','은행 사용'], [base,single,noBank].map((rs,i)=>[['기본','룰렛 한 개','은행 금지'][i],rs.length,round(avg(rs,r=>r.score)),sum(rs.map(r=>r.bankUses))])),
+    table('강제 실험', ['실험','완주','점수 평균','은행 사용'], [base,single,noBank,...(noCards.length ? [noCards] : [])].map((rs,i)=>[['기본','룰렛 한 개','은행 금지','카드 금지'][i],rs.length,round(avg(rs,r=>r.score)),sum(rs.map(r=>r.bankUses))])),
     table('T24 공통 시간 모형 (브라우저 보정 전)', ['단계','초','시뮬레이션 빈도'],TIME_MODEL.map(t=>[t.id,t.seconds,round(sum(base.map(r=>r.activities[t.id]))/sum(base.map(r=>r.turn)))])),
     table('사건 커버리지', ['표본','미등장 ID'], [[coverage.length,missing.join(', ') || '없음']]),
   ];
@@ -215,7 +216,7 @@ export function criterion(id: string, area: string, value: number, min: number, 
   return { id, area, value, min, max, unit, within, detail, status: within ? 'PASS' : 'FAIL' };
 }
 export function evaluateCriteria(out: Batch, runs = C.runs, timing = readCalibration()): Criterion[] {
-  const { base, single, noBank } = out, all = [...base, ...single, ...noBank];
+  const { base, single, noBank, noCards } = out, all = [...base, ...single, ...noBank, ...noCards];
   const planners = base.filter(planned), notRandom = base.filter(r => r.policy !== 'random');
   const avg = (rows: RunReport[], get: (r: RunReport) => number) => mean(rows.map(get));
   const pct = (n: number, d: number) => d > 0 ? 100 * n / d : NaN;
@@ -224,7 +225,7 @@ export function evaluateCriteria(out: Batch, runs = C.runs, timing = readCalibra
   const family = base.filter(r=>r.policy==='clerk_family'), frugal = base.filter(r=>r.policy==='service_frugal');
   const checks: Criterion[] = [];
   const add = (...args: Parameters<typeof criterion>) => checks.push(criterion(...args));
-  for (const [name, rows] of [['base',base],['single',single],['no-bank',noBank]] as const) {
+  for (const [name, rows] of [['base',base],['single',single],['no-bank',noBank],['no-cards',noCards]] as const) {
     const valid = rows.length === runs * POLICY_IDS.length && POLICY_IDS.every(policy => {
       const seeds = rows.filter(r=>r.policy===policy).map(r=>r.seed);
       return seeds.length === runs && new Set(seeds).size === runs && seeds.every(seed=>Number.isInteger(seed) && seed>=1 && seed<=runs);
@@ -234,6 +235,7 @@ export function evaluateCriteria(out: Batch, runs = C.runs, timing = readCalibra
   add('complete:turns', '완주', all.filter(r=>r.turn!==LIFE_RULES.maxTurns).length, 0, 0, '판');
   add('complete:stalls', '완주', out.failures.length, 0, 0, '', out.failures.join('; '));
   add('complete:actions', '완주', sum(all.map(r=>r.violations)), 0, 0);
+  add('cards:forbidden', '카드', sum(noCards.flatMap(r=>Object.values(r.cardUses))), 0, 0);
   add('bank:forbidden', '은행', sum(noBank.map(r=>r.bankUses)), 0, 0);
   const time = (id: string, raw: number, min: number, max: number) => {
     const value = timing.factor === null ? NaN : raw * timing.factor;
@@ -304,13 +306,14 @@ export function criteriaTable(checks: Criterion[]): string {
     `${bound(c.min)}..${bound(c.max)}${c.unit}`,c.detail]));
 }
 
-export type Batch = { base: RunReport[]; single: RunReport[]; noBank: RunReport[]; failures: string[] };
+export type Batch = { base: RunReport[]; single: RunReport[]; noBank: RunReport[]; noCards: RunReport[]; failures: string[] };
 function batch(policy: PolicyId, runs: number): Batch {
-  const out: Batch = { base: [], single: [], noBank: [], failures: [] };
+  const out: Batch = { base: [], single: [], noBank: [], noCards: [], failures: [] };
   for (let seed = 1; seed <= runs; seed++) {
     try {
       const base = runLife(policy,seed).report; out.base.push(base);
       out.single.push(runLife(policy,seed,'single').report);
+      out.noCards.push(runLife(policy,seed,'no-cards').report);
       // Identical deterministic path when no bank choice occurred: do not simulate it twice.
       out.noBank.push(base.bankUses || policy === 'random' ? runLife(policy,seed,'no-bank').report : { ...base, experiment: 'no-bank' });
     } catch (error) { out.failures.push(`${policy}/${seed}: ${String(error)}`); }
@@ -321,7 +324,7 @@ export async function simulate(runs: number, workers = Math.min(C.workers, avail
   if (!Number.isSafeInteger(runs) || runs < 1) throw new Error('SIM_RUNS must be a positive integer');
   if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('workers must be a positive integer');
   if (!policies.length || new Set(policies).size !== policies.length || policies.some(p => !POLICY_IDS.includes(p))) throw new Error('invalid SIM_POLICIES');
-  const output: Batch = { base: [], single: [], noBank: [], failures: [] }, pending = [...policies];
+  const output: Batch = { base: [], single: [], noBank: [], noCards: [], failures: [] }, pending = [...policies];
   await Promise.all(Array.from({length: Math.min(workers,policies.length)}, async () => {
     const worker = new Worker(new URL(import.meta.url), { workerData: true });
     try {
@@ -333,12 +336,12 @@ export async function simulate(runs: number, workers = Math.min(C.workers, avail
           const exit = (code: number) => error(new Error(`worker exited ${code}: ${policy}`));
           worker.once('message',message); worker.once('error',error); worker.once('exit',exit); worker.postMessage({policy,runs});
         });
-        for (const key of ['base','single','noBank','failures'] as const) (output[key] as unknown[]).push(...data[key]);
+        for (const key of ['base','single','noBank','noCards','failures'] as const) (output[key] as unknown[]).push(...data[key]);
         console.error(`life simulation: ${policy} ${data.base.length}/${runs}, failures=${data.failures.length}`);
       }
     } finally { await worker.terminate(); }
   }));
-  for (const rows of [output.base, output.single, output.noBank]) rows.sort((a,b) => POLICY_IDS.indexOf(a.policy)-POLICY_IDS.indexOf(b.policy) || a.seed-b.seed);
+  for (const rows of [output.base, output.single, output.noBank, output.noCards]) rows.sort((a,b) => POLICY_IDS.indexOf(a.policy)-POLICY_IDS.indexOf(b.policy) || a.seed-b.seed);
   return output;
 }
 // Worker-local, schema-specific deep copy. Every nested mutable state field is copied;
@@ -346,7 +349,7 @@ export async function simulate(runs: number, workers = Math.min(C.workers, avail
 export function cloneSimulationState(s: GameState): GameState {
   return { ...s, s: { ...s.s }, board: { ...s.board, dice: [...s.board.dice], ledger: { ...s.board.ledger }, lapAt: { ...s.board.lapAt } },
     job: { ...s.job, tracks: [...s.job.tracks] }, home: s.home && { ...s.home }, estates: s.estates.map(e=>({...e})),
-    holdings: s.holdings.map(h=>({...h})), family: { ...s.family, kids: s.family.kids.map(k=>({...k})) }, fund: { ...s.fund },
+    holdings: s.holdings.map(h=>({...h})), hand: s.hand.map(h=>({...h})), family: { ...s.family, kids: s.family.kids.map(k=>({...k})) }, fund: { ...s.fund },
     timers: { ...s.timers }, flags: [...s.flags], feats: [...s.feats], seen: { ...s.seen }, log: s.log.map(l=>({...l})) };
 }
 if (!isMainThread && workerData) {
@@ -366,13 +369,16 @@ if (isMainThread && process.argv[1] && import.meta.url === pathToFileURL(process
     const out = await simulate(runs, undefined, policies);
     const criteria = evaluateCriteria(out, runs);
     console.log('T24 hard gates; timing fails without a current six-map browser measurement. Planned = all except drifter/random. No-bank blocks loans, repayments and mortgages; automatic shortfall debt remains an engine obligation. Income excludes capital transfers; spending includes housing/family upkeep. Promotion intervals are observational, not matched cohorts.');
-    console.log(reportTables(out.base,out.single,out.noBank));
+    console.log(reportTables(out.base,out.single,out.noBank,out.noCards));
     console.log(criteriaTable(criteria));
+    const cardCounts: Record<string, number> = {};
+    for (const run of out.base) for (const [id, n] of Object.entries(run.cardUses)) cardCounts[id] = (cardCounts[id] ?? 0) + n;
+    console.log(`held-card uses (source frequency differs): ${JSON.stringify(cardCounts)}`);
     console.log(`Before age 45, any graded ability at S (excluding stamina): ${rate(out.base,r=>r.earlyS)}; §13.3 action ability gains are globally scaled to 85%.`);
     if (process.env.SIM_REPORT) writeFileSync(process.env.SIM_REPORT, JSON.stringify({ ...out, criteria }));
     for (const failure of out.failures) console.error(failure);
-    const complete = out.base.length === runs*POLICY_IDS.length && out.single.length === out.base.length && out.noBank.length === out.base.length;
-    console.log(`life simulation: ${out.base.length}/${runs*POLICY_IDS.length} base, ${out.single.length} single, ${out.noBank.length} no-bank; stuck/crashes=${out.failures.length}; elapsed=${round((performance.now()-started)/1000)}s`);
+    const complete = out.base.length === runs*POLICY_IDS.length && out.single.length === out.base.length && out.noBank.length === out.base.length && out.noCards.length === out.base.length;
+    console.log(`life simulation: ${out.base.length}/${runs*POLICY_IDS.length} base, ${out.single.length} single, ${out.noBank.length} no-bank, ${out.noCards.length} no-cards; stuck/crashes=${out.failures.length}; elapsed=${round((performance.now()-started)/1000)}s`);
     const failed = criteria.filter(c => c.status === 'FAIL');
     console.log(`life balance: ${criteria.filter(c=>c.status==='PASS').length} passed, ${failed.length} failed, timing measured-backed (missing/stale = FAIL)`);
     if (!complete || out.failures.length || failed.length) process.exitCode = 1;
