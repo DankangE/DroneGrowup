@@ -61,7 +61,7 @@ function needText(need: Cond): string[] {
 }
 export function careerRows(state: GameState, before?: GameState): DisplayRow[] {
   const track = careerTrack(state), change = before ? rankChange(before, state) : null;
-  const rows: DisplayRow[] = [{ label: P.current, value: track?.ranks[state.job.rank].title ?? (state.status === 'retired' ? P.retirement : P.noCareer) },
+  const rows: DisplayRow[] = [{ label: P.current, value: track?.ranks[state.job.rank].title ?? P.noCareer },
     { label: P.income, value: P.pay(careerSalary(state), change?.salaryDelta) }];
   if (state.status === 'retired') rows.push({ label: P.pension, value: P.pay(careerIncome(state).pension) });
   const retiring = retirementView(state);

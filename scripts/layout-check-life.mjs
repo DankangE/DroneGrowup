@@ -534,6 +534,37 @@ export function auditPopupContent(panel = document.querySelector('.life2-popup')
 }
 
 // Runs in Chromium. Check actual boxes and clipping, not merely overflow:hidden on the root.
+// Measure the pawn and its painted children, not just its positioned wrapper.
+// This catches a sprite that escapes upward into the preceding route tile.
+export function auditPawn() {
+  const issues = [], pawn = document.querySelector('[data-pawn]');
+  if (!pawn) return ['missing pawn'];
+  const tile = pawn.closest('[data-space]'), box = pawn.getBoundingClientRect();
+  if (!tile) return ['pawn has no current tile'];
+  const bounds = tile.getBoundingClientRect();
+  const visible = node => node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true });
+  if (!visible(pawn) || box.width < 32 || box.height < 26) issues.push('pawn is hidden or too small');
+  const parts = [pawn, ...pawn.querySelectorAll('svg')];
+  for (const part of parts) {
+    const rect = part.getBoundingClientRect();
+    if (!visible(part) || rect.width <= 0 || rect.height <= 0) issues.push('pawn artwork is hidden');
+    if (rect.left < bounds.left || rect.right > bounds.right || rect.top < bounds.top || rect.bottom > bounds.bottom)
+      issues.push('pawn artwork extends outside its tile');
+    for (const other of document.querySelectorAll('[data-space]')) {
+      for (const content of other.querySelectorAll('.life2-glyph, .life2-tile-label')) {
+        if (other === tile && content.matches('.life2-glyph')) continue;
+        const target = content.getBoundingClientRect();
+        if (Math.min(rect.right, target.right) > Math.max(rect.left, target.left)
+          && Math.min(rect.bottom, target.bottom) > Math.max(rect.top, target.top))
+          issues.push(`pawn covers ${other.dataset.space} ${content.classList.contains('life2-tile-label') ? 'label' : 'icon'}`);
+      }
+    }
+  }
+  const label = tile.querySelector('.life2-tile-label');
+  if (!label || !visible(label)) issues.push('current tile label is hidden');
+  return [...new Set(issues)];
+}
+
 export function audit() {
   const issues = [], vw = innerWidth, vh = innerHeight;
   const doc = document.scrollingElement;
@@ -781,6 +812,11 @@ async function fix5Checks(page, load, check) {
   for (const node of WORLD.filter(row => row.map === 'A')) {
     const s = structuredClone(starter); s.board.pos = node.id;
     s.s.money = 1017; s.s.debt = 1176;
+    await load(s); await check(`pawn route ${node.id}`);
+    // All A nodes cover both vertical and horizontal segments, including A-o0.
+    // Picking a destination narrows the board, so inspect that geometry too.
+    const picking = structuredClone(s); picking.board.step = 'pick'; picking.board.dice = [1, 1];
+    await load(picking); await check(`pawn route ${node.id} destination layout`);
     await load(s); await page.locator('[data-nav=phone]').click();
     await checkTextPages(page, '[data-action=popup-text-next]', () => check(`F5 pawn ${node.id}`));
     assert.match(await page.locator('.life2-funds').textContent(), /1,017.*1,176/);
@@ -798,6 +834,36 @@ async function fix5Checks(page, load, check) {
   await pagingChecks(page, check).checkPages('F5 all hospital family choices');
   assert.deepEqual(options(expected).filter(row => row.id.startsWith('dual:')).map(row => row.title), ['가정 중심', '맞벌이']);
   console.log('  F5: every A pawn row, PC overlays, debt HUD and one-tap family travel with all dual choices checked');
+}
+
+async function phoneKeyboardChecks(page, load) {
+  const state = choose(newGame(11), 'start:self').state; state.s.money = 0;
+  await load(state);
+  await keyboardActivate(page, page.locator('[data-nav=phone]'));
+  await keyboardActivate(page, page.locator('[data-tab=repair]'));
+  assert.equal(await page.locator('[data-action=popup-page-next]').count(), 0, 'single-page phone tab has no hidden pager');
+  // Reaching the next tab requires leaving the single-page tab's focus trap.
+  await keyboardActivate(page, page.locator('[data-tab=shop]'));
+  const list = page.locator('.life2-popup-list');
+  assert.equal(await list.getAttribute('tabindex'), '0', 'cashless shop has a Tab entry point');
+  let tabs = 0;
+  while (!await list.evaluate(node => node === document.activeElement)) {
+    assert.ok(tabs++ < 80, 'locked choices are reachable by real Tab navigation');
+    await page.keyboard.press('Tab');
+  }
+  const rows = await list.locator('[data-option]').evaluateAll(nodes => nodes.map(node => ({ id:node.dataset.option,
+    title:node.querySelector('strong').textContent, disabled:node.disabled })));
+  assert.ok(rows.length > 1 && rows.every(row => row.disabled), 'shop fixture has only locked choices');
+  for (const [index, row] of rows.entries()) {
+    await page.keyboard.press(index ? 'ArrowDown' : 'Home');
+    assert.equal(await list.locator('[aria-current=true]').getAttribute('data-option'), row.id);
+    assert.equal(await page.locator('.life2-choice-detail h3').textContent(), row.title);
+    assert.ok((await page.locator('.life2-choice-lock').textContent()).length, 'selected row exposes its requirements');
+    await page.keyboard.press('Enter'); await page.keyboard.press('Space');
+    assert.deepEqual(await page.evaluate(() => window.__life.state()), state, 'locked rows cannot activate');
+  }
+  await page.keyboard.press('Escape');
+  console.log('  phone keyboard: single-page Tab cycle and cashless shop row inspection without activation checked');
 }
 
 // T18 isolated popup section: no changes to the existing map/movement fixtures.
@@ -900,7 +966,21 @@ async function popup2Checks(page, base) {
   }
   for (let index = 0; index < 21; index++) {
     await page.evaluate(index => window.__popup2Fixture.ending(index), index);
-    await checkTextPages(page, '[data-action=ending-text-next]', () => audit('.life2-ending-screen'));
+    await checkTextPages(page, '[data-action=ending-text-next]', async () => {
+      await audit('.life2-ending-screen');
+      assert.deepEqual(await page.locator('.life2-ending-content').evaluate(content => {
+        const issues = [], stats = content.querySelector('.life2-ending-stats'), copy = content.querySelector('.life2-ending-copy p');
+        if (/최종 점수|최종 성적/.test(copy.textContent)) issues.push('score or grade duplicated in paged copy');
+        const gap = parseFloat(getComputedStyle(content).rowGap);
+        if (copy.getBoundingClientRect().top > stats.getBoundingClientRect().bottom + gap + 1)
+          issues.push('empty gap between stat tiles and text');
+        const art = content.querySelector('.life2-ending-art');
+        for (const image of art.querySelectorAll('img, svg')) {
+          if (parseFloat(getComputedStyle(image).borderTopLeftRadius) < 16) issues.push('ending portrait has square corners');
+        }
+        return issues;
+      }), [], 'ending copy and portrait');
+    });
   }
   await page.evaluate(() => window.__popup2Fixture.collection());
   const seen = [];
@@ -943,7 +1023,7 @@ async function main() {
         const load = async state => page.evaluate(run => window.__life.load(run), state);
         const check = async name => {
           views++;
-          for (const auditView of [audit, auditHud, auditPopupContent]) {
+          for (const auditView of [audit, auditHud, auditPopupContent, auditPawn]) {
             for (const issue of await page.evaluate(auditView)) failures.push(`${size} ${name}: ${issue}`);
           }
         };
@@ -1013,6 +1093,7 @@ async function main() {
         await fix3Checks(page, load, check);
         await fix4Checks(page, load, check);
         await fix5Checks(page, load, check);
+        await phoneKeyboardChecks(page, load);
         await playReviewChecks(page, load, check);
         await tiltChecks(page, load, check);
         const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];

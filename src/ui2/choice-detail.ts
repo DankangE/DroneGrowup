@@ -30,6 +30,9 @@ export function choiceDetail(place: PlaceId, track: TrackId | null = null) {
 /** Highlight is presentation state only. Clicking the original option still chooses immediately. */
 export function highlightChoices(list: HTMLElement, select: (id: string) => void) {
   const controls = [...list.querySelectorAll<HTMLButtonElement>('[data-option]')];
+  // A locked page still needs a Tab entry point for arrow-key inspection.
+  // Keep the original buttons disabled so inspection cannot choose an option.
+  if (controls.length && controls.every(control => control.disabled)) list.setAttribute('tabindex', '0');
   const highlight = (control: HTMLButtonElement) => {
     for (const item of controls) item.setAttribute('aria-current', String(item === control));
     select(control.dataset.option!);

@@ -145,12 +145,16 @@ test('F4 A6: graduate tuition, enrollment and actual completion are visible exac
 test('F4 A7: ending pages contain complete items, including long stories and individual achievements', () => browserDOM(() => {
   const s = worker(); s.phase = 'ended'; s.ending = 'family'; s.score = 123;
   const root = new TestNode('div'), model = endingModel(s); mountEnding(root.element(), s, { title() {}, restart() {}, collection() {} });
-  const pages = itemPages(model.lines, line => line.length, P.endingLimit), seen: string[] = [];
+  const stats = root.querySelectorAll('.life2-ending-stat').map(stat => `${stat.querySelector('span')!.textContent} ${stat.querySelector('strong')!.textContent}`);
+  assert.deepEqual(stats.slice(0, 2).reverse(), model.lines.slice(0, 2), 'score and grade stay complete in their stat tiles');
+  const pages = itemPages(model.lines.slice(2), line => line.length, P.endingLimit), seen = stats.slice(0, 2).reverse();
   for (const page of pages) {
     const text = root.querySelector('p')!.textContent; assert.equal(text, page.join('\n')); seen.push(...page);
-    assert.ok(!text.endsWith(' · ')); action(root, 'ending-text-next')?.fire('click');
+    assert.ok(!text.endsWith(' · ')); assert.doesNotMatch(text, /최종 점수|최종 성적/);
+    action(root, 'ending-text-next')?.fire('click');
   }
-  assert.deepEqual(seen, model.lines); assert.ok(model.lines.every(line => pages.some(page => page.includes(line))));
+  assert.deepEqual(seen, model.lines);
+  assert.ok(model.lines.every(line => stats.includes(line) || pages.some(page => page.includes(line))));
 }));
 
 test('F4 A8: wedding face shows lock reasons and all lifestyle choices; family mode remains reachable', () => {

@@ -75,7 +75,8 @@ export function mountEnding(host: HTMLElement, state: GameState, actions: Ending
     stat.append(el('span', '', label as string), el('strong', '', String(value)));
     stats.append(stat);
   }
-  content.append(el('h2', '', model.title), stats, pagedCopy(model.lines));
+  // Score and grade already have stat tiles; retain them in the public model.
+  content.append(el('h2', '', model.title), stats, pagedCopy(model.lines.slice(2)));
   const controls = el('nav', 'life2-ending-controls');
   controls.append(nav(E.home, 'title', actions.title), nav(E.gallery, 'gallery', actions.collection),
     nav(E.restart, 'restart', actions.restart));

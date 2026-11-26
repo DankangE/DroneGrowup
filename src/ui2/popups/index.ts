@@ -196,11 +196,9 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
           control.setAttribute('aria-selected', String(id === tab)); footer.append(control);
         }
         // Phone categories must not displace the choice pager.
-        const pageControl = button(COPY.pages(page, choices.count), '', () => {
+        if (choices.count > 1) header.insertBefore(button(COPY.pages(page, choices.count), '', () => {
           page = (page + 1) % choices.count; render();
-        }, 'popup-page-next');
-        if (choices.count === 1) pageControl.dataset.singlePage = '';
-        header.insertBefore(pageControl, header.lastChild);
+        }, 'popup-page-next'), header.lastChild);
       } else if (reading) {
         footer.append(button(COPY.exit, '', close, 'popup-continue'));
       } else {
