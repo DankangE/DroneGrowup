@@ -7,7 +7,7 @@ import { ALL_EVENTS, choose, forecast, newGame, options } from '../src/life/engi
 import { LIFE_RULES } from '../src/life/life-data.ts';
 import { TRACK_TRAIN } from '../src/life/tracks.ts';
 import { WORLD } from '../src/life/world.ts';
-import { AGES, criterion, criteriaTable, evaluateCriteria, runLife } from '../scripts/simulate-life.ts';
+import { AGES, criterion, criteriaTable, evaluateCriteria, runLife, workerCount } from '../scripts/simulate-life.ts';
 import type { Batch, RunReport } from '../scripts/simulate-life.ts';
 import { checkOutcome, eventFixture, outcomeReport } from '../scripts/outcome-check-life.ts';
 
@@ -117,6 +117,14 @@ test('outcome audit rejects mismatched displayed odds and costs', () => {
   const result = checkOutcome(state, wrong);
   assert.ok(result.failures.some(f => f.startsWith('price:')));
   assert.ok(result.failures.some(f => f.startsWith('odds:')));
+});
+
+test('SIM_WORKERS defaults to 8, stays within the core count and rejects invalid values', () => {
+  assert.equal(workerCount(undefined, 10), 8); assert.equal(workerCount('', 10), 8); assert.equal(workerCount(undefined, 4), 4);
+  assert.equal(workerCount('3', 10), 3); assert.equal(workerCount('12', 10), 10);
+  for (const bad of ['0', '-1', '2.5', 'eight']) assert.throws(() => workerCount(bad, 10), /SIM_WORKERS must be a positive integer/);
+  const result = spawnSync(process.execPath, ['scripts/simulate-life.ts'], { encoding: 'utf8', env: { ...process.env, SIM_WORKERS: '0' } });
+  assert.equal(result.status, 1); assert.match(result.stderr, /SIM_WORKERS must be a positive integer/);
 });
 
 test('CLI exits nonzero for unmet balance gates even when every sampled game completes', () => {
