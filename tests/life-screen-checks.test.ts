@@ -142,7 +142,8 @@ test('policy runner bounds choices when state keeps changing without completing 
 });
 
 test('board command accepts keys and timed and rejects invalid arguments before opening a server', () => {
-  assert.deepEqual(argumentsFor([]), { mode: 'keys', viewport: [390, 844] });
+  assert.deepEqual(argumentsFor([]), { mode: 'keys', viewport: [1366, 768] });
+  assert.deepEqual(argumentsFor(['timed']), { mode: 'timed', viewport: [1366, 768] });
   assert.deepEqual(argumentsFor(['timed', '1366x768']), { mode: 'timed', viewport: [1366, 768] });
   for (const args of [['typo'], ['timed', 'wide'], ['timed', '0x844'], ['keys', '390x844', 'extra']]) {
     assert.throws(() => argumentsFor(args));

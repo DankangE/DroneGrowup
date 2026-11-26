@@ -39,7 +39,7 @@ after each input. Result dismissal must leave the state unchanged.
 | `npm run playtest:life` | Fresh seeds 1 and 11 at 1366×768, using real clicks until the first promotion or 12 completed seasons (three years); all choice pages, disabled options, results, pawn, dice, date and engine parity |
 | `npm run layout:life` | Six maps × four sizes, movement/transfer/skip fixtures, all twenty §11.3 popup groups at each size, five life tabs and 21 ending/gallery entries |
 | `npm run check:board -- keys` | Twelve seasons at each of the four sizes, using real Tab/Enter navigation, including local destination tiles, paging and result dismissal; zero mouse/focus fallbacks |
-| `npm run check:board -- timed [390x844]` | Twelve completed seasons on each of maps A–F with animations and reading pauses; prints each map's seconds per season and difference from 14.9 seconds |
+| `npm run check:board -- timed [1366x768]` | Twelve completed seasons on each of maps A–F with animations and reading pauses; prints each map's seconds per season and difference from 14.9 seconds |
 
 All three default checks are in `npm run verify`; the longer `timed` measurement
 is opt-in. Browser commands build and serve a local Vite preview and
