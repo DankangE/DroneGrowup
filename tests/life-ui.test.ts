@@ -106,52 +106,51 @@ class PagingPage {
   }
 }
 
-test('life layout audits all four choices twice on one six-row PC page', async () => {
-  const started = choose(newGame(11), 'start:school').state;
-  const state = choose(started, 'spin').state;
-  state.s.money = 0;
-  assert.deepEqual(options(state).map(option => option.id), ['act:st_theory', 'act:st_sim', 'act:st_flight', 'skip']);
-  assert.ok(options(state).some(option => !option.enabled), 'the fixture includes disabled options');
+function estatePagingState() {
+  const state = choose(newGame(11), 'start:school').state;
+  state.board.pos = 'A-o24'; state.board.step = 'space'; state.board.dice = [1, 1]; state.s.money = 1000;
+  return state;
+}
+
+test('life layout traverses nine popup choices twice and rewinds without replacing the shell', async () => {
+  const state = estatePagingState(), ids = options(state).map(option => option.id);
+  assert.equal(ids.length, 9);
+  assert.ok(options(state).some(option => !option.enabled), 'includes locked choices');
   const page = new PagingPage(state), seen: string[][] = [];
   const { checkPages } = pagingChecks(page, async () => { seen.push(page.visible().map(option => option.id)); });
-  await checkPages('after spin');
-  assert.equal(page.index, 0);
-  await checkPages('same season');
-  assert.deepEqual(seen, [
-    ['act:st_theory', 'act:st_sim', 'act:st_flight', 'skip'],
-    ['act:st_theory', 'act:st_sim', 'act:st_flight', 'skip'],
-  ]);
-  assert.equal(page.popupRenders, 0, 'all choices fit without replacing the popup');
+  await checkPages('estate'); assert.equal(page.index, 1);
+  await checkPages('estate again');
+  assert.deepEqual(seen, [ids.slice(0, 6), ids.slice(6), ids.slice(0, 6), ids.slice(6)]);
+  assert.equal(page.popupRenders, 3, 'next, rewind, next replace only the popup');
   assert.equal(page.shellRenders, 0);
-  assert.deepEqual(page.state, state, 'paging never changes the game');
+  assert.deepEqual(page.state, state);
 });
 
-test('life layout choice lookup rewinds to an earlier page and waits for the resulting state', async () => {
-  const started = choose(newGame(11), 'start:school').state;
-  const state = choose(started, 'spin').state;
-  state.s.money = 0;
-  const page = new PagingPage(state);
+test('life layout choice lookup rewinds to an earlier popup page before choosing', async () => {
+  const state = estatePagingState(), page = new PagingPage(state);
   const { checkPages, clickChoice } = pagingChecks(page, async () => {});
-  await checkPages('before choice');
-  await assert.rejects(clickChoice('act:st_sim'), /is enabled/);
-  await clickChoice('act:st_theory');
-  assert.deepEqual(page.state, choose(state, 'act:st_theory').state);
-  assert.equal(page.index, 0);
-  assert.equal(page.pending, undefined);
+  await checkPages('before choice'); assert.equal(page.index, 1);
+  await assert.rejects(clickChoice('home:buy:5'), /is enabled/);
+  await clickChoice('home:rent:1');
+  assert.deepEqual(page.state, choose(state, 'home:rent:1').state);
+  assert.ok(page.popupRenders >= 2, 'both forward paging and rewind occurred');
+  assert.equal(page.index, 0); assert.equal(page.pending, undefined);
 });
 
-test('life layout still traverses plain destination pages and can choose an earlier destination', async () => {
+test('life layout traverses plain destination pages and rewinds before choosing', async () => {
   const state = choose(newGame(1), 'start:school').state;
-  state.board.step = 'pick'; state.board.dice = [6, 6]; state.s.car = 2;
+  state.board.pos = 'B-o2'; state.board.step = 'pick'; state.board.dice = [6, 6]; state.s.car = 2;
   const page = new PagingPage(state), seen: string[][] = [];
   const { checkPages, clickChoice } = pagingChecks(page, async () => { seen.push(page.visible().map(option => option.id)); });
   assert.equal(panelAt(page.root), undefined);
-  await checkPages('destinations'); await checkPages('destinations again');
-  const ids = options(state).map(option => option.id);
-  const chunks = Array.from({ length: Math.ceil(ids.length / 6) }, (_, index) => ids.slice(index * 6, index * 6 + 6));
-  assert.deepEqual(seen, [...chunks, ...chunks]);
-  assert.equal(page.shellRenders, chunks.length > 1 ? (chunks.length - 1) * 3 : 0); assert.equal(page.popupRenders, 0);
+  const ids = options(state).map(option => option.id); assert.equal(ids.length, 9);
+  await checkPages('destinations'); assert.equal(page.index, 1);
+  await checkPages('destinations again');
+  assert.deepEqual(seen, [ids.slice(0, 6), ids.slice(6), ids.slice(0, 6), ids.slice(6)]);
+  assert.equal(page.shellRenders, 3, 'next, rewind, next replace the plain shell');
+  assert.equal(page.popupRenders, 0);
   await clickChoice(ids[0]); assert.deepEqual(page.state, choose(state, ids[0]).state);
+  assert.ok(page.shellRenders >= 5, 'rewind and choosing each render the shell');
 });
 
 test('life layout reopens dismissed choices and dismisses an already mounted result before auditing', async () => {
@@ -269,4 +268,16 @@ test('life layout fixtures restore, page every option, and finish a season on al
   assert.deepEqual(restore(event), event);
   const checks = pagingChecks(new PagingPage(event), async () => {});
   await checks.checkPages('event'); await checks.checkPages('event again');
+});
+
+test('bottom navigation highlights only the open menu and clears on dismissal', () => {
+  const page = new PagingPage(choose(newGame(11), 'start:school').state);
+  const selected = () => ['life', 'phone'].filter(nav => page.root.querySelector(`[data-nav="${nav}"]`)!.getAttribute('aria-pressed') === 'true');
+  assert.deepEqual(selected(), []);
+  page.inDOM(() => page.root.querySelector('[data-nav="life"]')!.fire('click'));
+  assert.deepEqual(selected(), ['life']);
+  page.inDOM(() => page.root.querySelector('[data-nav="phone"]')!.fire('click'));
+  assert.deepEqual(selected(), ['phone']);
+  page.inDOM(() => action(page.root, 'popup-close').fire('click'));
+  assert.deepEqual(selected(), []);
 });

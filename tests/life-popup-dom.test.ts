@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { newGame, options } from '../src/life/engine.ts';
 import { POPUPS } from '../src/ui2/popups/data.ts';
 import type { PopupKind } from '../src/ui2/popups/data.ts';
+import { assertTrustedSceneImages } from './life-popup2-dom-helper.ts';
 import { mountPopup, popupModel } from '../src/ui2/popups/index.ts';
 
 import { TestNode as Node, dom, withDOM } from './life-popup2-dom-helper.ts';
@@ -48,7 +49,7 @@ test('details page all stored copy as text and return to the same choice page', 
   const host = new Node('div');
   mountPopup(host as unknown as HTMLElement, fixture(), { choose() {}, dismiss() {} });
   action(host, 'popup-page-next').fire('click'); action(host, 'popup-details').fire('click');
-  assert.equal(panelAt(host).dataset.details, ''); assert.ok(host.querySelectorAll('img').every(node => !node.attributes['onerror']));
+  assert.equal(panelAt(host).dataset.details, ''); assertTrustedSceneImages(host);
   const first = host.querySelector('p')!.textContent;
   action(host, 'popup-text-next').fire('click'); assert.notEqual(host.querySelector('p')!.textContent, first);
   action(host, 'popup-back').fire('click');

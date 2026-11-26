@@ -5,6 +5,7 @@ import { ENDINGS2 } from '../src/ui2/popups/ending-data.ts';
 import { mountEnding, mountEndingCollection } from '../src/ui2/popups/ending.ts';
 import { fixtureOption, popup2Fixture } from '../src/ui2/popups/fixtures.ts';
 import type { Popup2Kind } from '../src/ui2/popups/fixtures.ts';
+import { assertTrustedSceneImages } from './life-popup2-dom-helper.ts';
 import { mountPopup, popupModel } from '../src/ui2/popups/index.ts';
 import { action, controls, dom, panelAt, TestNode, textOf, visible, withDOM } from './life-popup2-dom-helper.ts';
 
@@ -29,7 +30,7 @@ for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) test(`${kind}: data-pop
   if (model.choices.length) {
     action(host, 'popup-details').fire('click');
     assert.equal(panelAt(host).dataset.details, '');
-    assert.ok(host.querySelectorAll('img').every(node => !node.attributes['onerror']));
+    assertTrustedSceneImages(host);
     const before = textOf(host); action(host, 'popup-text-next').fire('click'); assert.notEqual(textOf(host), before);
     action(host, 'popup-back').fire('click');
   }

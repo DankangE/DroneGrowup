@@ -387,9 +387,9 @@ export function auditHud() {
   if (!hud) issues.push('HUD: missing');
   else {
     const box = hud.getBoundingClientRect();
-    const expectedHeight = Math.max(148, vh * .20);
+    const expectedHeight = Math.max(148, vh * .23);
     if (Math.abs(box.height - expectedHeight) > .1) issues.push(`HUD: expected ${expectedHeight}px row`);
-    if (Math.abs(box.width - Math.max(355, vw * .282)) > 1) issues.push('HUD: incorrect PC card width');
+    if (Math.abs(box.width - Math.max(355, vw * .324)) > 1) issues.push('HUD: incorrect PC card width');
     const visible = node => node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true })
       && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
     const overlaps = (one, two) => Math.min(one.right, two.right) > Math.max(one.left, two.left) + .1
@@ -434,53 +434,36 @@ export function auditHud() {
     const marks = [...hud.querySelectorAll('[data-changed-stat]')].map(node => node.dataset.changedStat);
     if (new Set(marks).size !== marks.length) issues.push('HUD: stat is marked twice');
     const bar = hud.querySelector('.life2-progress-track')?.getBoundingClientRect();
-    if (!bar || bar.height < 12 || bar.height > 18) issues.push('HUD: route bar must be 12–18px thick');
+    if (!bar || bar.height < 11 || bar.height > 13) issues.push('HUD: route bar must be 11–13px thick');
     const drone = hud.querySelector('.life2-progress-drone')?.getBoundingClientRect();
     if (!drone || drone.width < 40 || drone.height < 26) issues.push('HUD: drone marker below 40x26px');
     if (![...hud.querySelectorAll('.life2-progress-label[data-age]')].some(visible))
       issues.push('HUD: no visible milestone age labels');
-    const hudCss = getComputedStyle(hud);
-    const border = Object.fromEntries(['Left', 'Right', 'Top', 'Bottom'].map(side =>
-      [side, parseFloat(hudCss[`border${side}Width`])]));
     for (const node of hud.querySelectorAll('*')) {
       if (!visible(node) || (node.closest('svg') && node.tagName.toLowerCase() !== 'svg'
         && node.tagName.toLowerCase() !== 'text')) continue;
       const rect = node.getBoundingClientRect(), label = node.getAttribute('class') ?? node.tagName;
-      const detached = node.closest('.life2-date, .life2-change-strip');
-      if (detached) {
-        const bounds = detached.getBoundingClientRect();
-        if (rect.left < 0 || rect.right > vw || rect.top < 0 || rect.bottom > vh
-          || rect.left < bounds.left - 1 || rect.right > bounds.right + 1
-          || rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1)
-          issues.push(`HUD: detached ${label} clipped or outside viewport`);
-        const parent = node.parentElement;
-        if (parent && parent !== hud && parent !== detached.parentElement) {
-          const parentBox = parent.getBoundingClientRect();
-          if (rect.left < parentBox.left - 1 || rect.right > parentBox.right + 1
-            || rect.top < parentBox.top - 1 || rect.bottom > parentBox.bottom + 1)
-            issues.push(`HUD: detached ${label} overflows parent`);
-        }
-        if (node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1)
-          issues.push(`HUD: detached ${label} text overflows`);
-        if ([...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())
-          && parseFloat(getComputedStyle(node).fontSize) < 11) issues.push('HUD: detached text below 11px');
-        continue;
-      }
-      if (rect.left < Math.max(0, box.left) - .1 || rect.right > Math.min(vw, box.right) + .1
-        || rect.top < Math.max(0, box.top) - .1 || rect.bottom > Math.min(vh, box.bottom) + .1)
-        issues.push(`HUD: ${label} outside HUD or viewport`);
-      // At least 2px from the inner border edge, including prompt and marker.
-      if (rect.left < box.left + border.Left + 2 - .1 || rect.right > box.right - border.Right - 2 + .1
-        || rect.top < box.top + border.Top + 2 - .1 || rect.bottom > box.bottom - border.Bottom - 2 + .1)
+      const container = node.closest('.life2-date, .life2-change-strip') ?? hud;
+      const bounds = container.getBoundingClientRect(), css = getComputedStyle(container);
+      const border = Object.fromEntries(['Left', 'Right', 'Top', 'Bottom'].map(side =>
+        [side, parseFloat(css[`border${side}Width`])]));
+      if (rect.left < Math.max(0, bounds.left) - .1 || rect.right > Math.min(vw, bounds.right) + .1
+        || rect.top < Math.max(0, bounds.top) - .1 || rect.bottom > Math.min(vh, bounds.bottom) + .1)
+        issues.push(`HUD: ${label} outside its container or viewport`);
+      // Detached cards get the identical inner-border and parent checks.
+      if (node !== container && (rect.left < bounds.left + border.Left + 2 - .1 || rect.right > bounds.right - border.Right - 2 + .1
+        || rect.top < bounds.top + border.Top + 2 - .1 || rect.bottom > bounds.bottom - border.Bottom - 2 + .1))
         issues.push(`HUD: ${label} touches HUD border (needs 2px clearance)`);
-      let parent = node.parentElement;
+      let parent = node === container ? null : node.parentElement;
       while (parent && getComputedStyle(parent).display === 'contents') parent = parent.parentElement;
       if (parent) {
-        const bounds = parent.getBoundingClientRect();
-        if (rect.left < bounds.left - .1 || rect.right > bounds.right + .1
-          || rect.top < bounds.top - .1 || rect.bottom > bounds.bottom + .1)
+        const parentBox = parent.getBoundingClientRect();
+        if (rect.left < parentBox.left - .1 || rect.right > parentBox.right + .1
+          || rect.top < parentBox.top - .1 || rect.bottom > parentBox.bottom + .1)
           issues.push(`HUD: ${label} overflows parent`);
       }
+      if (node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1)
+        issues.push(`HUD: ${label} content overflows`);
       const textNodes = [...node.childNodes].filter(child => child.nodeType === 3 && child.textContent.trim());
       const minFont = vw >= 900 ? 12 : 11;
       if (textNodes.length && parseFloat(getComputedStyle(node).fontSize) < minFont)
@@ -528,6 +511,28 @@ export function auditHud() {
   return [...new Set(issues)];
 }
 
+// Required copy is checked before hidden decorative nodes are skipped by geometry audits.
+export function auditPopupContent(panel = document.querySelector('.life2-popup')) {
+  if (!panel || !panel.matches('[data-popup]')) return [];
+  const issues = [];
+  const visible = node => node && node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true })
+    && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+  const title = panel.hasAttribute('data-stage') ? panel.querySelector('.life2-stage-banner') : panel.querySelector('h2');
+  if (!visible(title) || !title.textContent.trim()) issues.push('popup title missing or hidden');
+  for (const node of panel.querySelectorAll('[data-option], .life2-popup-copy p, .life2-popup-copy dt, .life2-popup-copy dd')) {
+    if (node.textContent.trim() && !visible(node)) issues.push(`required popup copy hidden: ${node.className || node.tagName}`);
+  }
+  if (panel.querySelector('[data-option]') && !visible(panel.querySelector('.life2-selected-description')))
+    issues.push('selected choice description missing or hidden');
+  // Hidden row summaries are duplicated in the selected inspector and complete details pager.
+  if (panel.querySelector('[data-option]') && !visible(panel.querySelector('[data-action=popup-details]')))
+    issues.push('complete choice details unreachable');
+  const paint = getComputedStyle(panel);
+  const alpha = paint.backgroundColor.startsWith('rgba') ? Number(paint.backgroundColor.split(',').at(-1).replace(')', '')) : 1;
+  if (paint.opacity !== '1' || paint.backgroundColor === 'transparent' || alpha !== 1) issues.push('popup sheet is translucent');
+  return issues;
+}
+
 // Runs in Chromium. Check actual boxes and clipping, not merely overflow:hidden on the root.
 export function audit() {
   const issues = [], vw = innerWidth, vh = innerHeight;
@@ -552,7 +557,7 @@ export function audit() {
       ((node.scrollWidth > node.clientWidth + 1 && ['hidden', 'clip'].includes(style.overflowX)) ||
        (node.scrollHeight > node.clientHeight + 1 && ['hidden', 'clip'].includes(style.overflowY)))) issues.push(`${label}: content clipped`);
     if (!node.closest('[inert]') && node.matches('button, [data-space]') && (rect.width < 43.99 || rect.height < 43.99)) issues.push(`${label}: smaller than 44px`);
-    if (node.matches('[data-space]') && rect.width < rect.height) issues.push(`${label}: road tile must be wider than tall`);
+    if (node.matches('[data-space]') && (rect.width / rect.height < 1.33 || rect.width / rect.height > 1.36)) issues.push(`${label}: road tile aspect ratio outside 1.33–1.36`);
     if ([...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim()) && parseFloat(style.fontSize) < 11) issues.push(`${label}: text below 11px`);
     for (let parent = node.parentElement; parent; parent = parent.parentElement) {
       const box = parent.getBoundingClientRect(), css = getComputedStyle(parent);
@@ -567,14 +572,26 @@ export function audit() {
     if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('tiles overlap');
   }
-  // World/board intentionally sit behind overlays. Independent overlay controls must stay disjoint.
+  // Modal sheets may cover the route; persistent controls must never cover a tile or pawn.
   const regions = ['.life2-hud', '.life2-date', '.life2-popup', '.life2-bottom']
     .map(selector => document.querySelector(selector)).filter(node => node?.checkVisibility())
     .map(node => node.getBoundingClientRect());
   const world = document.querySelector('.life2-board-frame')?.getBoundingClientRect();
   const board = document.querySelector('.life2-board')?.getBoundingClientRect();
   if (!world || Math.abs(world.width - vw) > 1 || Math.abs(world.height - vh) > 1) issues.push('world does not fill viewport');
-  if (!board || board.width < vw * .65) issues.push('board below 65% viewport width');
+  const destinationPanel = document.querySelector('.life2-destinations');
+  const expectedBoardWidth = vw * (destinationPanel ? .42 : .70);
+  if (!board || Math.abs(board.width - expectedBoardWidth) > 1) issues.push('incorrect board width for active PC layout');
+  const intersects = (a, b) => Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1
+    && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 1;
+  const protectedNodes = [...document.querySelectorAll('[data-space], [data-pawn], [aria-current=location]')];
+  for (const overlay of document.querySelectorAll('.life2-hud, .life2-date, .life2-change-strip, .life2-hud-season, .life2-bottom, .life2-roulette, .life2-key-hints, .life2-options:not(.life2-popup-host)')) {
+    if (!overlay.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true })) continue;
+    for (const target of protectedNodes) if (intersects(overlay.getBoundingClientRect(), target.getBoundingClientRect()))
+      issues.push(`${overlay.className}: covers board tile or pawn ${target.dataset.space ?? target.dataset.pawn ?? ''}`);
+  }
+  const pawn = document.querySelector('[data-pawn]'), pawnLabel = pawn?.parentElement.querySelector('.life2-tile-label');
+  if (pawn && pawnLabel && intersects(pawn.getBoundingClientRect(), pawnLabel.getBoundingClientRect())) issues.push('pawn hides current tile label');
   for (const [index, one] of regions.entries()) for (const two of regions.slice(index + 1)) {
     if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('screen regions overlap');
@@ -592,7 +609,7 @@ export function audit() {
     const sheet = popup.getBoundingClientRect();
     const paint = getComputedStyle(popup);
     const alpha = paint.backgroundColor.startsWith('rgba') ? Number(paint.backgroundColor.split(',').at(-1).replace(')', '')) : 1;
-    if (paint.opacity !== '1' || paint.backgroundColor === 'transparent' || alpha < .85) issues.push('popup needs a readable dark backing');
+    if (paint.opacity !== '1' || paint.backgroundColor === 'transparent' || alpha !== 1) issues.push('popup sheet is translucent');
     for (const node of popup.querySelectorAll('p, button, h2, dt, dd, .life2-card-hero, .life2-stage-banner')) {
       if (!node.checkVisibility()) continue;
       const box = node.getBoundingClientRect();
@@ -795,6 +812,7 @@ async function popupChecks(page, base) {
     const seen = [];
     do {
       await checkTextPages(page, '[data-action=popup-text-next]', async () => {
+        assert.deepEqual(await popup.evaluate(auditPopupContent), [], `${kind}: required popup content`);
         assert.deepEqual(await popup.evaluate(panel => {
         const issues = [], box = panel.getBoundingClientRect();
         if (panel.querySelectorAll('[data-option]').length > 6) issues.push('more than six choices');
@@ -839,7 +857,9 @@ async function popupChecks(page, base) {
 async function popup2Checks(page, base) {
   await page.goto(`${base}src/ui2/popups/layout.html`);
   await page.waitForFunction(() => window.__popup2Fixture);
-  const audit = async selector => assert.deepEqual(await page.locator(selector).evaluate(panel => {
+  const audit = async selector => {
+    assert.deepEqual(await page.locator(selector).evaluate(auditPopupContent), [], `${selector}: required popup content`);
+    assert.deepEqual(await page.locator(selector).evaluate(panel => {
     const issues = [], box = panel.getBoundingClientRect();
     if (panel.querySelectorAll('[data-option]').length > 6) issues.push('more than six choices');
     for (const node of [panel, ...panel.querySelectorAll('*')]) {
@@ -853,6 +873,7 @@ async function popup2Checks(page, base) {
     }
     return [...new Set(issues)];
   }), [], `${selector}: T19 layout`);
+  };
   const kinds = await page.evaluate(() => window.__popup2Fixture.kinds);
   for (const kind of kinds) {
     const model = await page.evaluate(kind => window.__popup2Fixture.show(kind), kind), seen = [];
@@ -922,7 +943,7 @@ async function main() {
         const load = async state => page.evaluate(run => window.__life.load(run), state);
         const check = async name => {
           views++;
-          for (const auditView of [audit, auditHud]) {
+          for (const auditView of [audit, auditHud, auditPopupContent]) {
             for (const issue of await page.evaluate(auditView)) failures.push(`${size} ${name}: ${issue}`);
           }
         };
@@ -1014,7 +1035,7 @@ async function main() {
     finally { await server.close(); }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
-  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll; HUD five grades, signed deltas, 12–18px route, 40x26 drone, 2px border clearance, overlaps and hidden cards checked`);
+  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll; HUD five grades, signed deltas, 11–13px route, 40x26 drone, 2px border clearance, overlaps and hidden cards checked`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

@@ -48,18 +48,18 @@ test('T25: layout covers all four PC sizes and rejects clipping or offscreen tur
   for (const size of [[1920, 1080], [1536, 864], [1366, 768], [1280, 800]]) {
     assert.ok(SIZES.some((row: number[]) => row.join() === size.join()));
   }
-  const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 500, width: 500, height: bottom - top });
+  const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 1280, width: 1280, height: bottom - top });
   const nodes = new Map([
-    ['.life2-board-frame', box(0, 679)], ['.life2-hud', box(6, 66)], ['.life2-board', box(72, 509)], ['.life2-options', box(515, 619)],
+    ['.life2-board-frame', box(0, 800)], ['.life2-hud', box(6, 66)], ['.life2-board', { ...box(72, 509), right: 896, width: 896 }], ['.life2-options', box(515, 619)],
     ['.life2-bottom', box(625, 669)], ['.life2-bottom .life2-wheel', box(625, 669)],
     ['[data-action=end-season]', box(625, 669)],
   ].map(([key, rect]) => [key, { getBoundingClientRect: () => rect, checkVisibility: () => true }]));
-  const root = { tagName: 'DIV', getAttribute: () => 'life2', getBoundingClientRect: () => box(0, 679),
+  const root = { tagName: 'DIV', getAttribute: () => 'life2', getBoundingClientRect: () => box(0, 800),
     checkVisibility: () => true, closest: () => null, matches: () => false, childNodes: [], parentElement: null,
-    scrollWidth: 500, clientWidth: 500, scrollHeight: 679, clientHeight: 679 };
-  const context = { innerWidth: 500, innerHeight: 679,
+    scrollWidth: 1280, clientWidth: 1280, scrollHeight: 800, clientHeight: 800 };
+  const context = { innerWidth: 1280, innerHeight: 800,
     getComputedStyle: () => ({ overflowX: 'hidden', overflowY: 'hidden' }), document: {
-    scrollingElement: { scrollWidth: 500, scrollHeight: 679 },
+    scrollingElement: { scrollWidth: 1280, scrollHeight: 800 },
     querySelector: (selector: string) => nodes.get(selector),
     querySelectorAll: (selector: string) => selector === '#app, #app *' ? [root] : [],
   } };
@@ -67,12 +67,12 @@ test('T25: layout covers all four PC sizes and rejects clipping or offscreen tur
   assert.deepEqual(check(), []);
   // An overflow-hidden app can conceal overflowing text without document scroll
   // or an offscreen button. Keep rejecting that independently of viewport boxes.
-  root.scrollHeight = 700;
+  root.scrollHeight = 900;
   assert.ok(check().includes('DIV.life2: content clipped'));
-  root.scrollHeight = 679;
+  root.scrollHeight = 800;
   for (const selector of ['.life2-bottom', '.life2-bottom .life2-wheel', '[data-action=end-season]']) {
     const old = nodes.get(selector)!;
-    nodes.set(selector, { ...old, getBoundingClientRect: () => box(640, 684) });
+    nodes.set(selector, { ...old, getBoundingClientRect: () => box(780, 824) });
     assert.ok(check().includes(`${selector}: not fully inside viewport`)); nodes.set(selector, old);
   }
 });

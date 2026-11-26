@@ -121,6 +121,9 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     const turnControls = end ? el('div', 'life2-turn-controls') : center;
     if (end) turnControls.append(center, button(end.title, '', () => takeOption(end.id), 'end-season'));
     bands.bottom.querySelector('.life2-spin, .life2-dice')!.replaceWith(turnControls);
+    for (const control of bands.bottom.querySelectorAll<HTMLElement>('[data-nav]')) {
+      control.setAttribute('aria-pressed', String(menu === (control.dataset.nav === 'life' ? 'my-life' : 'phone')));
+    }
     const map = board(state, shown.board.pos);
     if (frame?.phase === 'transfer') {
       map.querySelector<HTMLElement>('[data-map]')!.inert = true;
@@ -232,7 +235,8 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
   function showTitle() {
     atTitle = true; root.dataset.screen = 'title'; delete root.dataset.phase;
     const card = el('main', 'ng-gate'), title = el('h1', '', '파일럿 키우기'); title.tabIndex = -1;
-    card.append(title);
+    card.append(el('p', 'life2-title-kicker', 'DRONE TOWN · 나만의 비행 이야기'), title,
+      el('p', 'life2-title-tagline', '작은 드론에서 시작하는, 커다란 인생.'));
     if (notice) card.append(el('p', '', V1_NOTICE));
     if (loadLifeRun()) card.append(button('이어서 하기', '', () => {
       if (PLATFORM) { if (!sessionOk()) return; }

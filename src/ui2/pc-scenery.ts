@@ -126,3 +126,14 @@ export function boardInfields(map: string): SVGSVGElement {
   }
   return scene;
 }
+
+/** Original town festival: drone flight ribbons and deterministic confetti. */
+export function celebrationScene(): SVGSVGElement {
+  const scene = townScene('E');
+  for (let n = 0; n < 70; n++) {
+    const x = (n * 227 + 43) % 1600, y = (n * 137 + 19) % 900;
+    scene.append(svg('rect', { x, y, width: 8, height: 19, rx: 2,
+      fill: ['#fff5b5', '#ff628d', '#42eff2', '#ffdd35'][n % 4], transform: `rotate(${n * 31} ${x} ${y})` }));
+  }
+  return scene;
+}

@@ -45,6 +45,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     closed = true; actions.navigation?.removeEventListener?.('keydown', handleKeys); host.replaceChildren(); previousFocus?.focus({ preventScroll: true }); actions.dismiss();
   }
   function render(focus = true) {
+    const pc = typeof window !== 'undefined' && window.innerWidth >= 900;
     const space = sheetSpace(host) ?? Infinity;
     const compact = !model.fullscreen && space < 390;
     const tight = compact && space < 260;
@@ -80,8 +81,8 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     if (summary) panel.dataset.summary = '';
     const rows = selectedTab ? labelledRows(selectedTab.lines) : (card && model.kind !== 'chapter') || model.kind === 'result'
       ? [...(model.rows ?? []), ...labelledRows(model.lines)] : [...labelledRows(model.lines), ...(model.rows ?? [])];
-    const rowLimit = summary ? tight ? 36 : 60 : tight ? 45 : P.rowLimit;
-    const rowCount = summary ? !reading ? 1 : selectedTab?.id === 'ability' && !compact ? 11 : tight && model.roll ? 2 : 3
+    const rowLimit = pc && !reading ? 48 : summary ? tight ? 36 : 60 : tight ? 45 : P.rowLimit;
+    const rowCount = pc && !reading ? 1 : summary ? !reading ? 1 : selectedTab?.id === 'ability' && !compact ? 11 : tight && model.roll ? 2 : 3
       : model.roll || compact ? 1 : card && !reading ? 2 : P.rowCount;
     const rowPages: { rows: typeof rows; heading?: string }[] = itemPages(rows.flatMap(row => textPages([row.value], rowLimit)
       .map(value => ({ ...row, value }))), row => row.label.length + row.value.length,
@@ -131,7 +132,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
       const nextText = button(COPY.pages(copyPage, pages.length), '', () => {
         copyPage = (copyPage + 1) % pages.length; render();
       }, 'popup-text-next');
-      if (tight) header.insertBefore(nextText, header.lastChild); else copy.append(nextText);
+      if (tight || pc) header.insertBefore(nextText, header.lastChild); else copy.append(nextText);
     }
     panel.append(header);
     if (card && reading) panel.append(cardHero(model));
@@ -148,6 +149,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     } else if (!model.notification) {
       const choices = choicePage(model.choices, page, compact ? 1 : 6); page = choices.page;
       const list = el('div', 'life2-popup-list');
+      panel.style.setProperty('--life-choice-count', String(choices.items.length));
       const inspector = choiceDetail(model.place, model.track);
       for (const option of choices.items) {
         const row = el('div', 'life2-popup-row');

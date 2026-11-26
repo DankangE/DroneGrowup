@@ -60,7 +60,7 @@ export function highlightChoices(list: HTMLElement, select: (id: string) => void
 function detailScene(place: PlaceId, track: TrackId | null): SVGSVGElement | HTMLImageElement {
   const asset = placeAsset(place);
   if (asset.kind === 'raster') return placeArt(place);
-  const scene = svg('svg', { viewBox:'0 0 640 360', preserveAspectRatio:'xMidYMid slice',
+  const scene = svg('svg', { viewBox:'0 0 640 360', preserveAspectRatio:'xMidYMid meet',
     class:'life2-place-art', role:'img', 'aria-label':'마을에서 만난 파일럿' });
   scene.dataset.placeArt = place;
   scene.append(svg('rect',{width:640,height:360,fill:'#64cfe4'}),
