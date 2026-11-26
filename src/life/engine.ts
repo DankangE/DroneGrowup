@@ -401,10 +401,10 @@ export function options(state: GameState, menu: 'board' | 'phone' = 'board', int
   return [...resolve(state, interactive)].map(([id, r]) => view(state, id, r));
 }
 
-/** A disabled middle can still carry an affordable notch; both flows use this predicate. */
-export function emptyBonus(state: GameState): boolean {
+/** Count dial-only notches only for callers that can offer them. */
+export function emptyBonus(state: GameState, includeDial = false): boolean {
   if (state.phase !== 'action' || state.board.step !== 'bonus') return false;
-  const enabled = options(state).filter(option => option.enabled || option.dial?.settings.some(row => row.enabled));
+  const enabled = options(state).filter(option => option.enabled || includeDial && option.dial?.settings.some(row => row.enabled));
   return enabled.length === 1 && enabled[0].id === 'end';
 }
 

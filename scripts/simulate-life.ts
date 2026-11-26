@@ -86,8 +86,8 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     tried.push(id); report.steps++;
     // Bots retain their single-step engine semantics. Price presentation as the
     // interactive F5 transaction: collapse only the otherwise empty end menu.
-    const timed = menu === 'board' && emptyBonus(state) ? interactiveChoose(before, option.id, menu, experiment === 'single') : next;
-    const activity = id === 'end' && emptyBonus(before) ? counts()
+    const timed = menu === 'board' && emptyBonus(state, context.dial !== 'mid') ? interactiveChoose(before, option.id, menu, experiment === 'single') : next;
+    const activity = id === 'end' && emptyBonus(before, context.dial !== 'mid') ? counts()
       : choiceTiming(before, timed.state, timed.result, options(before, menu), menu).counts;
     if (id === 'spin' || id === 'card:use:shortcut' && before.board.step === 'spin') spin++;
     if (id === 'card:use:again') { rerolls++; report.rerolls++; }

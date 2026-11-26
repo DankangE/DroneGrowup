@@ -191,7 +191,8 @@ test('18/19 stamina bonus offers affordable bold, preserves middle locks and agr
     assert.deepEqual(played.result.deltas, preview.branches.find(row => row.id === branch)!.deltas);
     assert.equal(played.result.deltas.stamina, -18);
     assert.equal(played.state.turn, s.turn + 1);
-    assert.equal(emptyBonus(s), false);
+    assert.equal(emptyBonus(s, true), false);
+    assert.equal(emptyBonus(s), true);
     assert.ok(options(s).some(row => row.id === 'end' && row.enabled));
     assert.ok(!options(s).some(row => row.id === 'act:pi_meetup'), 'non-flight base-tire discovery is unchanged');
     for (const policy of POLICY_IDS) {
@@ -205,29 +206,31 @@ test('18/19 stamina bonus offers affordable bold, preserves middle locks and agr
   }
 });
 
-test('interactive flow preserves a bold-only bonus and still closes an actually empty slot', () => {
+test('interactive flow closes base-empty bonuses while dial-aware callers retain bold-only options', () => {
   for (const stamina of [17, 18, 19]) {
     const s = ready(); s.s.stamina = stamina;
     const step = choose(s, 'skip').state, next = automaticChoose(s, 'skip');
     assert.deepEqual(automaticOptions(step), options(step));
-    assert.equal(emptyBonus(step), stamina < 18);
-    assert.equal(automaticForecast(s, 'skip').branches[0].endsSeason, stamina < 18);
+    assert.equal(emptyBonus(step, true), stamina < 18);
+    assert.equal(emptyBonus(step), true);
+    assert.equal(automaticForecast(s, 'skip').branches[0].endsSeason, true);
+    assert.equal(next.state.turn, s.turn + 1);
+    assert.deepEqual(choose(s, 'skip', 'board', false, true), next);
+    const { log: explicitLog, ...explicit } = choose(step, 'end').state;
+    const { log: automaticLog, ...automatic } = next.state;
+    assert.deepEqual(automatic, explicit);
+    assert.deepEqual(automaticLog, step.log, 'automatic close adds no separate end-choice log');
+    assert.equal(explicitLog.length, automaticLog.length + 1);
     if (stamina < 18) {
       assert.ok(!options(step).some(row => row.dial));
-      const { log: explicitLog, ...explicit } = choose(step, 'end').state;
-      const { log: automaticLog, ...automatic } = next.state;
-      assert.deepEqual(automatic, explicit);
-      assert.deepEqual(automaticLog, step.log, 'automatic close adds no separate end-choice log');
-      assert.equal(explicitLog.length, automaticLog.length + 1);
     } else {
-      assert.equal(next.state.board.step, 'bonus'); assert.equal(next.state.turn, s.turn);
-      assert.deepEqual(next.state, step);
-      assert.ok(automaticOptions(next.state).some(row => row.id === 'end' && row.enabled));
-      const id = 'act:job_event@bold', played = automaticChoose(next.state, id);
+      assert.equal(step.board.step, 'bonus'); assert.equal(step.turn, s.turn);
+      assert.ok(automaticOptions(step).some(row => row.id === 'end' && row.enabled));
+      const id = 'act:job_event@bold', played = automaticChoose(step, id);
       const branch = played.result.crashed ? 'crash' : played.result.roll!.success ? 'success' : 'fail';
-      assert.deepEqual(played.result.deltas, automaticForecast(next.state, id).branches.find(row => row.id === branch)!.deltas);
+      assert.deepEqual(played.result.deltas, automaticForecast(step, id).branches.find(row => row.id === branch)!.deltas);
       assert.equal(played.state.turn, s.turn + 1);
-      assert.equal(automaticChoose(next.state, 'end').state.turn, s.turn + 1);
+      assert.equal(automaticChoose(step, 'end').state.turn, s.turn + 1);
     }
   }
 });
