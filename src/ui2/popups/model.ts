@@ -100,6 +100,8 @@ export function choiceSummary(option: OptionView, preview?: Forecast): string {
     ...(tire ? [COPY.staminaCost(tire)] : []), ...(chance === undefined ? [] : [COPY.chance(chance)])].join(' · ');
   return COPY.cost(cost, tire, chance);
 }
+/** Stats where a rise is bad news; tones follow HUD fundsChangeTone for debt. */
+const LOWER_IS_BETTER: ReadonlySet<string> = new Set<Stat>(['debt', 'overdue', 'crashes', 'losses']);
 function choiceModel(option: OptionView, preview?: Forecast): PopupChoice {
   const summary = choiceSummary(option, preview);
   const locks = option.locks.map(humanCopy);
@@ -121,7 +123,7 @@ function choiceModel(option: OptionView, preview?: Forecast): PopupChoice {
     chips: Object.entries(branch.deltas)
       .filter(([stat]) => stat !== 'rank' || !branch.status || branch.status === 'working')
       .map(([stat, value]) => ({ text: humanCopy(COPY.delta(STAT_LABEL[stat as Stat], value!) + (stat === 'money' || stat === 'debt' ? '만' : '')),
-        tone: value! > 0 ? 'good' : value! < 0 ? 'bad' : 'neutral' })),
+        tone: value === 0 ? 'neutral' : (value! > 0) !== LOWER_IS_BETTER.has(stat) ? 'good' : 'bad' })),
     notes: [
       ...(branch.status ? [LIFE_COPY.status[branch.status]] : []),
       ...(branch.endsSeason ? [COPY.endsSeason] : []),

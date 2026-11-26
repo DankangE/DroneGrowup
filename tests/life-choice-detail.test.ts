@@ -58,6 +58,16 @@ test('choice data formats supplied forecasts, signs, money units and notes witho
   assert.equal(JSON.stringify({ offered, previews }), before);
 });
 
+test('chip tones treat rising debt as bad and repayment as good, like the HUD', () => {
+  const loan = { ...offered[1], id: 'future:loan' }, repay = { ...offered[1], id: 'future:repay' };
+  const choices = popupModel(newGame(11), { kind: 'space', offered: [loan, repay], previews: {
+    'future:loan': { cost: 0, tire: 0, branches: [{ id: 'sure', deltas: { money: 100, debt: 100 }, endsSeason: false }] },
+    'future:repay': { cost: 0, tire: 0, branches: [{ id: 'sure', deltas: { money: -100, debt: -100 }, endsSeason: false }] },
+  } })!.choices;
+  assert.deepEqual(choices[0].outcomes![0].chips.map(chip => chip.tone), ['good', 'bad']);
+  assert.deepEqual(choices[1].outcomes![0].chips.map(chip => chip.tone), ['bad', 'good']);
+});
+
 test('missing previews do not turn nominal option effects into forecast deltas', () => {
   const choice = popupModel(newGame(11), { kind: 'space', offered: [offered[0]] })!.choices[0];
   assert.equal(choice.figure, '성공 95%');
