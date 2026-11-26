@@ -70,6 +70,7 @@ export type GameState = {
     lapAt: Record<MapId, number>; // Last start crossing per map, or -1.
     visited: number; laps: number; // Six-map bitmasks.
     contests: number; rankups: number;
+    dial?: import('./life-data.ts').DialNotch;
   };
   s: Record<Stat, number>; // rank remains available for imported v1 effects; overdue counts over-limit seasons.
   job: { rank: number; perf: number; tenure: number; total: number; warn: 0 | 1; changedAt: number; tracks: TrackId[] };

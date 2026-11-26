@@ -1,13 +1,13 @@
 // UX5a: card data and detached transitions. Offers pause the existing board continuation;
 // only their free skip is in options(). UX5b reads this query for use/drop controls.
-import { ASSET_KEYS as A, ASSET_RULES, LUCK, STAT_MAX, TEXT } from './life-data.ts';
+import { ASSET_KEYS as A, ASSET_RULES, DIAL_BONUS_CAP, LUCK, STAT_MAX, TEXT } from './life-data.ts';
 import { familyPopup } from './family.ts';
 import { JOB_RULES } from './tracks.ts';
 import type { Choice, Effect, GameState, StatMap } from './types.ts';
 
 export type CardDef = { id: string; title: string; text: string; kind: 'luck' | 'tool' | 'connection';
   stackable: boolean; add?: StatMap; flag?: string; action?: 'again' | 'shortcut'; legacyFlag?: string };
-export const CARD_RULES = { cap: 3, bonusCap: 30, maxOffers: 5 } as const;
+export const CARD_RULES = { cap: 3, bonusCap: DIAL_BONUS_CAP, maxOffers: 5 } as const;
 export const CARD_KEYS = { usedAt: 'card_used_at', again: 'card_extra_move',
   offer: 'card_offer:', offerAt: 'card_offer_at:', migratedNet: 'card_migrated_benefactor' } as const;
 export const CARD_TEXT = {

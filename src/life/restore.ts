@@ -4,7 +4,7 @@ import { EVENTS } from './compat.ts';
 import { CAREER_KEYS } from './career2.ts';
 import { DIRECTOR_RULES } from './tracks.ts';
 import { migrateCards, validCards } from './cards.ts';
-import { ENDING_IDS, FUND_KINDS, HOLDING_LEVELS, INITIAL_STATE, KID_STAGES, LIFE_LEVELS, LIFE_RULES,
+import { DIAL_SETTINGS, ENDING_IDS, FUND_KINDS, HOLDING_LEVELS, INITIAL_STATE, KID_STAGES, LIFE_LEVELS, LIFE_RULES,
   LOG_TONES, MAP_IDS, PHASE_IDS, STAT_MAX, STATS, STATUS_IDS, STEP_IDS, TRACK_IDS } from './life-data.ts';
 import { WORLD } from './world.ts';
 import type { GameState } from './types.ts';
@@ -59,6 +59,7 @@ export function restore(raw: unknown): GameState | null {
     || state.s.capStamina > cap || state.s.stamina > state.s.capStamina) return null;
 
   const b = state.board;
+  if (Object.hasOwn(raw.board, 'dial') && !DIAL_SETTINGS.some(row => row.id === b.dial)) return null;
   if (!Array.isArray(b.dice) || !oneOf(b.dice.length, LIFE_RULES.diceCounts)
     || !b.dice.every(die => int(die, 1, RULES.board.die))
     || (b.step === 'spin' ? b.dice.length !== 0 : b.dice.length === 0)
