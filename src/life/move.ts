@@ -17,18 +17,19 @@ const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 export type StopReason = 'review' | 'exam' | 'life';
 /** canPromote stops on review tiles; stopFor names any other forced stop on the way. */
 export type MoveOptions = { canPromote?: (state: GameState, node: WorldNode) => boolean;
-  stopFor?: (state: GameState, node: WorldNode) => StopReason | undefined };
+  stopFor?: (state: GameState, node: WorldNode, spent: number) => StopReason | undefined };
 // tolls[i] is the cumulative fare once path[i] is entered; fare === tolls.at(-1).
 type Route = { node: string; steps: number; path: string[]; tolls: number[]; fare: number; via: string | null; invite?: true };
 export type Move = Route & { passed: { pay: string[]; start: string[] }; stop?: string; stopReason?: StopReason };
 
 /** The first intermediate tile that forces a stop. The origin and destination never do. */
-export function firstStop(state: GameState, path: readonly string[], opts: MoveOptions):
+export function firstStop(state: GameState, path: readonly string[], tolls: readonly number[], opts: MoveOptions):
   { stop: string; stopReason: StopReason } | undefined {
-  for (const id of path.slice(0, -1)) {
+  for (const [index, id] of path.slice(0, -1).entries()) {
     const node = BY_ID.get(id)!;
     if (node.kind === 'rankup' && opts.canPromote?.(state, node)) return { stop: id, stopReason: 'review' };
-    const stopReason = opts.stopFor?.(state, node);
+    // stopFor sees the fares already paid on the way to this tile.
+    const stopReason = opts.stopFor?.(state, node, tolls[index] ?? 0);
     if (stopReason) return { stop: id, stopReason };
   }
   return undefined;
@@ -125,7 +126,7 @@ export function reachable(state: GameState, opts: MoveOptions = {}): Move[] {
   walk({ node: state.board.pos, steps: 0, path: [], tolls: [], fare: 0, via: null });
 
   return [...best.values()].map(route => {
-    const move: Move = { ...route, passed: { pay: [], start: [] }, ...firstStop(state, route.path, opts) };
+    const move: Move = { ...route, passed: { pay: [], start: [] }, ...firstStop(state, route.path, route.tolls, opts) };
     for (const id of travelledPath(move)) {
       const { kind } = BY_ID.get(id)!;
       if (kind === 'pay' || kind === 'start') move.passed[kind].push(id);

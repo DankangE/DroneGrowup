@@ -191,7 +191,7 @@ const bestMoves = (moves: Move[]): Move[] => {
   return [...best.values()].sort((a, b) => a.steps - b.steps || a.node.localeCompare(b.node));
 };
 function route(path: string[], tolls: number[], via: string | null, state: GameState, opts: MoveOptions): Move {
-  const forced = firstStop(state, path, opts);
+  const forced = firstStop(state, path, tolls, opts);
   const travelled = forced ? path.slice(0, path.indexOf(forced.stop) + 1) : path;
   return { node: path.at(-1)!, steps: path.length, path, tolls, fare: tolls.at(-1) ?? 0, via,
     ...forced, passed: {

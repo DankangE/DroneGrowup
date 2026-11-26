@@ -280,9 +280,12 @@ function view(state: GameState, id: string, r: Resolved, notch: DialNotch = 'mid
   return option;
 }
 
-/** Exam site: the licence exam is enabled there. Local life tile: a marriage or birth step is open. */
-function stopFor(state: GameState, node: WorldNode): StopReason | undefined {
-  const exam = EXAM_ACTION;
+/** Exam site: the licence exam is enabled there after the fares paid on the way. Local life tile: a
+ * marriage or birth step is open. */
+function stopFor(prev: GameState, node: WorldNode, spent: number): StopReason | undefined {
+  // An extra-move card skips the tile on the first move, so a stop there would offer nothing.
+  if (prev.timers[CARD_KEYS.again] === prev.turn) return undefined;
+  const exam = EXAM_ACTION, state = spent ? { ...prev, s: { ...prev.s, money: prev.s.money - spent } } : prev;
   if (node.place === exam.place && state.status === 'student' && met(state, exam.when)
     && view(state, `act:${exam.id}`, { kind: 'action', place: exam.place, choice: exam, flight: false }).enabled) return 'exam';
   if (node.map === FAMILY_RULES.localMap && node.kind === 'life' && node.place === FAMILY_RULES.localPlace

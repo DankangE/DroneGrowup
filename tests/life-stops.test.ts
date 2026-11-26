@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { CARD_KEYS } from '../src/life/cards.ts';
 import { choose, newGame, reachable } from '../src/life/engine.ts';
 import type { Move } from '../src/life/move.ts';
 import type { GameState } from '../src/life/types.ts';
@@ -43,6 +44,14 @@ test('an open marriage or birth step stops at map A\'s local life tile', () => {
   // Without the home the proposal needs, or with only a blind date open, the token passes.
   assert.equal(target(picking('A-o22', [2, 3], s => { proposalReady(s); s.home = null; }), 'A-o27').stop, undefined);
   assert.equal(target(picking('A-o22', [2, 3], s => { s.status = 'working'; s.turn = 40; }), 'A-o27').stop, undefined);
+});
+
+test('forced stops count fares paid on the way and skip the extra-move card\'s tile-less first move', () => {
+  const fare = (money: number) => target(picking('B-o7', [5, 5], s => { examReady(s); s.s.money = money; }), 'A-o10');
+  assert.ok(fare(610).fare > 0); assert.equal(fare(610).stop, 'A-o8');
+  assert.equal(fare(600).stop, undefined, 'the transfer fare leaves too little for the exam');
+  const again = picking('A-o22', [2, 3], s => { proposalReady(s); s.timers[CARD_KEYS.again] = s.turn; });
+  assert.equal(target(again, 'A-o27').stop, undefined);
 });
 
 test('destination labels name the reason for a stop; moves without a reason are review stops', () => {
