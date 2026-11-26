@@ -1,3 +1,4 @@
+import { baseOptionId } from './dial.ts';
 // §13.1. Goal-directed policies; decisions use only the current public state and offered odds.
 import { ACTIONS } from './compat.ts';
 import { shortcutMoves } from './assets.ts';
@@ -5,7 +6,7 @@ import { cardChoice, cards } from './cards.ts';
 import { currentEvent, met } from './engine.ts';
 import type { OptionView } from './engine.ts';
 import type { LifeEffect } from './events-a.ts';
-import { FAMILY_RULES, HOMES, LEISURE, LIFE_RULES, MAP_IDS, SHOPS, SPACE_MENU } from './life-data.ts';
+import { BOT_DIAL_PROFILES, DIAL_RISK_PROFILES, FAMILY_RULES, HOMES, LEISURE, LIFE_RULES, MAP_IDS, SHOPS, SPACE_MENU } from './life-data.ts';
 import { jobOffers } from './jobs.ts';
 import { randInt } from './move.ts';
 import { TRACKS, TRACK_TRAIN, TRACK_WORK, TRACK_PREP, JOB_RULES } from './tracks.ts';
@@ -65,7 +66,7 @@ function toPlace(place: string, kind?: SpaceKind): Map<string, number> {
   placeDistances.set(key, distance); return distance;
 }
 const actions = new Map([...ACTIONS, ...TRACK_TRAIN, ...TRACK_WORK, ...TRACK_PREP].map(a => [`act:${a.id}`, a]));
-export type BotContext = { phoneUsed: boolean; tried: readonly string[]; noBank?: boolean; noCards?: boolean; salaryIncome: number; invested: number };
+export type BotContext = { phoneUsed: boolean; tried: readonly string[]; noBank?: boolean; noCards?: boolean; dial?: 'mid'; salaryIncome: number; invested: number };
 export const bankChoice = (id: string) => /^(loan:|repay:)/.test(id) || id.endsWith(':mortgage');
 export function targetTracks(id: PolicyId, state: GameState): TrackId[] {
   if (id === 'racer_creator') return state.turn < (45 - LIFE_RULES.startAge) * LIFE_RULES.seasons.length ? ['pilot', 'racer'] : ['creator'];
@@ -338,8 +339,26 @@ export const BOT_CARD_TRAITS: Record<PolicyId, readonly string[]> = {
   random: [], // Random: seeded choice among useful cards; retain their current useful effect value.
 };
 const CARD_BOT = { base: 10, priority: 10, repairBelow: 85, maxChance: 95 } as const;
+/** A policy's risk limits use the engine's middle odds and spare-drone count.
+ * If safe is unaffordable, prefer middle then bold; never return a locked notch. */
+export function pickDial(id: PolicyId, s: GameState, option: OptionView, middleOnly = false): OptionView {
+  if (!option.dial) return option;
+  const profile = DIAL_RISK_PROFILES[BOT_DIAL_PROFILES[id]];
+  const mid = option.dial.settings.find(row => row.notch === 'mid')!;
+  const cautious = option.dial.spare < profile.spare || s.s.cond < profile.condition
+    || s.s.stamina < profile.stamina || mid.chance < profile.chance;
+  const preferred = middleOnly ? 'mid' : cautious ? 'safe' : profile.preferred;
+  const row = option.dial.settings.find(row => row.notch === preferred && row.enabled)
+    ?? (!middleOnly ? option.dial.settings.find(row => row.notch === 'mid' && row.enabled)
+      ?? option.dial.settings.find(row => row.enabled) : undefined);
+  if (!row) return { ...option, enabled: false };
+  return { ...option, id: row.id, enabled: row.enabled, locks: row.locks, missing: row.missing, tire: row.tire,
+    roll: { ...option.roll!, chance: row.chance, crashPct: row.crashPct, ticks: row.ticks, success: row.success } };
+}
 export function pickBot(id: PolicyId, s: GameState, offered: readonly OptionView[], context: BotContext): OptionView {
-  const ordinary = pickOrdinary(id, s, offered, context), hand = cards(s);
+  // Keep base IDs while scoring career/action priorities, then expose the selected full ID.
+  const candidates = offered.map(option => ({ ...pickDial(id, s, option, context.dial === 'mid'), id: baseOptionId(option.id) }));
+  const ordinary = pickDial(id, s, pickOrdinary(id, s, candidates, { ...context, tried: context.tried.map(baseOptionId) }), context.dial === 'mid'), hand = cards(s);
   // Phone calls pass only free services; cards remain a board action, outside phone accounting.
   if (context.noCards || !offered.some(o => !o.free || o.id === 'skip' || o.id === 'spin')) return ordinary;
   const rank = (cardId: string) => {

@@ -2,11 +2,14 @@
 // Like v1, distinct qualifications/popups/relocations are incomparable rather than assigned invented prices.
 import { pathToFileURL } from 'node:url';
 import { RULES } from '../src/life/data.ts';
-import { ALL_EVENTS, LIFE_EVENTS, newGame, choose } from '../src/life/engine.ts';
+import { ALL_EVENTS, LIFE_EVENTS, newGame, choose, options, forecast } from '../src/life/engine.ts';
 import { materialize, EVENT_RULES } from '../src/life/events-a.ts';
 import type { LifeChoice, LifeEffect } from '../src/life/events-a.ts';
 import { CARDS, CARD_KEYS, grantCard } from '../src/life/cards.ts';
-import { STATS } from '../src/life/life-data.ts';
+import { WORLD } from '../src/life/world.ts';
+import { STATS, ASSET_KEYS, DIAL_SETTINGS } from '../src/life/life-data.ts';
+import { ACTIONS } from '../src/life/compat.ts';
+import { CREATOR_VIDEO, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from '../src/life/tracks.ts';
 import type { GameState } from '../src/life/types.ts';
 
 // §9.2 exceptions: headhunter opt-out; scam at low theory; audit counsel at high net worth.
@@ -92,6 +95,66 @@ export function cardDominanceReport() {
   }
   return { cards: CARDS.length, dominated };
 }
+const dialActionIds = [...new Set([...ACTIONS, ...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, CREATOR_VIDEO]
+  .filter(action => action.flight && action.roll).map(action => `act:${action.id}`))];
+/** An enabled notch counts only when it participates in an actual pair comparison. */
+export function dialCoverageFailures(samples: number, pairs: number, compared: Readonly<Record<string, number>>): string[] {
+  const failures: string[] = [];
+  if (samples === 0) failures.push('no dial samples');
+  if (pairs === 0) failures.push('no dial pairs');
+  for (const id of dialActionIds) for (const row of DIAL_SETTINGS) {
+    const key = `${id}@${row.id}`;
+    if (!(compared[key] > 0)) failures.push(`${key}: never enabled and compared`);
+  }
+  return failures;
+}
+/** Compare actual integer wedges and forecast deltas, including cap/rounding cases.
+ * Keep all stat axes: score-relevant gains must never disappear into a cash-only proxy. */
+export function dialDominanceReport() {
+  const dominated = new Set<string>(), groups: Record<string, number> = {}, compared: Record<string, number> = {};
+  let pairs = 0, samples = 0;
+  for (const track of ['pilot', 'employee', 'racer'] as const)
+    for (const skill of [30, 150, 1000]) for (const cond of [20, 70, 80, 90, 100]) for (const stamina of [20, 80])
+      for (const dream of [false, true]) for (const step of ['space', 'bonus'] as const) {
+    const state = choose(newGame(1), 'start:self').state;
+    state.status = 'working'; state.track = track; state.flags.push('licensed');
+    if (dream) state.flags.push(ASSET_KEYS.dream);
+    Object.assign(state.s, { money: 100000, drone: 4, gear: 3, car: 2, skill, cond, stamina, rep: 150 });
+    state.board.pos = WORLD.find(n => step === 'space' ? n.kind === 'job' : n.place === 'town')!.id;
+    state.board.step = step; state.board.dice = [1, 1];
+    for (const option of options(state)) {
+      if (!option.dial) continue;
+      samples++;
+      const profiles = option.dial.settings.filter(row => row.enabled).map(row => {
+        const preview = forecast(state, row.id), expected: Record<string, number> = {};
+        for (const stat of STATS) expected[stat] = preview.branches.reduce((sum, branch) => sum
+          + (branch.id === 'sure' ? 100 : row.ticks[branch.id]) * (branch.deltas[stat] ?? 0), 0)
+          * (bad.has(stat) ? -1 : 1);
+        expected.staminaCost = -row.tire; expected.crashRisk = -row.ticks.crash;
+        return { row, expected };
+      });
+      for (const a of profiles) for (const b of profiles) {
+        if (a === b) continue; pairs++;
+        compared[a.row.id] = (compared[a.row.id] ?? 0) + 1;
+        if (Object.keys(a.expected).every(key => a.expected[key] >= b.expected[key])) {
+          const finding = `${option.id}@${a.row.notch}>${b.row.notch}: skill=${skill}, condition=${cond}, stamina=${stamina}, dream=${dream}, ${step}; chance=${a.row.chance}/${b.row.chance}, crash=${a.row.ticks.crash}/${b.row.ticks.crash}, tire=${a.row.tire}/${b.row.tire}`;
+          if (!dominated.has(finding)) {
+            const equalTicks = a.row.ticks.success === b.row.ticks.success && a.row.ticks.fail === b.row.ticks.fail
+              && a.row.ticks.crash === b.row.ticks.crash;
+            const cause = a.row.chance === 95 && b.row.chance === 95 && equalTicks
+              ? 'odds clamped at 95 so ticks equal' : a.row.tire === 0 && b.row.tire === 0
+                ? 'stamina clamp at 0' : 'other';
+            const group = `${a.row.notch}>${b.row.notch}: ${cause}`;
+            groups[group] = (groups[group] ?? 0) + 1;
+            dominated.add(finding);
+          }
+        }
+      }
+    }
+  }
+  return { samples, pairs, dominated: [...dominated], groups, compared,
+    coverageFailures: dialCoverageFailures(samples, pairs, compared) };
+}
 export function dominanceReport() {
   const findings = new Set<string>(), missing: string[] = [];
   let responses = 0;
@@ -118,10 +181,15 @@ export function dominanceReport() {
     dominated: [...findings].filter(pair => !SPEC_EXCEPTIONS.includes(pair)) };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const report = dominanceReport(), held = cardDominanceReport();
+  const report = dominanceReport(), held = cardDominanceReport(), dial = dialDominanceReport();
   console.log(`life dominance: ${report.events} events, ${report.responses} responses, ${report.missing.length} missing free exits, ${report.dominated.length} unapproved dominated pairs, ${report.exceptions.length} explicit spec exception(s)`);
   for (const pair of [...report.dominated, ...report.exceptions]) console.log(`  ${report.exceptions.includes(pair) ? 'SPEC EXCEPTION' : 'DOMINATED'} ${pair}`);
   console.log(`held-card dominance: ${held.cards} cards, hold/use/drop with inventory and season budget, ${held.dominated.length} dominated pairs`);
   for (const pair of held.dominated) console.log(`  CARD DOMINATED ${pair}`);
-  if (report.missing.length || report.dominated.length || held.dominated.length) process.exitCode = 1;
+  console.log(`dial dominance: ${dial.samples} samples, ${dial.pairs} ordered pairs, ${dial.dominated.length} dominated cases`);
+  console.log(`dial dominance groups: ${JSON.stringify(dial.groups)}`);
+  console.log(`dial coverage: ${Object.keys(dial.compared).length} action/notch combinations compared, ${dial.coverageFailures.length} failures`);
+  for (const failure of dial.coverageFailures) console.log(`  DIAL COVERAGE ${failure}`);
+  for (const pair of dial.dominated) console.log(`  DIAL DOMINATED ${pair}`);
+  if (report.missing.length || report.dominated.length || held.dominated.length || dial.dominated.length || dial.coverageFailures.length) process.exitCode = 1;
 }

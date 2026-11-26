@@ -1,3 +1,4 @@
+import { baseOptionId, dialNotch } from '../src/life/dial.ts';
 // §13.2 gates fail closed, including missing/stale T24 timing measurements.
 import { writeFileSync } from 'node:fs';
 import { GRADE_STEPS } from '../src/life/data.ts';
@@ -9,7 +10,7 @@ import type { BotContext, PolicyId } from '../src/life/bots.ts';
 import { CAREER_KEYS } from '../src/life/career2.ts';
 import { ECONOMY_TEXT } from '../src/life/economy.ts';
 import { finalNetWorth, settlementSummary } from '../src/life/ending.ts';
-import { ALL_EVENTS, choose, newGame, options } from '../src/life/engine.ts';
+import { ALL_EVENTS, choose, emptyBonus, newGame, options } from '../src/life/engine.ts';
 import { choose as interactiveChoose } from '../src/life/flow.ts';
 import type { OptionView, Result } from '../src/life/engine.ts';
 import { ENDINGS2, ENDING_KEYS, ENDING_RULES, LIFE_RULES, MAP_IDS } from '../src/life/life-data.ts';
@@ -25,6 +26,7 @@ const C = { runs: 300, coverageRuns: 3000, minute: 60, percent: 100, scoreCap: 5
 export type Experiment = 'base' | 'single' | 'no-bank' | 'no-cards';
 export type TraceStep = { before: GameState; after: GameState; option: OptionView; result: Result; menu: 'board' | 'phone' };
 export type RunReport = {
+  dialCounts: Record<'safe' | 'mid' | 'bold', number>; flightRolls: number; flightSuccesses: number; flightCrashes: number;
   policy: PolicyId; seed: number; experiment: Experiment; turn: number; steps: number; score: number; worth: number;
   happy: number; meanHappy: number; feat: number; grade: string; ending: string; noLoan: boolean; debtSeasons: number;
   income: number; spending: number; cashHeavy: boolean; firstJob: number | null; top: boolean; demoted: boolean;
@@ -45,17 +47,17 @@ const rate = (rows: RunReport[], predicate: (r: RunReport) => boolean) => percen
 
 /** Real choose() loop, with one optional phone service per season and a bounded progress guard. */
 export function runLife(policy: PolicyId, seed: number, experiment: Experiment = 'base',
-  config: { trace?: (step: TraceStep) => void; keepLog?: boolean; stepLimit?: number } = {}): { state: GameState; report: RunReport } {
+  config: { trace?: (step: TraceStep) => void; keepLog?: boolean; stepLimit?: number; dial?: 'mid' } = {}): { state: GameState; report: RunReport } {
   let state = newGame(seed), seasonSteps = 0, phoneUsed = false, tried: string[] = [], salaryIncome = 0, invested = 0;
   let spin = 0, tile = 0, bonus = 0, rerolls = 0, happySum = 0, promotionAt = 0, seasonNet = 0;
-  const report: RunReport = { policy, seed, experiment, turn: 0, steps: 0, score: 0, worth: 0, happy: 0, meanHappy: 0,
+  const report: RunReport = { dialCounts: { safe: 0, mid: 0, bold: 0 }, flightRolls: 0, flightSuccesses: 0, flightCrashes: 0, policy, seed, experiment, turn: 0, steps: 0, score: 0, worth: 0, happy: 0, meanHappy: 0,
     feat: 0, grade: '', ending: '', noLoan: true, debtSeasons: 0, income: 0, spending: 0, cashHeavy: false,
     firstJob: null, top: false, demoted: false, dismissed: false, specials: 0, jobs: [], maps: MAP_IDS.map(() => 0),
     visited: 0, choices: 0, forks: 0, noCar: 0, seconds: LIFE_RULES.periods.map(() => 0), activities: counts(),
     wealth: {}, events: {}, cardUses: {}, promotions: [], earlyS: false, zone: {}, bankUses: 0, violations: 0, rerolls: 0, skipped: 0 };
   while (state.phase !== 'ended') {
     if (++seasonSteps > (config.stepLimit ?? BOT_LIMITS.stepsPerSeason)) throw new Error(`stuck ${policy}/${seed}/${experiment} turn=${state.turn} ${state.board.step}`);
-    const before = state, context: BotContext = { phoneUsed, tried, noBank: experiment === 'no-bank', noCards: experiment === 'no-cards', salaryIncome, invested };
+    const before = state, context: BotContext = { phoneUsed, tried, noBank: experiment === 'no-bank', noCards: experiment === 'no-cards', dial: config.dial ?? (process.env.SIM_DIAL === 'mid' ? 'mid' : undefined), salaryIncome, invested };
     let menu: 'board' | 'phone' = 'board', offered: OptionView[] = [];
     if (phoneWanted(policy, state, context)) {
       phoneUsed = true;
@@ -66,24 +68,26 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
       }
     }
     if (!offered.length) offered = options(state);
-    const option = pickBot(policy, state, offered, context), id = option.id;
+    const option = pickBot(policy, state, offered, context), id = baseOptionId(option.id);
     const moves = before.board.step === 'pick' && id.startsWith('go:') ? offered.filter(o => o.id.startsWith('go:')).length : 0;
-    const next = choose(state, id, menu, experiment === 'single'); state = next.state;
+    const next = choose(state, option.id, menu, experiment === 'single'); state = next.state;
     if (state.turn < (45 - LIFE_RULES.startAge) * LIFE_RULES.seasons.length) {
       report.earlyS ||= Object.entries(GRADE_STEPS).some(([stat, steps]) => stat !== 'stamina' && state.s[stat as keyof typeof state.s] >= steps.at(-1)!);
     }
     const result = next.result, elapsed = state.turn - before.turn;
     if (id.startsWith('card:use:')) { const card = id.slice('card:use:'.length); report.cardUses[card] = (report.cardUses[card] ?? 0) + 1; }
+    if (result.roll?.ticks) {
+      report.dialCounts[dialNotch(option.id)!]++; report.flightRolls++;
+      report.flightSuccesses += Number(result.roll.success); report.flightCrashes += Number(result.crashed);
+    }
     if (bankChoice(id)) report.bankUses++;
     if (id.startsWith('fund:in:')) invested += Number(id.split(':')[2]);
     if (id.startsWith('home:buy:') && before.home && before.home.tier >= 3) invested += option.cost;
     tried.push(id); report.steps++;
     // Bots retain their single-step engine semantics. Price presentation as the
     // interactive F5 transaction: collapse only the otherwise empty end menu.
-    const emptyBonus = (s: GameState) => s.phase === 'action' && s.board.step === 'bonus'
-      && options(s).filter(o => o.enabled).every(o => o.id === 'end');
-    const timed = menu === 'board' && emptyBonus(state) ? interactiveChoose(before, id, menu, experiment === 'single') : next;
-    const activity = id === 'end' && emptyBonus(before) ? counts()
+    const timed = menu === 'board' && emptyBonus(state, context.dial !== 'mid') ? interactiveChoose(before, option.id, menu, experiment === 'single') : next;
+    const activity = id === 'end' && emptyBonus(before, context.dial !== 'mid') ? counts()
       : choiceTiming(before, timed.state, timed.result, options(before, menu), menu).counts;
     if (id === 'spin' || id === 'card:use:shortcut' && before.board.step === 'spin') spin++;
     if (id === 'card:use:again') { rerolls++; report.rerolls++; }
@@ -374,6 +378,12 @@ if (isMainThread && process.argv[1] && import.meta.url === pathToFileURL(process
     const cardCounts: Record<string, number> = {};
     for (const run of out.base) for (const [id, n] of Object.entries(run.cardUses)) cardCounts[id] = (cardCounts[id] ?? 0) + n;
     console.log(`held-card uses (source frequency differs): ${JSON.stringify(cardCounts)}`);
+    for (const policy of policies ?? POLICY_IDS) {
+      const rows = out.base.filter(row => row.policy === policy), rolls = sum(rows.map(row => row.flightRolls));
+      const notches = Object.fromEntries(['safe', 'mid', 'bold'].map(notch => [notch,
+        sum(rows.map(row => row.dialCounts[notch as keyof RunReport['dialCounts']]))]));
+      console.log(`dial ${policy}: ${JSON.stringify(notches)}, flight success=${percent(sum(rows.map(row => row.flightSuccesses)), rolls)}, crash=${percent(sum(rows.map(row => row.flightCrashes)), rolls)} (${rolls} rolls)`);
+    }
     console.log(`Before age 45, any graded ability at S (excluding stamina): ${rate(out.base,r=>r.earlyS)}; §13.3 action ability gains are globally scaled to 85%.`);
     if (process.env.SIM_REPORT) writeFileSync(process.env.SIM_REPORT, JSON.stringify({ ...out, criteria }));
     for (const failure of out.failures) console.error(failure);
