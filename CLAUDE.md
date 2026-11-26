@@ -31,6 +31,8 @@ Node 22.18+ runs TypeScript scripts/tests directly. Browser checks use Playwrigh
   Any balance failure stays a failure; do not weaken a criterion to pass conversion.
 - `npm run simulate:life` — 16 policies × 300 seeds with single-roulette and no-bank experiments;
   enforces §13.2. `SIM_RUNS`, `SIM_POLICIES` and `SIM_REPORT` support diagnostic runs.
+  `SIM_WORKERS` limits concurrent worker threads (default 8, capped by the core count; a value that is
+  not a positive integer exits 1). It changes run time only, not results.
 - `npm run dominance:life` — all 120 events, free exits and response dominance; preserves published exceptions.
 - `npm run outcomes:life` — forecast/result parity for all events and their branches.
 - `npm run cashflow:life` — §7.5 fixed household cashflow scenarios.
