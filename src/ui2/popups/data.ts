@@ -68,6 +68,8 @@ export const COPY = {
   quitTitle: '퇴사 확인', quitQuestion: '퇴사하고 구직자가 될까요?', quitConfirm: '퇴사한다', cancel: '취소', previous: '이전', next: '다음', details: '상세', back: '목록',
   empty: '지금 가능한 선택지가 없습니다.', success: '성공', fail: '실패', sure: '확정', crash: '추락',
   expected: '예상 결과', locked: '잠김', noChange: '변화 없음', endsSeason: '계절 마감',
+  choiceDetails: '조건 · 예상 결과', moreDetails: '더 보기 · 조건 · 예상 결과',
+  costFigure: (cost: number) => `비용 ${cost}만`, lockFigure: (reason: string) => `🔒 ${reason}`,
   pages: (page: number, count: number) => `${page + 1} / ${count}`,
   cost: (cost: number, tire: number, chance?: number) =>
     `비용 ${cost}만 · 체력 ${tire}${chance === undefined ? '' : ` · 성공 ${chance}%`}`,

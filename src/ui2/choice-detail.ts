@@ -4,27 +4,98 @@ import { TRACKS } from '../life/tracks.ts';
 import { placeArt, placeAsset } from './art.ts';
 import { NEW_JOB_PORTRAITS } from './job-portraits.ts';
 import { vectorArt } from './art-svg.ts';
+import { COPY } from './popups/data.ts';
+import { textPages } from './popups/model.ts';
+import type { PopupChoice } from './popups/model.ts';
 
-export type DetailChoice = { id: string; title: string; summary: string; details: string[]; enabled: boolean };
-export function choiceDetail(place: PlaceId, track: TrackId | null = null) {
+export type DetailChoice = PopupChoice;
+/** The complete copy stays in details; previews never rely on CSS clipping. */
+export function choicePreview(text: string, limit: number): string {
+  const pages = textPages([text], limit);
+  return pages[0] + (pages.length > 1 ? '…' : '');
+}
+export function choiceDetail(place: PlaceId, track: TrackId | null = null, inline = false) {
   const pane = el('aside', 'life2-choice-detail');
   pane.setAttribute('aria-label', '선택 정보');
+  if (inline) pane.dataset.inlineDetails = '';
   const scene = el('div', 'life2-choice-scene');
   const heading = el('h3'), metrics = el('div', 'life2-choice-metrics');
   const status = el('p', 'life2-choice-lock');
-  pane.append(scene, heading, metrics, status);
+  const description = el('p', 'life2-selected-description');
+  const outcomes = el('div', 'life2-choice-outcomes');
+  outcomes.setAttribute('aria-label', COPY.expected);
+  description.setAttribute('aria-live', 'polite');
+  pane.append(scene, heading, metrics);
+  if (inline) pane.append(description);
+  pane.append(status);
+  if (inline) pane.append(outcomes);
+  let overflow = false;
+  let moreButton: HTMLButtonElement | undefined;
+  let extras: { node: HTMLElement; row: HTMLElement; marker: HTMLElement }[] = [];
+  function preview(text: string, limit: number) {
+    const short = choicePreview(text, limit);
+    if (short !== text) overflow = true;
+    return short;
+  }
+  /** Exceptionally large forecasts use the existing complete-text pager, never scrolling.
+   * Keep every branch label and its first delta visible while trimming overflow only. */
+  function fit() {
+    if (!inline || !pane.clientHeight || !moreButton) return;
+    while (pane.scrollHeight > pane.clientHeight + 1 && extras.length) {
+      const largest = extras.reduce((a, b) => a.row.getBoundingClientRect().height >= b.row.getBoundingClientRect().height ? a : b);
+      const extra = extras.filter(item => item.row === largest.row).at(-1)!;
+      extra.node.remove(); extra.marker.textContent = '…';
+      extras = extras.filter(item => item !== extra); overflow = true;
+    }
+    moreButton.textContent = overflow ? COPY.moreDetails : COPY.choiceDetails;
+  }
   function update(choice: DetailChoice, more?: () => void) {
+    overflow = false; extras = [];
     const candidate = choice.id.split(':')[1];
     const portrait = TRACKS.find(item => item.id === candidate)?.id ?? track;
     scene.replaceChildren(detailScene(place, portrait));
-    heading.textContent = choice.title;
-    metrics.replaceChildren(...choice.summary.split(' · ').map(value => el('span', /%/.test(value) ? 'life2-chance' : '', value)));
-    status.textContent = choice.enabled ? '' : choice.summary;
+    heading.textContent = inline ? preview(choice.title, 48) : choice.title;
+    heading.title = choice.title;
+    metrics.replaceChildren(...(inline && choice.metrics ? choice.metrics : choice.summary.split(' · '))
+      .map(value => el('span', /%/.test(value) ? 'life2-chance' : '', value)));
+    status.textContent = choice.enabled ? '' : inline ? '' : choice.summary;
     status.hidden = choice.enabled;
+    if (inline) {
+      description.textContent = preview(choice.desc ?? choice.details[1] ?? choice.summary, 85);
+      const locks = choice.enabled ? [] : choice.locks?.length ? choice.locks : [choice.summary];
+      const lockMarker = el('span', 'life2-outcome-overflow');
+      status.replaceChildren(...locks.map((lock, index) => {
+        const node = el('span', '', preview(lock, 55));
+        if (index) extras.push({ node, row: status, marker: lockMarker });
+        return node;
+      }), lockMarker);
+      outcomes.replaceChildren(...(choice.outcomes ?? []).map(outcome => {
+        const row = el('section', 'life2-choice-outcome');
+        const label = el('strong', 'life2-outcome-label', outcome.label); label.dataset.tone = outcome.tone;
+        const values = el('div', 'life2-outcome-values');
+        const marker = el('span', 'life2-outcome-overflow');
+        for (const [index, chip] of outcome.chips.entries()) {
+          const node = el('span', 'life2-outcome-chip', chip.text); node.dataset.tone = chip.tone;
+          values.append(node);
+          if (index) extras.push({ node, row, marker });
+        }
+        if (!outcome.chips.length) values.append(el('span', 'life2-outcome-chip', COPY.noChange));
+        const notes = el('div', 'life2-outcome-notes');
+        row.append(label, values, notes);
+        for (const note of outcome.notes) {
+          const node = el('span', 'life2-outcome-note', preview(note, 110)); notes.append(node);
+          extras.push({ node, row, marker });
+        }
+        values.append(marker);
+        return row;
+      }));
+    }
     pane.querySelector('[data-action="popup-details"]')?.remove();
-    if (more) pane.append(button('조건 · 예상 결과', '', more, 'popup-details'));
+    moreButton = more ? button(overflow ? COPY.moreDetails : COPY.choiceDetails, '', more, 'popup-details') : undefined;
+    if (moreButton) pane.append(moreButton);
+    fit();
   }
-  return { pane, scene, update };
+  return { pane, scene, update, fit };
 }
 
 /** Highlight is presentation state only. Clicking the original option still chooses immediately. */

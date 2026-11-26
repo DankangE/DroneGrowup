@@ -396,3 +396,33 @@ html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row dd { flex:n
 html #app.life2 .life2-popup[data-popup=my-life] .life2-labelled-row[data-ability-grade] dd { font-size:clamp(20px,1.6vw,30px); }
 html #app.life2 .life2-ending-copy [data-action=ending-text-next] { justify-self:end; width:auto; min-width:76px; min-height:44px; padding:6px 14px; border-width:2px; border-radius:12px; color:#fff; background:#315367; }
 }
+
+/* PC choice inspection spans the list, story and pager so outcomes have room. */
+@media(min-width:900px) {
+html #app.life2 .life2-popup[data-selector] { grid-template:'header header' auto 'list scene' minmax(0,1fr) 'copy scene' auto 'footer scene' auto / 42% minmax(0,1fr); }
+html #app.life2 .life2-popup[data-selector] .life2-popup-choice { grid-template-columns:minmax(0,1fr) minmax(0,42%); align-items:center; gap:8px; }
+html #app.life2 .life2-popup[data-selector] .life2-popup-choice strong { font-size:clamp(14px,1.1vw,21px); line-height:1.3; }
+html #app.life2 .life2-popup[data-selector] .life2-choice-figure { display:block; text-align:right; font-size:clamp(11px,.9vw,16px); line-height:1.3; color:inherit; }
+html #app.life2 .life2-popup[data-selector] .life2-popup-copy { min-height:0; padding:7px 10px; }
+html #app.life2 .life2-popup[data-selector] .life2-popup-copy p { font-size:clamp(12px,.95vw,17px); line-height:1.35; }
+html #app.life2 .life2-choice-detail[data-inline-details] { padding:8px; gap:5px; }
+html #app.life2 .life2-choice-detail[data-inline-details] > * { flex-shrink:0; }
+html #app.life2 .life2-choice-detail[data-inline-details] .life2-choice-scene { flex:0 1 auto; aspect-ratio:16/5; min-height:48px; max-height:160px; }
+html #app.life2 .life2-choice-detail[data-inline-details] h3 { font-size:clamp(16px,1.25vw,24px); overflow-wrap:anywhere; }
+html #app.life2 .life2-choice-detail[data-inline-details] .life2-choice-metrics { align-items:center; gap:4px; }
+html #app.life2 .life2-choice-detail[data-inline-details] .life2-choice-metrics span { font-size:clamp(12px,.95vw,17px); line-height:1.2; padding:4px 6px; }
+html #app.life2 .life2-choice-detail[data-inline-details] .life2-choice-metrics .life2-chance { font-size:clamp(24px,2vw,36px); }
+html #app.life2 .life2-choice-detail[data-inline-details] :is(.life2-selected-description,.life2-choice-lock) { margin:0; font-size:clamp(12px,.95vw,17px); line-height:1.35; overflow-wrap:anywhere; }
+html #app.life2 .life2-choice-detail[data-inline-details] .life2-choice-lock > span { display:block; }
+html #app.life2 .life2-choice-outcomes { display:grid; gap:4px; }
+html #app.life2 .life2-choice-outcome { display:grid; grid-template-columns:auto minmax(0,1fr); gap:3px 6px; padding:5px 6px; border:1px solid #426478; border-radius:8px; background:#173b4d; font-size:clamp(11px,.9vw,16px); line-height:1.35; }
+html #app.life2 .life2-outcome-label { padding:2px 0; }
+html #app.life2 :is(.life2-outcome-values,.life2-outcome-notes) { display:flex; flex-wrap:wrap; align-items:center; gap:3px 5px; }
+html #app.life2 .life2-outcome-chip { padding:2px 5px; border-radius:5px; background:#244d64; overflow-wrap:anywhere; }
+html #app.life2 .life2-outcome-notes { grid-column:2; color:#d4e3e8; overflow-wrap:anywhere; }
+html #app.life2 .life2-choice-outcome [data-tone=good] { color:#a1f5c8; }
+html #app.life2 .life2-choice-outcome [data-tone=bad] { color:#ffb5aa; }
+html #app.life2 .life2-choice-outcome [data-tone=neutral] { color:#e0edf4; }
+html #app.life2 :is(.life2-choice-outcomes,.life2-outcome-notes,.life2-outcome-overflow):empty { display:none; }
+html #app.life2 .life2-choice-detail[data-inline-details] [data-action=popup-details] { margin-top:auto; font-size:clamp(12px,.95vw,17px); }
+}

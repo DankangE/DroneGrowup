@@ -34,6 +34,15 @@ calls the browser engine directly: it clicks the default game screen.
 Engine choices are applied independently in Node and compared with the browser
 after each input. Result dismissal must leave the state unchanged.
 
+PC choice popups show six rows per page, with a chance, money figure or short lock
+reason beside each title. Hover, focus and arrow/Home/End keys update the inspector;
+activation still chooses immediately, including the existing quit/retire confirmations.
+The short scene band leaves room for the description, unmet requirements and forecast
+branches with signed delta chips, status, season-close and ledger notes. These values
+only format `OptionView`/`Forecast`. Exceptional overflow is marked with an ellipsis
+and remains readable through `popup-details` and its text pager/back button. Compact
+popups retain their existing summary and detail-page behavior.
+
 | Command | Acceptance coverage |
 | --- | --- |
 | `npm run playtest:life` | Fresh seeds 1 and 11 at 1366×768, using real clicks until the first promotion or 12 completed seasons (three years); all choice pages, disabled options, results, pawn, dice, date and engine parity |
