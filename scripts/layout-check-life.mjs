@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core';
 import { choose, derived, newGame, options } from '../src/life/flow.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
-import { LIFE_RULES } from '../src/life/life-data.ts';
+import { LIFE_RULES, STAT_MAX } from '../src/life/life-data.ts';
 import { reachable } from '../src/life/move.ts';
 import { destinationDetails } from '../src/ui2/pick.ts';
 import { POPUP_GROUPS } from '../src/ui2/popups/data.ts';
@@ -325,14 +325,34 @@ async function movementChecks(page, load, check) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
 }
 
+// Shared with Node regressions so the actual layout fixtures must pass restore().
+export function hudChangeFixture(id) {
+  const run = choose(newGame(11), 'start:school').state;
+  run.status = 'working'; run.track = 'academy'; run.job.rank = 3; run.job.tracks = ['academy'];
+  for (const stat of ['skill', 'xp', 'teach', 'biz', 'support']) run.s[stat] = STAT_MAX[stat] ?? LIFE_RULES.statMax;
+  run.s.money = id.startsWith('loan:') ? LIFE_RULES.statMax - 500 : LIFE_RULES.statMax;
+  run.s.debt = id.startsWith('loan:') ? 0 : LIFE_RULES.statMax;
+  return run;
+}
+
+export function lateHudFixture(map, sGrades = false) {
+  const late = choose(newGame(11), 'start:school').state;
+  late.board.pos = `${map}-o0`; late.board.step = 'pick'; late.board.dice = [2, 3];
+  late.turn = LIFE_RULES.maxTurns - 1; late.status = 'working'; late.track = 'academy';
+  late.job.rank = 3; late.job.tracks = ['academy'];
+  late.s.money = late.s.debt = LIFE_RULES.statMax;
+  late.s.capStamina = derived(late).capStamina; late.s.stamina = 0;
+  if (sGrades) for (const stat of ['skill', 'xp', 'teach', 'biz', 'support']) late.s[stat] = STAT_MAX[stat] ?? LIFE_RULES.statMax;
+  return late;
+}
+
 // Real phone choices supply both signs of change, including maximum-value text.
 // Inspect the first result render: dismissing it intentionally clears HUD glows.
 async function hudChangeChecks(page, load, check) {
+  // Result popup rows also carry data-changed-stat; audit HUD feedback only.
+  const hud = page.locator('.life2-hud');
   for (const id of ['loan:500', `repay:${LIFE_RULES.statMax}`]) {
-    const run = choose(newGame(11), 'start:school').state;
-    run.status = 'working'; run.track = 'academy'; run.job.rank = 3; run.job.tracks = ['academy'];
-    run.s.money = id.startsWith('loan:') ? LIFE_RULES.statMax - 500 : LIFE_RULES.statMax;
-    run.s.debt = id.startsWith('loan:') ? 0 : LIFE_RULES.statMax;
+    const run = hudChangeFixture(id);
     assert.ok(options(run, 'phone').some(option => option.id === id && option.enabled));
     await load(run);
     await page.locator('[data-nav=phone]').click();
@@ -349,9 +369,12 @@ async function hudChangeChecks(page, load, check) {
     for (const stat of ['money', 'debt']) {
       const delta = after.s[stat] - run.s[stat];
       assert.notEqual(delta, 0);
-      const chip = page.locator(`[data-hud-delta-stat="${stat}"]`);
+      const chip = hud.locator(`[data-hud-delta-stat="${stat}"]`);
       assert.equal(await chip.isVisible(), true, `${stat} delta visible at every size`);
       assert.ok((await chip.textContent()).endsWith(`${delta > 0 ? '+' : ''}${delta}만`));
+      const tone = (delta > 0) === (stat === 'money') ? 'good' : 'bad';
+      assert.equal(await chip.getAttribute('data-tone'), tone);
+      assert.equal(await hud.locator(`[data-changed-stat="${stat}"]`).getAttribute('data-tone'), tone);
     }
   }
 }
@@ -398,6 +421,13 @@ export function auditHud() {
         const gauge = chip.querySelector('.life2-grade-gauge'), letter = chip.querySelector('.life2-grade-letter');
         if (!gauge || !visible(gauge) || gauge.getBoundingClientRect().height < 4 || !letter || !visible(letter))
           issues.push('HUD: grade letter/gauge hidden or gauge below 4px');
+        if (![...chip.querySelectorAll('.life2-grade-name, .life2-grade-short')]
+          .some(name => visible(name) && name.textContent.trim()))
+          issues.push('HUD: grade has no visible full or short name');
+        if (letter && /Board figures/i.test(getComputedStyle(letter).fontFamily))
+          issues.push('HUD: grade letter uses Board figures');
+        if (letter && letter.scrollHeight > letter.clientHeight)
+          issues.push('HUD: grade letter font metrics exceed its line box');
       } else if (chip.hasAttribute('data-changed-stat')) issues.push('HUD: hidden grade receives change glow');
     }
     const marks = [...hud.querySelectorAll('[data-changed-stat]')].map(node => node.dataset.changedStat);
@@ -923,13 +953,9 @@ async function main() {
           }
           // Long rank, largest stored funds/debt, empty age-capped battery and
           // a marker near the end: ordinary first-season fixtures miss these.
-          const late = structuredClone(started);
-          late.board.pos = `${map}-o0`; late.board.step = 'pick'; late.board.dice = [2, 3];
-          late.turn = LIFE_RULES.maxTurns - 1; late.status = 'working'; late.track = 'academy';
-          late.job.rank = 3; late.job.tracks = ['academy'];
-          late.s.money = late.s.debt = LIFE_RULES.statMax;
-          late.s.capStamina = derived(late).capStamina; late.s.stamina = 0;
+          const late = lateHudFixture(map);
           await load(late); await check(`${map} late HUD with maximum funds`);
+          await load(lateHudFixture(map, true)); await check(`${map} late S grades with maximum funds`);
           assert.equal(await page.locator('[data-hud-progress]').getAttribute('aria-valuenow'), String(late.turn));
           assert.equal(await page.locator('[data-hud-season]').textContent(), `계절 204/204`);
         }

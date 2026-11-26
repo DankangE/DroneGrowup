@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { choose, derived, newGame, options } from '../src/life/engine.ts';
+import { choose, derived, newGame, options, restore } from '../src/life/engine.ts';
 import { grade, GRADED_STATS } from '../src/life/grades.ts';
-import { LIFE_RULES, STAT_LABEL } from '../src/life/life-data.ts';
+import { LIFE_RULES, STAT_LABEL, STAT_MAX } from '../src/life/life-data.ts';
 import { MAPS } from '../src/life/world.ts';
 import type { GameState, MapId } from '../src/life/types.ts';
 import { hud } from '../src/ui2/hud.ts';
-import { GRADE_COLOURS, LIFE_MILESTONES, LIFE_ROUTE_SEGMENTS, lifeProgress } from '../src/ui2/hud-model.ts';
+import { GRADE_COLOURS, HUD_GRADE_NAMES, LIFE_MILESTONES, LIFE_ROUTE_SEGMENTS, lifeProgress } from '../src/ui2/hud-model.ts';
 import { COPY } from '../src/ui2/popups/data.ts';
 import { TestNode, textOf, withDOM } from './life-popup2-dom-helper.ts';
+
+// The script's CLI guard keeps imports free of servers, builds and browsers.
+const { hudChangeFixture, lateHudFixture } = await import(new URL('../scripts/layout-check-life.mjs', import.meta.url).href);
 
 const started = () => choose(newGame(11), 'start:school').state;
 const render = (state: GameState, before?: GameState) => hud(state, derived(state), options(state),
@@ -170,4 +173,70 @@ test('UX1 destination prompt does not replace the rank or remove debt state', ()
   assert.equal(top.querySelector('[data-pick-prompt]')!.attributes.role, 'status');
   assert.equal(top.querySelector('.life2-rank-pill')!.textContent, derived(state).rankName || derived(state).stageName);
   assert.equal(top.querySelector('.life2-funds')!.dataset.debtState, 'clear');
+}));
+
+test('UX1c each career grade has a unique short name and keeps its full accessible name, including S', () => withDOM(() => {
+  const state = started();
+  for (const stat of GRADED_STATS) state.s[stat] = STAT_MAX[stat] ?? LIFE_RULES.statMax;
+  assert.deepEqual(restore(state), state);
+  const top = render(state);
+  assert.deepEqual(Object.values(HUD_GRADE_NAMES).map(name => name.short), ['조', '경', '교', '사', '지']);
+  for (const [stat, name] of Object.entries(HUD_GRADE_NAMES)) {
+    const chip = top.querySelector(`[data-grade=${stat}]`)!;
+    assert.equal(chip.querySelector('.life2-grade-name')!.textContent, name.full);
+    assert.equal(chip.querySelector('.life2-grade-short')!.textContent, name.short);
+    assert.equal(chip.querySelector('.life2-grade-short')!.attributes['aria-hidden'], 'true');
+    assert.equal(chip.querySelector('.life2-grade-letter')!.textContent, 'S');
+    assert.equal(chip.attributes['aria-label'], `${STAT_LABEL[stat as keyof typeof HUD_GRADE_NAMES]} S등급`);
+  }
+}));
+
+test('UX1d layout fixtures restore with legal maxima and render all five career grades as S', () => withDOM(() => {
+  const assertSGrades = (state: GameState) => {
+    const restored = restore(state);
+    assert.ok(restored, 'layout loader accepts the fixture');
+    assert.deepEqual(restored, state);
+    // render() supplies derived(restored) to the HUD; grade() supplies its letters.
+    const top = render(restored);
+    for (const stat of ['skill', 'xp', 'teach', 'biz', 'support'] as const) {
+      assert.equal(restored.s[stat], STAT_MAX[stat] ?? LIFE_RULES.statMax, `${stat}: legal maximum`);
+      assert.equal(grade(stat, restored.s[stat])!.letter, 'S', `${stat}: maximum yields S`);
+      assert.equal(top.querySelector(`[data-grade=${stat}]`)!.querySelector('.life2-grade-letter')!.textContent, 'S');
+    }
+  };
+  for (const map of Object.keys(MAPS)) {
+    const late = lateHudFixture(map);
+    assert.deepEqual(restore(late), late);
+    assertSGrades(lateHudFixture(map, true));
+  }
+  for (const id of ['loan:500', `repay:${LIFE_RULES.statMax}`]) {
+    const run = hudChangeFixture(id);
+    assertSGrades(run);
+    assert.ok(options(run, 'phone').some(option => option.id === id && option.enabled));
+    assertSGrades(choose(run, id, 'phone').state);
+  }
+}));
+
+test('UX1c money and debt chips/readouts share benefit tone while preserving numeric direction and text', () => withDOM(() => {
+  for (const [delta, direction, moneyTone, debtTone] of [
+    [250, 'up', 'good', 'bad'], [-250, 'down', 'bad', 'good'],
+  ] as const) {
+    const before = started(); before.s.money = before.s.debt = 1000;
+    const after = structuredClone(before);
+    after.s.money += delta; after.s.debt += delta;
+    const top = render(after, before);
+    for (const [stat, tone] of [['money', moneyTone], ['debt', debtTone]] as const) {
+      const readout = top.querySelector(`[data-changed-stat=${stat}]`)!;
+      const chip = top.querySelector(`[data-hud-delta-stat=${stat}]`)!;
+      assert.equal(chip.textContent, `${STAT_LABEL[stat]} ${delta > 0 ? '+' : ''}${delta}만`);
+      for (const node of [chip, readout]) {
+        assert.equal(node.dataset.direction, direction);
+        assert.equal(node.dataset.tone, tone);
+      }
+    }
+    const unchanged = render(before, before);
+    assert.equal(unchanged.querySelector('.life2-money')!.dataset.tone, undefined);
+    assert.equal(unchanged.querySelector('.life2-debt')!.dataset.tone, undefined);
+    assert.equal(unchanged.querySelectorAll('[data-hud-delta-stat]').length, 0);
+  }
 }));

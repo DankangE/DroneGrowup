@@ -6,7 +6,7 @@ import { MAPS, WORLD } from '../life/world.ts';
 import { statChanges } from './popups/polish-model.ts';
 import { COPY } from './popups/data.ts';
 import { button, el } from '../ui/dom.ts';
-import { GRADE_COLOURS, lifeProgress, LIFE_MILESTONES, LIFE_ROUTE_SEGMENTS } from './hud-model.ts';
+import { fundsChangeTone, GRADE_COLOURS, HUD_GRADE_NAMES, lifeProgress, LIFE_MILESTONES, LIFE_ROUTE_SEGMENTS } from './hud-model.ts';
 import { creditCoin, pilotAvatar, progressDrone } from './hud-art.ts';
 
 export const HUD_STYLE = `
@@ -18,10 +18,10 @@ export const HUD_STYLE = `
   grid-template:'date' 12px 'player' 54px 'route' 30px / minmax(0,1fr);
   gap:2px; padding:4px 8px; color:#e9f6fa; background:#16394a;
   border-color:#0b2436; border-radius:12px; box-shadow:0 2px 0 #557681;
+  font-family:system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   font-size:11px; line-height:12px; font-variant-numeric:tabular-nums;
 }
 .life2 .life2-hud :is(div,span,h1,strong) { min-width:0; }
-.life2 :is(.life2-money,.life2-debt,.life2-change-strip,.life2-stats,.life2-hud-season) { font-family:system-ui,sans-serif; }
 .life2 .life2-date { grid-area:date; display:flex; align-items:center; gap:5px; white-space:nowrap; }
 .life2 .life2-date h1 { font-size:12px; line-height:12px; letter-spacing:0; }
 .life2 .life2-date > span { font-size:11px; line-height:12px; }
@@ -46,6 +46,9 @@ export const HUD_STYLE = `
 .life2 .life2-debt { font-size:11px; line-height:14px; color:#c3dce5; }
 .life2 [data-debt-state=owing] .life2-debt { color:#ffbac6; font-weight:800; }
 .life2 .life2-stats { display:flex; align-items:center; gap:4px; font-size:11px; line-height:14px; white-space:nowrap; }
+/* Flex children get real line boxes instead of inline font-metric rectangles. */
+.life2 .life2-stamina { display:flex; align-items:center; gap:3px; height:14px; line-height:14px; }
+.life2 .life2-stamina > span { display:block; height:100%; line-height:inherit; }
 .life2 .life2-battery { display:flex; gap:2px; width:30px; height:10px; padding:1px 4px 1px 1px;
   border:1px solid #a4c9d3; border-radius:2px; position:relative; flex:none; }
 .life2 .life2-battery::after { content:''; position:absolute; right:1px; top:2px; width:2px; height:4px; background:#a4c9d3; }
@@ -53,11 +56,17 @@ export const HUD_STYLE = `
 .life2 .life2-battery-cell[data-filled] { background:#78e0b0; }
 .life2 .life2-grades { grid-row:2; grid-column:2 / 4; align-self:stretch;
   display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:2px; }
-.life2 .life2-grade { display:flex; justify-content:center; align-items:start; gap:3px; position:relative;
+.life2 .life2-grade { display:grid; justify-content:center; align-items:center;
+  grid-template-columns:max-content max-content; grid-template-rows:13px 4px; gap:1px 1px;
   border:1px solid #477080; border-radius:4px; background:#102b40; font-size:11px; line-height:13px; }
 .life2 .life2-grade[hidden] { display:none; }
-.life2 .life2-grade-letter { font-size:13px; line-height:13px; color:var(--grade-colour); }
-.life2 .life2-grade-gauge { position:absolute; left:3px; right:3px; bottom:1px; height:4px;
+.life2 .life2-grade-name,.life2 .life2-grade-short { grid-column:1; grid-row:1; }
+.life2 .life2-grade-short { display:none; }
+/* The letter spans both rows; the gauge sits below the name, never below the glyph.
+   18px contains 14px system letters, and 20px contains 16px letters on desktop. */
+.life2 .life2-grade-letter { grid-column:2; grid-row:1 / 3; height:18px;
+  font-size:14px; line-height:18px; font-weight:700; color:var(--grade-colour); }
+.life2 .life2-grade-gauge { grid-column:1; grid-row:2; width:100%; height:4px;
   border-radius:2px; background:linear-gradient(to right,var(--grade-colour) var(--grade-progress),#648094 var(--grade-progress)); }
 .life2 .life2-hud-footer { grid-area:route; display:flex; align-items:center; gap:8px; }
 .life2 .life2-hud-status { flex:none; padding:0 4px; border-radius:4px; background:#2b5265; color:#e9f6fa; white-space:nowrap; }
@@ -86,10 +95,16 @@ export const HUD_STYLE = `
 .life2 .life2-player-card[data-hud-delta] .life2-change-strip { display:grid; grid-template-rows:12px 12px; }
 .life2 .life2-player-card[data-hud-delta] .life2-grades { grid-column:2; }
 .life2 .life2-player-card[data-hud-delta] .life2-grade-name { display:none; }
+.life2 .life2-player-card[data-hud-delta] .life2-grade-short { display:block; }
 .life2 .life2-hud [data-changed-stat][data-direction=down] { color:#ffbac6; }
+.life2 .life2-hud [data-tone=good] { --hud-change-ink:#8cf0bf; --hud-change-bg:#123e34; }
+.life2 .life2-hud [data-tone=bad] { --hud-change-ink:#ffc0cf; --hud-change-bg:#55283d; }
+.life2 .life2-hud [data-changed-stat][data-tone] { color:var(--hud-change-ink); --hud-glow-ink:var(--hud-change-ink); }
+.life2 .life2-change-strip > span { justify-self:end; padding:0 3px; border-radius:3px;
+  color:var(--hud-change-ink); background:var(--hud-change-bg); box-shadow:inset 0 0 0 1px var(--hud-change-ink); }
 /* Keep the navy background and readable inks throughout change feedback. */
 .life2 .life2-hud [data-changed-stat] { animation-name:life2-hud-glow; }
-@keyframes life2-hud-glow { from { box-shadow:inset 0 0 0 2px #ffdc68; } to { box-shadow:inset 0 0 0 0 transparent; } }
+@keyframes life2-hud-glow { from { box-shadow:inset 0 0 0 2px var(--hud-glow-ink,#ffdc68); } to { box-shadow:inset 0 0 0 0 transparent; } }
 /* UX5b owns this future row. The empty slot must consume no space or gap. */
 .life2 .life2-hud-cards[hidden] { display:none; }
 .life2 .life2-options[data-single-page] { grid-template-rows:18px minmax(0,1fr); }
@@ -112,6 +127,7 @@ export const HUD_STYLE = `
   .life2 .life2-player-card { grid-template-columns:28px minmax(0,1fr) auto; column-gap:4px; }
   .life2 .life2-hud-avatar { width:28px; height:28px; }
   .life2 .life2-stamina-word,.life2 .life2-grade-name { display:none; }
+  .life2 .life2-grade-short { display:block; }
   .life2 .life2-money { font-size:11px; letter-spacing:0; }
   .life2 .life2-credit-coin { width:12px; height:12px; }
   .life2 .life2-coin-chip { gap:2px; padding:0 2px; }
@@ -144,8 +160,9 @@ export const HUD_STYLE = `
   .life2 .life2-credit-coin { width:18px; height:18px; }
   .life2 .life2-money { font-size:18px; line-height:22px; }
   .life2 .life2-debt,.life2 .life2-stats { font-size:12px; line-height:14px; }
-  .life2 .life2-grade { font-size:12px; line-height:15px; }
-  .life2 .life2-grade-letter { font-size:16px; line-height:15px; }
+  .life2 .life2-stamina { height:16px; line-height:16px; }
+  .life2 .life2-grade { grid-template-rows:15px 4px; font-size:12px; line-height:15px; }
+  .life2 .life2-grade-letter { height:20px; font-size:16px; line-height:20px; }
   .life2 .life2-progress { height:36px; font-size:12px; line-height:14px; }
   .life2 .life2-progress-track { height:10px; }
   .life2 .life2-progress-tick { height:12px; }
@@ -159,8 +176,6 @@ export const HUD_STYLE = `
   .life2 .life2-player-card[data-hud-delta] .life2-change-strip { grid-template-rows:13px 13px; font-size:12px; line-height:13px; }
 }
 `;
-const GRADE_NAMES = { skill: '조종', xp: '경험', teach: '교육', biz: '사업', support: '지지' };
-
 export function hud(state: GameState, view: Derived, offered: OptionView[], choose: (id: string) => void,
   open?: (menu: 'my-life' | 'phone') => void, before?: GameState) {
   const changes = before ? statChanges(before, state) : [];
@@ -168,6 +183,8 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
     cell.setAttribute('role', 'group');
     const change = changes.find(row => row.stat === stat);
     if (change) { cell.dataset.changedStat = stat; cell.dataset.direction = change.direction;
+      if ((stat === 'money' || stat === 'debt') && change.direction)
+        cell.dataset.tone = fundsChangeTone(stat, change.direction);
       cell.setAttribute('aria-label', `${label} · ${change.label} ${change.value}`); }
     else cell.setAttribute('aria-label', label);
     return cell;
@@ -205,8 +222,12 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
   const changed = changes.filter(row => ['money', 'debt'].includes(row.stat!));
   if (changed.length) player.dataset.hudDelta = '';
   for (const row of changed) {
-    const delta = state.s[row.stat!] - before!.s[row.stat!];
+    if (row.stat !== 'money' && row.stat !== 'debt') continue;
+    const delta = state.s[row.stat] - before!.s[row.stat];
     const tick = el('span', '', `${row.label} ${delta > 0 ? '+' : ''}${delta}만`);
+    const direction = delta > 0 ? 'up' : 'down';
+    tick.dataset.direction = direction;
+    tick.dataset.tone = fundsChangeTone(row.stat, direction);
     tick.dataset.hudDeltaStat = row.stat; ticks.append(tick);
   }
   funds.append(coin, mark(el('span', 'life2-debt', `빚 ${state.s.debt.toLocaleString('ko-KR')}만`), 'debt'), ticks);
@@ -218,13 +239,16 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
     const cell = el('span', 'life2-grade'); cell.dataset.grade = stat;
     // UX1 shows five career grades. Preserve the other shared grade hooks;
     // their visible details remain in My Life, without a second HUD row.
-    cell.hidden = !(stat in GRADE_NAMES);
+    const names = HUD_GRADE_NAMES[stat as keyof typeof HUD_GRADE_NAMES];
+    cell.hidden = !names;
     cell.setAttribute('role', 'group');
     cell.style.setProperty('--grade-colour', GRADE_COLOURS[letter]);
     const gauge = el('span', 'life2-grade-gauge'); gauge.setAttribute('aria-hidden', 'true');
     const filled = next === null ? 100 : Math.max(0, Math.min(100, (state.s[stat] - from) * 100 / (next - from)));
     gauge.style.setProperty('--grade-progress', `${filled}%`);
-    cell.append(el('span', 'life2-grade-name', GRADE_NAMES[stat as keyof typeof GRADE_NAMES] ?? STAT_LABEL[stat]),
+    const shortName = el('span', 'life2-grade-short', names?.short ?? STAT_LABEL[stat]);
+    shortName.setAttribute('aria-hidden', 'true');
+    cell.append(el('span', 'life2-grade-name', names?.full ?? STAT_LABEL[stat]), shortName,
       el('b', 'life2-grade-letter', letter), gauge);
     const label = `${STAT_LABEL[stat]} ${letter}등급`;
     if (cell.hidden) cell.setAttribute('aria-label', label);

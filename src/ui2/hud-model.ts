@@ -7,6 +7,17 @@ export const GRADE_COLOURS: Record<GradeLetter, string> = {
   C: '#d0ed80', B: '#ffbb83', A: '#ff9eb5', S: '#ffdc68',
 };
 
+export const HUD_GRADE_NAMES = {
+  skill: { full: '조종', short: '조' }, xp: { full: '경험', short: '경' },
+  teach: { full: '교육', short: '교' }, biz: { full: '사업', short: '사' },
+  support: { full: '지지', short: '지' },
+};
+
+/** Numeric direction stays unchanged; borrowing and repayment invert the visual tone. */
+export function fundsChangeTone(stat: 'money' | 'debt', direction: 'up' | 'down') {
+  return (direction === 'up') === (stat === 'money') ? 'good' : 'bad';
+}
+
 /** Presentation of the same zero-based season used by derived().dateLabel. */
 export function lifeProgress(turn: number) {
   const total = LIFE_RULES.maxTurns;

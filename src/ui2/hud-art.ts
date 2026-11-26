@@ -24,13 +24,19 @@ export function pilotAvatar() {
 }
 
 export function progressDrone() {
-  // Front-on courier: two broad rotors, a bright cargo body and one landing skid.
+  // Original front-on scout: long yellow rotors, angled arms, cream fuselage and skids.
+  // Cream halos lift the navy structure off the panel; dark edges separate it from route colours.
   const drone = svg('svg', { viewBox: '0 0 28 18', width: 28, height: 18,
     class: 'life2-progress-drone', 'aria-hidden': 'true', focusable: 'false',
-    fill: '#ffdc68', stroke: '#102c40', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
-  drone.append(svg('path', { d: 'M2 3h8m8 0h8M6 3v5h16V3', fill: 'none' }),
-    svg('path', { d: 'M9 6h10v7H9ZM10 14v2h8v-2' }),
-    svg('path', { d: 'M12 9h4', stroke: '#102c40' }));
+    fill: 'none', stroke: '#0b2436', 'stroke-width': 1.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+  const frame = 'M6 4v4l5 2m11-6v4l-5 2M11 12l-2 4h10l-2-4';
+  const blades = 'M3 2h6a1.5 1.5 0 0 1 0 3H3a1.5 1.5 0 0 1 0-3Zm16 0h6a1.5 1.5 0 0 1 0 3h-6a1.5 1.5 0 0 1 0-3Z';
+  drone.append(svg('path', { d: frame, stroke: '#fff8e4', 'stroke-width': 3.5 }),
+    svg('path', { d: frame }),
+    svg('path', { d: blades, stroke: '#fff8e4', 'stroke-width': 2.5 }),
+    svg('path', { d: blades, fill: '#ffe34d', 'stroke-width': 1 }),
+    svg('path', { d: 'M10 7h8l2 3-2 3h-8l-2-3Z', fill: '#fff8e4' }),
+    svg('path', { d: 'M12 10h4', stroke: '#0b2436', 'stroke-width': 2 }));
   return drone;
 }
 
