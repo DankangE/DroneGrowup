@@ -5,10 +5,11 @@ import { ENDINGS2 } from '../src/ui2/popups/ending-data.ts';
 import { mountEnding, mountEndingCollection } from '../src/ui2/popups/ending.ts';
 import { fixtureOption, popup2Fixture } from '../src/ui2/popups/fixtures.ts';
 import type { Popup2Kind } from '../src/ui2/popups/fixtures.ts';
+import { assertTrustedSceneImages } from './life-popup2-dom-helper.ts';
 import { mountPopup, popupModel } from '../src/ui2/popups/index.ts';
 import { action, controls, dom, panelAt, TestNode, textOf, visible, withDOM } from './life-popup2-dom-helper.ts';
 
-for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) test(`${kind}: data-popup, 3-card pages, exact dispatch, locks, text details and keyboard exit`, () => withDOM(() => {
+for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) test(`${kind}: data-popup, 6-row pages, exact dispatch, locks, text details and keyboard exit`, () => withDOM(() => {
   const fixture = popup2Fixture(kind), model = popupModel(fixture.state, fixture.context)!;
   const host = new TestNode('div'), opener = new TestNode('button'); opener.focus();
   let dismissed = 0; const chosen: string[] = [], seen: string[] = [];
@@ -16,7 +17,7 @@ for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) test(`${kind}: data-pop
   assert.equal(panelAt(host).dataset.popup, kind); assert.equal(panelAt(host).dataset.phase, POPUPS2[kind].phase);
   assert.equal(panelAt(host).dataset.fullscreen === '', kind === 'chapter' || kind === 'retirement');
   do {
-    const items = visible(host); assert.ok(items.length <= 3);
+    const items = visible(host); assert.ok(items.length <= 6);
     for (const item of items) {
       seen.push(item.dataset.option); const count = chosen.length; item.fire('click');
       if (item.disabled) assert.equal(chosen.length, count);
@@ -29,7 +30,7 @@ for (const kind of Object.keys(POPUPS2) as Popup2Kind[]) test(`${kind}: data-pop
   if (model.choices.length) {
     action(host, 'popup-details').fire('click');
     assert.equal(panelAt(host).dataset.details, '');
-    assert.equal(host.querySelectorAll('img').length, 0);
+    assertTrustedSceneImages(host);
     const before = textOf(host); action(host, 'popup-text-next').fire('click'); assert.notEqual(textOf(host), before);
     action(host, 'popup-back').fire('click');
   }
@@ -78,10 +79,10 @@ test('my-life tabs expose all five bodies, paginate complete untrusted records a
 
 test('my-life retains paging for future action ids; transfer retains supplied destination hooks', () => withDOM(() => {
   const host = new TestNode('div'), fixture = popup2Fixture('my-life');
-  const model = popupModel(fixture.state, { kind: 'my-life', offered: Array.from({ length: 5 }, (_, i) => fixtureOption(`future:${i}`)) })!;
+  const model = popupModel(fixture.state, { kind: 'my-life', offered: Array.from({ length: 8 }, (_, i) => fixtureOption(`future:${i}`)) })!;
   mountPopup(host.element(), model, { choose() {}, dismiss() {} });
   action(host, 'popup-page-next').fire('click');
-  assert.deepEqual(visible(host).map(node => node.dataset.option), ['future:3', 'future:4']);
+  assert.deepEqual(visible(host).map(node => node.dataset.option), ['future:6', 'future:7']);
   const transfer = popup2Fixture('transfer');
   mountPopup(host.element(), popupModel(transfer.state, transfer.context)!, { choose() {}, dismiss() {} });
   assert.deepEqual(visible(host).map(node => node.dataset.dest), ['E-o0', 'B-o1', undefined]);

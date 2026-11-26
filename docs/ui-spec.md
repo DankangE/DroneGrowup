@@ -3,8 +3,8 @@
 The life board is the default screen (`/?seed=11`). Existing `?life=1` links select the same client.
 Rules and timings come from `docs/design/life-board.md` §§2 and 11. A fresh v2 run
 opens its starting-choice popup directly. Play stays in `data-screen="play"`,
-with a complete 7×9 map, HUD, two wheels and an options/popup slot. All four
-supported sizes are checked: 390×844, 360×740, 1280×800 and 1366×768.
+with a full-viewport illustrated drone town, wide 7×9 road board, floating HUD and list/detail overlays (PC-first). All four
+supported sizes are checked: 1920×1080, 1536×864, 1366×768 and 1280×800.
 
 The current renderer uses these hooks:
 
@@ -20,7 +20,7 @@ The current renderer uses these hooks:
 | `[data-option]` | Engine choice id, disabled exactly when the engine disables it |
 | `[data-action="page-prev|page-next"]` | Plain destination pager |
 | `[data-popup]` | Mounted popup kind; result notifications use this hook too |
-| `[data-action="popup-page-prev|popup-page-next"]` | Popup choices, at most three per page |
+| `[data-action="popup-page-prev|popup-page-next"]` | Popup choices, at most six per PC page |
 | `[data-action="popup-close|popup-reopen"]` | Dismiss a presentation or reopen an unresolved prompt |
 | `[data-action="popup-details|popup-back|popup-text-next"]` | Choice details and fixed text pages |
 | `[data-action="popup-confirm|popup-cancel"]` | Quit confirmation controls |
@@ -36,10 +36,10 @@ after each input. Result dismissal must leave the state unchanged.
 
 | Command | Acceptance coverage |
 | --- | --- |
-| `npm run playtest:life` | Fresh seeds 1 and 11 at 390×844, using real clicks until the first promotion or 12 completed seasons (three years); all choice pages, disabled options, results, pawn, dice, date and engine parity |
+| `npm run playtest:life` | Fresh seeds 1 and 11 at 1366×768, using real clicks until the first promotion or 12 completed seasons (three years); all choice pages, disabled options, results, pawn, dice, date and engine parity |
 | `npm run layout:life` | Six maps × four sizes, movement/transfer/skip fixtures, all twenty §11.3 popup groups at each size, five life tabs and 21 ending/gallery entries |
 | `npm run check:board -- keys` | Twelve seasons at each of the four sizes, using real Tab/Enter navigation, including local destination tiles, paging and result dismissal; zero mouse/focus fallbacks |
-| `npm run check:board -- timed [390x844]` | Twelve completed seasons on each of maps A–F with animations and reading pauses; prints each map's seconds per season and difference from 14.9 seconds |
+| `npm run check:board -- timed [1366x768]` | Twelve completed seasons on each of maps A–F with animations and reading pauses; prints each map's seconds per season and difference from 14.9 seconds |
 
 All three default checks are in `npm run verify`; the longer `timed` measurement
 is opt-in. Browser commands build and serve a local Vite preview and
@@ -81,3 +81,5 @@ are a separate order. Server/storage text is rendered using `textContent`.
 Keep `data-option`, `data-pick`, `data-nav`, `data-tab`, `data-action`, `data-screen`, `data-phase`,
 `data-dest`, `data-map` and `data-popup` hooks. Every popup has an exit, choices use paging,
 and no screen or inner panel scrolls. Respect reduced motion and keyboard activation.
+
+PC-first target sizes: 1920×1080, 1536×864, 1366×768, 1280×800. No scrolling at these sizes; below 900px only basic operation is required.

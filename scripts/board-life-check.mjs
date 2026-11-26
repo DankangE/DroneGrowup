@@ -1,4 +1,4 @@
-// npm run check:board -- keys|timed [390x844]
+// npm run check:board -- keys|timed [1366x768] (default: TIMING_SAMPLE.viewport)
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -22,7 +22,7 @@ export function timingLine(map, size, times) {
 }
 
 export function argumentsFor(args) {
-  const [mode = 'keys', size = '390x844'] = args;
+  const [mode = 'keys', size = TIMING_SAMPLE.viewport] = args;
   assert.ok(['keys', 'timed'].includes(mode) && args.length <= 2, 'usage: board-life-check.mjs keys|timed [WIDTHxHEIGHT]');
   assert.match(size, /^\d+x\d+$/, 'viewport must be WIDTHxHEIGHT');
   const viewport = size.split('x').map(Number);

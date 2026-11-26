@@ -8,6 +8,7 @@ import { chromium } from 'playwright-core';
 import { choose, derived, newGame, options } from '../src/life/flow.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
+import { LIFE_RULES, STAT_MAX } from '../src/life/life-data.ts';
 import { reachable } from '../src/life/move.ts';
 import { destinationDetails } from '../src/ui2/pick.ts';
 import { POPUP_GROUPS } from '../src/ui2/popups/data.ts';
@@ -324,7 +325,251 @@ async function movementChecks(page, load, check) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
 }
 
+// Shared with Node regressions so the actual layout fixtures must pass restore().
+export function hudChangeFixture(id) {
+  const run = choose(newGame(11), 'start:school').state;
+  run.status = 'working'; run.track = 'academy'; run.job.rank = 3; run.job.tracks = ['academy'];
+  for (const stat of ['skill', 'xp', 'teach', 'biz', 'support']) run.s[stat] = STAT_MAX[stat] ?? LIFE_RULES.statMax;
+  run.s.money = id.startsWith('loan:') ? LIFE_RULES.statMax - 500 : LIFE_RULES.statMax;
+  run.s.debt = id.startsWith('loan:') ? 0 : LIFE_RULES.statMax;
+  return run;
+}
+
+export function lateHudFixture(map, sGrades = false) {
+  const late = choose(newGame(11), 'start:school').state;
+  late.board.pos = `${map}-o0`; late.board.step = 'pick'; late.board.dice = [2, 3];
+  late.turn = LIFE_RULES.maxTurns - 1; late.status = 'working'; late.track = 'academy';
+  late.job.rank = 3; late.job.tracks = ['academy'];
+  late.s.money = late.s.debt = LIFE_RULES.statMax;
+  late.s.capStamina = derived(late).capStamina; late.s.stamina = 0;
+  if (sGrades) for (const stat of ['skill', 'xp', 'teach', 'biz', 'support']) late.s[stat] = STAT_MAX[stat] ?? LIFE_RULES.statMax;
+  return late;
+}
+
+// Real phone choices supply both signs of change, including maximum-value text.
+// Inspect the first result render: dismissing it intentionally clears HUD glows.
+async function hudChangeChecks(page, load, check) {
+  // Result popup rows also carry data-changed-stat; audit HUD feedback only.
+  const hud = page.locator('.life2-hud');
+  for (const id of ['loan:500', `repay:${LIFE_RULES.statMax}`]) {
+    const run = hudChangeFixture(id);
+    assert.ok(options(run, 'phone').some(option => option.id === id && option.enabled));
+    await load(run);
+    await page.locator('[data-nav=phone]').click();
+    await page.locator('[data-tab=bank]').click();
+    const choice = page.locator(`[data-option="${id}"]`);
+    for (let count = 0; !await choice.count(); count++) {
+      assert.ok(count < 10, `${id}: bounded bank pages`);
+      await page.locator('[data-action=popup-page-next]').click();
+    }
+    const after = choose(run, id, 'phone').state;
+    await choice.click();
+    assert.deepEqual(await page.evaluate(() => window.__life.state()), after);
+    await check(`HUD ${id} delta with long rank`);
+    for (const stat of ['money', 'debt']) {
+      const delta = after.s[stat] - run.s[stat];
+      assert.notEqual(delta, 0);
+      const chip = hud.locator(`[data-hud-delta-stat="${stat}"]`);
+      assert.equal(await chip.isVisible(), true, `${stat} delta visible at every size`);
+      assert.ok((await chip.textContent()).endsWith(`${delta > 0 ? '+' : ''}${delta}만`));
+      const tone = (delta > 0) === (stat === 'money') ? 'good' : 'bad';
+      assert.equal(await chip.getAttribute('data-tone'), tone);
+      assert.equal(await hud.locator(`[data-changed-stat="${stat}"]`).getAttribute('data-tone'), tone);
+    }
+  }
+}
+
+// HUD checks are separate from board geometry; timed play keeps its existing audit cost.
+export function auditHud() {
+  const issues = [], vw = innerWidth, vh = innerHeight;
+  // PC overlays at all four desktop sizes; calendar is intentionally detached.
+  const hud = document.querySelector('.life2-hud');
+  if (!hud) issues.push('HUD: missing');
+  else {
+    const box = hud.getBoundingClientRect();
+    const expectedHeight = Math.max(148, vh * .23);
+    if (Math.abs(box.height - expectedHeight) > .1) issues.push(`HUD: expected ${expectedHeight}px row`);
+    if (Math.abs(box.width - Math.max(355, vw * .324)) > 1) issues.push('HUD: incorrect PC card width');
+    const visible = node => node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true })
+      && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+    const overlaps = (one, two) => Math.min(one.right, two.right) > Math.max(one.left, two.left) + .1
+      && Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + .1;
+    const required = ['.life2-date', '[data-hud-player]', '[data-hud-avatar]', '.life2-rank-pill',
+      '.life2-money', '.life2-debt', '.life2-stats', '.life2-battery', '[data-hud-progress]',
+      '.life2-progress-track', '.life2-progress-drone', '[data-hud-season]', '.life2-hud-status', '.life2-grades'];
+    for (const selector of required) {
+      const node = hud.querySelector(selector);
+      if (!node || !visible(node)) issues.push(`HUD: ${selector} missing or hidden`);
+    }
+    const strip = hud.querySelector('.life2-change-strip');
+    if (!strip || (strip.textContent.trim() && !visible(strip))) issues.push('HUD: money/debt change strip missing or hidden');
+    for (const stat of ['money', 'debt']) {
+      if (!hud.querySelector(`[data-changed-stat="${stat}"]`)) continue;
+      const delta = hud.querySelector(`[data-hud-delta-stat="${stat}"]`);
+      if (!delta || !visible(delta) || !delta.textContent.match(/[+-]\d+만/))
+        issues.push(`HUD: changed ${stat} has no visible delta`);
+    }
+    const grades = [...hud.querySelectorAll('[data-grade]')];
+    const primaryGrades = ['skill', 'xp', 'teach', 'biz', 'support'];
+    if (primaryGrades.some(stat => !grades.some(chip => chip.dataset.grade === stat))
+      || grades.filter(visible).length !== 5) issues.push('HUD: expected five career grade chips at every size');
+    for (const chip of grades) {
+      if (visible(chip) !== primaryGrades.includes(chip.dataset.grade))
+        issues.push('HUD: grade visibility does not match size');
+      if (chip.getAttribute('role') !== 'group' || !chip.getAttribute('aria-label') || !chip.querySelector('.life2-grade-letter')
+        || !chip.querySelector('.life2-grade-gauge')) issues.push('HUD: incomplete grade chip');
+      if (visible(chip)) {
+        const gauge = chip.querySelector('.life2-grade-gauge'), letter = chip.querySelector('.life2-grade-letter');
+        if (!gauge || !visible(gauge) || gauge.getBoundingClientRect().height < 4 || !letter || !visible(letter))
+          issues.push('HUD: grade letter/gauge hidden or gauge below 4px');
+        if (![...chip.querySelectorAll('.life2-grade-name, .life2-grade-short')]
+          .some(name => visible(name) && name.textContent.trim()))
+          issues.push('HUD: grade has no visible full or short name');
+        if (letter && /Board figures/i.test(getComputedStyle(letter).fontFamily))
+          issues.push('HUD: grade letter uses Board figures');
+        if (letter && letter.scrollHeight > letter.clientHeight)
+          issues.push('HUD: grade letter font metrics exceed its line box');
+      } else if (chip.hasAttribute('data-changed-stat')) issues.push('HUD: hidden grade receives change glow');
+    }
+    const marks = [...hud.querySelectorAll('[data-changed-stat]')].map(node => node.dataset.changedStat);
+    if (new Set(marks).size !== marks.length) issues.push('HUD: stat is marked twice');
+    const bar = hud.querySelector('.life2-progress-track')?.getBoundingClientRect();
+    if (!bar || bar.height < 11 || bar.height > 13) issues.push('HUD: route bar must be 11–13px thick');
+    const drone = hud.querySelector('.life2-progress-drone')?.getBoundingClientRect();
+    if (!drone || drone.width < 40 || drone.height < 26) issues.push('HUD: drone marker below 40x26px');
+    if (![...hud.querySelectorAll('.life2-progress-label[data-age]')].some(visible))
+      issues.push('HUD: no visible milestone age labels');
+    for (const node of hud.querySelectorAll('*')) {
+      if (!visible(node) || (node.closest('svg') && node.tagName.toLowerCase() !== 'svg'
+        && node.tagName.toLowerCase() !== 'text')) continue;
+      const rect = node.getBoundingClientRect(), label = node.getAttribute('class') ?? node.tagName;
+      const container = node.closest('.life2-date, .life2-change-strip') ?? hud;
+      const bounds = container.getBoundingClientRect(), css = getComputedStyle(container);
+      const border = Object.fromEntries(['Left', 'Right', 'Top', 'Bottom'].map(side =>
+        [side, parseFloat(css[`border${side}Width`])]));
+      if (rect.left < Math.max(0, bounds.left) - .1 || rect.right > Math.min(vw, bounds.right) + .1
+        || rect.top < Math.max(0, bounds.top) - .1 || rect.bottom > Math.min(vh, bounds.bottom) + .1)
+        issues.push(`HUD: ${label} outside its container or viewport`);
+      // Detached cards get the identical inner-border and parent checks.
+      if (node !== container && (rect.left < bounds.left + border.Left + 2 - .1 || rect.right > bounds.right - border.Right - 2 + .1
+        || rect.top < bounds.top + border.Top + 2 - .1 || rect.bottom > bounds.bottom - border.Bottom - 2 + .1))
+        issues.push(`HUD: ${label} touches HUD border (needs 2px clearance)`);
+      let parent = node === container ? null : node.parentElement;
+      while (parent && getComputedStyle(parent).display === 'contents') parent = parent.parentElement;
+      if (parent) {
+        const parentBox = parent.getBoundingClientRect();
+        if (rect.left < parentBox.left - .1 || rect.right > parentBox.right + .1
+          || rect.top < parentBox.top - .1 || rect.bottom > parentBox.bottom + .1)
+          issues.push(`HUD: ${label} overflows parent`);
+      }
+      if (node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1)
+        issues.push(`HUD: ${label} content overflows`);
+      const textNodes = [...node.childNodes].filter(child => child.nodeType === 3 && child.textContent.trim());
+      const minFont = vw >= 900 ? 12 : 11;
+      if (textNodes.length && parseFloat(getComputedStyle(node).fontSize) < minFont)
+        issues.push(`HUD: ${label} text below ${minFont}px`);
+      // Check unwrapped text too: overflow:visible must not hide an undersized column.
+      for (const text of textNodes) {
+        const range = document.createRange(); range.selectNodeContents(text);
+        for (const glyphs of range.getClientRects()) {
+          if (glyphs.left < rect.left - 1 || glyphs.right > rect.right + 1)
+            issues.push(`HUD: ${label} text overflows its column`);
+        }
+      }
+    }
+    const disjoint = (nodes, label) => {
+      const shown = nodes.filter(visible);
+      for (const [index, one] of shown.entries()) for (const two of shown.slice(index + 1)) {
+        if (!one.contains(two) && !two.contains(one) && overlaps(one.getBoundingClientRect(), two.getBoundingClientRect()))
+          issues.push(`HUD: ${label} overlap`);
+      }
+    };
+    // Check independent regions, then their sibling contents. Parent/child
+    // containment and deliberate gauge/marker overlays are not collisions.
+    disjoint([...hud.querySelectorAll('.life2-date, [data-hud-player], .life2-grades, [data-hud-progress], .life2-hud-status, .life2-change-strip')], 'regions');
+    for (const selector of ['.life2-date', '[data-hud-player]', '.life2-hud-identity', '.life2-hud-rank',
+      '.life2-funds', '.life2-coin-chip', '.life2-change-strip', '.life2-stats', '.life2-grades', '[data-grade]']) {
+      for (const parent of hud.querySelectorAll(selector)) disjoint(
+        [...parent.children], selector);
+    }
+    disjoint([...hud.querySelectorAll('.life2-progress-label, .life2-progress-drone')], 'route labels/marker');
+    const cards = hud.querySelector('[data-hud-slot=cards]');
+    if (!cards || !cards.hidden || cards.children.length || cards.textContent.trim()
+      || cards.getBoundingClientRect().height !== 0 || cards.getBoundingClientRect().width !== 0)
+      issues.push('HUD: reserved cards slot must be empty, hidden and zero size');
+    const progress = hud.querySelector('[data-hud-progress]');
+    if (progress) {
+      const values = ['aria-valuemin', 'aria-valuenow', 'aria-valuemax'].map(key =>
+        progress.hasAttribute(key) ? Number(progress.getAttribute(key)) : NaN);
+      const [min, now, max] = values;
+      if (progress.getAttribute('role') !== 'progressbar' || values.some(value => !Number.isFinite(value))
+        || min !== 0 || max !== 204 || now < min || now > max || !Number.isInteger(now)
+        || !progress.getAttribute('aria-valuetext')?.includes(hud.querySelector('.life2-date h1')?.textContent))
+        issues.push('HUD: invalid life progress semantics/range');
+    }
+  }
+  return [...new Set(issues)];
+}
+
+// Required copy is checked before hidden decorative nodes are skipped by geometry audits.
+export function auditPopupContent(panel = document.querySelector('.life2-popup')) {
+  if (!panel || !panel.matches('[data-popup]')) return [];
+  const issues = [];
+  const visible = node => node && node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true })
+    && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+  const title = panel.hasAttribute('data-stage') ? panel.querySelector('.life2-stage-banner') : panel.querySelector('h2');
+  if (!visible(title) || !title.textContent.trim()) issues.push('popup title missing or hidden');
+  for (const node of panel.querySelectorAll('[data-option], .life2-popup-copy p, .life2-popup-copy dt, .life2-popup-copy dd')) {
+    if (node.textContent.trim() && !visible(node)) issues.push(`required popup copy hidden: ${node.className || node.tagName}`);
+  }
+  if (panel.querySelector('[data-option]') && !visible(panel.querySelector('.life2-selected-description')))
+    issues.push('selected choice description missing or hidden');
+  // Hidden row summaries are duplicated in the selected inspector and complete details pager.
+  if (panel.querySelector('[data-option]') && !visible(panel.querySelector('[data-action=popup-details]')))
+    issues.push('complete choice details unreachable');
+  const paint = getComputedStyle(panel);
+  const alpha = paint.backgroundColor.startsWith('rgba') ? Number(paint.backgroundColor.split(',').at(-1).replace(')', '')) : 1;
+  if (paint.opacity !== '1' || paint.backgroundColor === 'transparent' || alpha !== 1) issues.push('popup sheet is translucent');
+  return issues;
+}
+
 // Runs in Chromium. Check actual boxes and clipping, not merely overflow:hidden on the root.
+// Measure the pawn and its painted children, not just its positioned wrapper.
+// The marker belongs beside its tile; every icon/label must remain uncovered.
+export function auditPawn() {
+  const issues = [], pawn = document.querySelector('[data-pawn]');
+  if (!pawn) return ['missing pawn'];
+  const tile = pawn.closest('[data-space]'), box = pawn.getBoundingClientRect();
+  if (!tile) return ['pawn has no current tile'];
+  const bounds = tile.getBoundingClientRect();
+  const board = pawn.closest('[data-map]')?.getBoundingClientRect();
+  const visible = node => node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true });
+  if (!visible(pawn) || box.width < 48 || box.height < 48) issues.push('pawn is hidden or too small');
+  const gap = Math.hypot(Math.max(bounds.left - box.right, box.left - bounds.right, 0),
+    Math.max(bounds.top - box.bottom, box.top - bounds.bottom, 0));
+  if (gap > 8) issues.push('pawn is not adjacent to current tile');
+  const parts = [pawn, ...pawn.querySelectorAll('svg')];
+  for (const part of parts) {
+    const rect = part.getBoundingClientRect();
+    if (!visible(part) || rect.width <= 0 || rect.height <= 0) issues.push('pawn artwork is hidden');
+    if (!board || rect.left < board.left || rect.right > board.right || rect.top < board.top || rect.bottom > board.bottom)
+      issues.push('pawn artwork extends outside board');
+    for (const other of document.querySelectorAll('[data-space]')) {
+      for (const content of other.querySelectorAll('.life2-glyph, .life2-tile-label')) {
+        const target = content.getBoundingClientRect();
+        if (Math.min(rect.right, target.right) > Math.max(rect.left, target.left)
+          && Math.min(rect.bottom, target.bottom) > Math.max(rect.top, target.top))
+          issues.push(`pawn covers ${other.dataset.space} ${content.classList.contains('life2-tile-label') ? 'label' : 'icon'}`);
+      }
+    }
+  }
+  const label = tile.querySelector('.life2-tile-label');
+  if (!label || !visible(label)) issues.push('current tile label is hidden');
+  const icon = tile.querySelector('.life2-glyph');
+  if (!icon || !visible(icon)) issues.push('current tile icon is hidden');
+  return [...new Set(issues)];
+}
+
 export function audit() {
   const issues = [], vw = innerWidth, vh = innerHeight;
   const doc = document.scrollingElement;
@@ -348,7 +593,7 @@ export function audit() {
       ((node.scrollWidth > node.clientWidth + 1 && ['hidden', 'clip'].includes(style.overflowX)) ||
        (node.scrollHeight > node.clientHeight + 1 && ['hidden', 'clip'].includes(style.overflowY)))) issues.push(`${label}: content clipped`);
     if (!node.closest('[inert]') && node.matches('button, [data-space]') && (rect.width < 43.99 || rect.height < 43.99)) issues.push(`${label}: smaller than 44px`);
-    if (node.matches('[data-space]') && Math.abs(rect.width - rect.height) > .1) issues.push(`${label}: tile is not square`);
+    if (node.matches('[data-space]') && (rect.width / rect.height < 1.33 || rect.width / rect.height > 1.36)) issues.push(`${label}: road tile aspect ratio outside 1.33–1.36`);
     if ([...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim()) && parseFloat(style.fontSize) < 11) issues.push(`${label}: text below 11px`);
     for (let parent = node.parentElement; parent; parent = parent.parentElement) {
       const box = parent.getBoundingClientRect(), css = getComputedStyle(parent);
@@ -363,27 +608,49 @@ export function audit() {
     if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('tiles overlap');
   }
-  const regions = ['.life2-hud', '.life2-board', '.life2-options', '.life2-bottom']
-    .map(selector => document.querySelector(selector).getBoundingClientRect());
+  // Modal sheets may cover the route; persistent controls must never cover a tile or pawn.
+  const regions = ['.life2-hud', '.life2-date', '.life2-popup', '.life2-bottom']
+    .map(selector => document.querySelector(selector)).filter(node => node?.checkVisibility())
+    .map(node => node.getBoundingClientRect());
+  const world = document.querySelector('.life2-board-frame')?.getBoundingClientRect();
+  const board = document.querySelector('.life2-board')?.getBoundingClientRect();
+  if (!world || Math.abs(world.width - vw) > 1 || Math.abs(world.height - vh) > 1) issues.push('world does not fill viewport');
+  const destinationPanel = document.querySelector('.life2-destinations');
+  const expectedBoardWidth = vw * (destinationPanel ? .42 : .70);
+  if (!board || Math.abs(board.width - expectedBoardWidth) > 1) issues.push('incorrect board width for active PC layout');
+  const intersects = (a, b) => Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1
+    && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 1;
+  const protectedNodes = [...document.querySelectorAll('[data-space], [data-pawn], [aria-current=location]')];
+  for (const overlay of document.querySelectorAll('.life2-hud, .life2-date, .life2-change-strip, .life2-hud-season, .life2-bottom, .life2-roulette, .life2-key-hints, .life2-options:not(.life2-popup-host)')) {
+    if (!overlay.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true })) continue;
+    for (const target of protectedNodes) if (intersects(overlay.getBoundingClientRect(), target.getBoundingClientRect()))
+      issues.push(`${overlay.className}: covers board tile or pawn ${target.dataset.space ?? target.dataset.pawn ?? ''}`);
+  }
+  const pawn = document.querySelector('[data-pawn]'), pawnLabel = pawn?.parentElement.querySelector('.life2-tile-label');
+  if (pawn && pawnLabel && intersects(pawn.getBoundingClientRect(), pawnLabel.getBoundingClientRect())) issues.push('pawn hides current tile label');
   for (const [index, one] of regions.entries()) for (const two of regions.slice(index + 1)) {
     if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('screen regions overlap');
   }
   const strip = document.querySelector('.life2-change-strip')?.getBoundingClientRect();
-  if (strip) for (const row of document.querySelectorAll('.life2-stats, .life2-funds, .life2-grades')) {
+  // Deltas now live inside funds; compare their actual sibling rectangles in
+  // both axes so inline content is checked just as strictly as stacked rows.
+  if (strip) for (const row of document.querySelectorAll('.life2-stats, .life2-coin-chip, .life2-debt, .life2-grades')) {
     const box = row.getBoundingClientRect();
-    if (strip.top < box.bottom && strip.bottom > box.top) issues.push('money change overlaps HUD rows');
+    if (strip.width && strip.height && strip.left < box.right && strip.right > box.left
+      && strip.top < box.bottom && strip.bottom > box.top) issues.push('money change overlaps HUD rows');
   }
   const popup = document.querySelector('.life2-popup');
   if (popup) {
     const sheet = popup.getBoundingClientRect();
     const paint = getComputedStyle(popup);
-    if (paint.opacity !== '1' || paint.backgroundColor === 'transparent'
-      || /rgba\(.*,[\s]*0(?:\.\d+)?\)/.test(paint.backgroundColor)) issues.push('popup sheet is translucent');
-    if (vw < 900 && !popup.hasAttribute('data-fullscreen') && sheet.height > vh * .55 + 1) issues.push('sheet exceeds 55%');
+    const alpha = paint.backgroundColor.startsWith('rgba') ? Number(paint.backgroundColor.split(',').at(-1).replace(')', '')) : 1;
+    if (paint.opacity !== '1' || paint.backgroundColor === 'transparent' || alpha !== 1) issues.push('popup sheet is translucent');
     for (const node of popup.querySelectorAll('p, button, h2, dt, dd, .life2-card-hero, .life2-stage-banner')) {
+      if (!node.checkVisibility()) continue;
       const box = node.getBoundingClientRect();
-      if (box.top < sheet.top - 1 || box.bottom > sheet.bottom + 1 || box.left < sheet.left - 1 || box.right > sheet.right + 1)
+      const bounds = node.closest('.life2-popup-tabs') ? { top:0, bottom:vh, left:0, right:vw } : sheet;
+      if (box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1 || box.left < bounds.left - 1 || box.right > bounds.right + 1)
         issues.push('popup content outside sheet');
       if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push('popup text overflows');
     }
@@ -391,10 +658,7 @@ export function audit() {
       const box = control.getBoundingClientRect(), hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
       if (!control.contains(hit)) issues.push('popup covers bottom navigation');
     }
-    if (vw < 900 && !popup.hasAttribute('data-fullscreen')) {
-      const pawn = document.querySelector('[aria-current=location]').getBoundingClientRect();
-      if (pawn.bottom > sheet.top && pawn.top < sheet.bottom) issues.push('sheet hides the pawn row');
-    }
+
   }
   return [...new Set(issues)];
 }
@@ -550,9 +814,15 @@ async function fix4Checks(page, load, check) {
 // F5 fixtures retain every size/target/overflow check; all navigation uses real clicks.
 async function fix5Checks(page, load, check) {
   const starter = choose(newGame(1), 'start:self').state;
-  for (const node of WORLD.filter(row => row.map === 'A')) {
+  for (const node of WORLD) {
     const s = structuredClone(starter); s.board.pos = node.id;
     s.s.money = 1017; s.s.debt = 1176;
+    await load(s); await check(`pawn route ${node.id}`);
+    // Include every map's inner routes, corners and junctions, including A-o0.
+    // Picking a destination narrows the board, so inspect that geometry too.
+    const picking = structuredClone(s); picking.board.step = 'pick'; picking.board.dice = [1, 1];
+    await load(picking); await check(`pawn route ${node.id} destination layout`);
+    if (node.map !== 'A') continue;
     await load(s); await page.locator('[data-nav=phone]').click();
     await checkTextPages(page, '[data-action=popup-text-next]', () => check(`F5 pawn ${node.id}`));
     assert.match(await page.locator('.life2-funds').textContent(), /1,017.*1,176/);
@@ -569,7 +839,37 @@ async function fix5Checks(page, load, check) {
   assert.deepEqual(await page.evaluate(() => window.__life.state()), expected);
   await pagingChecks(page, check).checkPages('F5 all hospital family choices');
   assert.deepEqual(options(expected).filter(row => row.id.startsWith('dual:')).map(row => row.title), ['가정 중심', '맞벌이']);
-  console.log('  F5: every A pawn row, 55% sheets, debt HUD and one-tap family travel with all dual choices checked');
+  console.log('  F5: every A–F pawn tile in both layouts, A phone overlays, debt HUD and one-tap family travel with all dual choices checked');
+}
+
+async function phoneKeyboardChecks(page, load) {
+  const state = choose(newGame(11), 'start:self').state; state.s.money = 0;
+  await load(state);
+  await keyboardActivate(page, page.locator('[data-nav=phone]'));
+  await keyboardActivate(page, page.locator('[data-tab=repair]'));
+  assert.equal(await page.locator('[data-action=popup-page-next]').count(), 0, 'single-page phone tab has no hidden pager');
+  // Reaching the next tab requires leaving the single-page tab's focus trap.
+  await keyboardActivate(page, page.locator('[data-tab=shop]'));
+  const list = page.locator('.life2-popup-list');
+  assert.equal(await list.getAttribute('tabindex'), '0', 'cashless shop has a Tab entry point');
+  let tabs = 0;
+  while (!await list.evaluate(node => node === document.activeElement)) {
+    assert.ok(tabs++ < 80, 'locked choices are reachable by real Tab navigation');
+    await page.keyboard.press('Tab');
+  }
+  const rows = await list.locator('[data-option]').evaluateAll(nodes => nodes.map(node => ({ id:node.dataset.option,
+    title:node.querySelector('strong').textContent, disabled:node.disabled })));
+  assert.ok(rows.length > 1 && rows.every(row => row.disabled), 'shop fixture has only locked choices');
+  for (const [index, row] of rows.entries()) {
+    await page.keyboard.press(index ? 'ArrowDown' : 'Home');
+    assert.equal(await list.locator('[aria-current=true]').getAttribute('data-option'), row.id);
+    assert.equal(await page.locator('.life2-choice-detail h3').textContent(), row.title);
+    assert.ok((await page.locator('.life2-choice-lock').textContent()).length, 'selected row exposes its requirements');
+    await page.keyboard.press('Enter'); await page.keyboard.press('Space');
+    assert.deepEqual(await page.evaluate(() => window.__life.state()), state, 'locked rows cannot activate');
+  }
+  await page.keyboard.press('Escape');
+  console.log('  phone keyboard: single-page Tab cycle and cashless shop row inspection without activation checked');
 }
 
 // T18 isolated popup section: no changes to the existing map/movement fixtures.
@@ -584,14 +884,15 @@ async function popupChecks(page, base) {
     const seen = [];
     do {
       await checkTextPages(page, '[data-action=popup-text-next]', async () => {
+        assert.deepEqual(await popup.evaluate(auditPopupContent), [], `${kind}: required popup content`);
         assert.deepEqual(await popup.evaluate(panel => {
         const issues = [], box = panel.getBoundingClientRect();
-        if (innerHeight > innerWidth && !panel.hasAttribute('data-fullscreen') && box.height > innerHeight * .55 + 1) issues.push('sheet exceeds 55%');
-        if (panel.querySelectorAll('[data-option]').length > 3) issues.push('more than three choices');
+        if (panel.querySelectorAll('[data-option]').length > 6) issues.push('more than six choices');
         for (const node of [panel, ...panel.querySelectorAll('*')]) {
-          if (node.closest('svg')) continue;
+          if (node.closest('svg') || !node.checkVisibility()) continue;
           const rect = node.getBoundingClientRect(), css = getComputedStyle(node);
-          if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) issues.push('popup content outside sheet');
+          const bounds = node.closest('.life2-popup-tabs') ? { left:0, right:innerWidth, top:0, bottom:innerHeight } : box;
+          if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1 || rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1) issues.push('popup content outside sheet');
           if (node.matches('button') && (rect.width < 44 || rect.height < 44)) issues.push('tap target below 44px');
           if (['auto', 'scroll'].includes(css.overflowY) || node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push(`popup content overflows (${innerWidth}x${innerHeight} ${node.tagName}.${node.className} sh${node.scrollHeight}/ch${node.clientHeight} sw${node.scrollWidth}/cw${node.clientWidth})`);
           if (parseFloat(css.fontSize) < 11) issues.push('text below 11px');
@@ -620,7 +921,7 @@ async function popupChecks(page, base) {
   await page.evaluate(() => window.__popupFixture.show('result', true));
   assert.equal(await page.locator('[data-notification]').count(), 1);
   assert.equal(await page.locator('[data-result-wheel]').count(), 0);
-  console.log('  T18: 11 popup kinds, three choices per page, portrait sheets <=55%, keyboard exit checked');
+  console.log('  T18: 11 popup kinds, six choices per page, PC list/detail panels, keyboard exit checked');
   return kinds;
 }
 
@@ -628,20 +929,23 @@ async function popupChecks(page, base) {
 async function popup2Checks(page, base) {
   await page.goto(`${base}src/ui2/popups/layout.html`);
   await page.waitForFunction(() => window.__popup2Fixture);
-  const audit = async selector => assert.deepEqual(await page.locator(selector).evaluate(panel => {
+  const audit = async selector => {
+    assert.deepEqual(await page.locator(selector).evaluate(auditPopupContent), [], `${selector}: required popup content`);
+    assert.deepEqual(await page.locator(selector).evaluate(panel => {
     const issues = [], box = panel.getBoundingClientRect();
-    if (panel.dataset.popup && innerHeight > innerWidth && !panel.hasAttribute('data-fullscreen') && box.height > innerHeight * .55 + 1) issues.push('sheet exceeds 55%');
-    if (panel.querySelectorAll('[data-option]').length > 3) issues.push('more than three choices');
+    if (panel.querySelectorAll('[data-option]').length > 6) issues.push('more than six choices');
     for (const node of [panel, ...panel.querySelectorAll('*')]) {
-      if (node.closest('svg')) continue;
+      if (node.closest('svg') || !node.checkVisibility()) continue;
       const rect = node.getBoundingClientRect(), css = getComputedStyle(node);
-      if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) issues.push('content outside panel');
+      const bounds = node.closest('.life2-popup-tabs') ? { left:0, right:innerWidth, top:0, bottom:innerHeight } : box;
+      if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1 || rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1) issues.push('content outside panel');
       if (node.matches('button') && (rect.width < 44 || rect.height < 44)) issues.push('tap target below 44px');
       if (['auto', 'scroll'].includes(css.overflowY) || node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push('content overflows');
       if (parseFloat(css.fontSize) < 11) issues.push('text below 11px');
     }
     return [...new Set(issues)];
   }), [], `${selector}: T19 layout`);
+  };
   const kinds = await page.evaluate(() => window.__popup2Fixture.kinds);
   for (const kind of kinds) {
     const model = await page.evaluate(kind => window.__popup2Fixture.show(kind), kind), seen = [];
@@ -668,7 +972,21 @@ async function popup2Checks(page, base) {
   }
   for (let index = 0; index < 21; index++) {
     await page.evaluate(index => window.__popup2Fixture.ending(index), index);
-    await checkTextPages(page, '[data-action=ending-text-next]', () => audit('.life2-ending-screen'));
+    await checkTextPages(page, '[data-action=ending-text-next]', async () => {
+      await audit('.life2-ending-screen');
+      assert.deepEqual(await page.locator('.life2-ending-content').evaluate(content => {
+        const issues = [], stats = content.querySelector('.life2-ending-stats'), copy = content.querySelector('.life2-ending-copy p');
+        if (/최종 점수|최종 성적/.test(copy.textContent)) issues.push('score or grade duplicated in paged copy');
+        const gap = parseFloat(getComputedStyle(content).rowGap);
+        if (copy.getBoundingClientRect().top > stats.getBoundingClientRect().bottom + gap + 1)
+          issues.push('empty gap between stat tiles and text');
+        const art = content.querySelector('.life2-ending-art');
+        for (const image of art.querySelectorAll('img, svg')) {
+          if (parseFloat(getComputedStyle(image).borderTopLeftRadius) < 16) issues.push('ending portrait has square corners');
+        }
+        return issues;
+      }), [], 'ending copy and portrait');
+    });
   }
   await page.evaluate(() => window.__popup2Fixture.collection());
   const seen = [];
@@ -711,7 +1029,9 @@ async function main() {
         const load = async state => page.evaluate(run => window.__life.load(run), state);
         const check = async name => {
           views++;
-          for (const issue of await page.evaluate(audit)) failures.push(`${size} ${name}: ${issue}`);
+          for (const auditView of [audit, auditHud, auditPopupContent, auditPawn]) {
+            for (const issue of await page.evaluate(auditView)) failures.push(`${size} ${name}: ${issue}`);
+          }
         };
         const { checkPages, clickChoice } = pagingChecks(page, check);
         await page.goto(`${base}?seed=11&debug=1`);
@@ -763,7 +1083,15 @@ async function main() {
             fixture.board.step = step; fixture.board.dice = step === 'pick' ? [6, 6] : [1, 1];
             await load(fixture); await checkPages(`${map} ${step} menu`);
           }
+          // Long rank, largest stored funds/debt, empty age-capped battery and
+          // a marker near the end: ordinary first-season fixtures miss these.
+          const late = lateHudFixture(map);
+          await load(late); await check(`${map} late HUD with maximum funds`);
+          await load(lateHudFixture(map, true)); await check(`${map} late S grades with maximum funds`);
+          assert.equal(await page.locator('[data-hud-progress]').getAttribute('aria-valuenow'), String(late.turn));
+          assert.equal(await page.locator('[data-hud-season]').textContent(), `계절 204/204`);
         }
+        await hudChangeChecks(page, load, check);
         await movementChecks(page, load, check); seasons++;
         const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
         event.board.step = 'space'; event.board.dice = [1, 1];
@@ -771,6 +1099,7 @@ async function main() {
         await fix3Checks(page, load, check);
         await fix4Checks(page, load, check);
         await fix5Checks(page, load, check);
+        await phoneKeyboardChecks(page, load);
         await playReviewChecks(page, load, check);
         await tiltChecks(page, load, check);
         const popupKinds = [...await popupChecks(page, base), ...await popup2Checks(page, base)];
@@ -793,7 +1122,7 @@ async function main() {
     finally { await server.close(); }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
-  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll`);
+  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll; HUD five grades, signed deltas, 11–13px route, 40x26 drone, 2px border clearance, overlaps and hidden cards checked`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
