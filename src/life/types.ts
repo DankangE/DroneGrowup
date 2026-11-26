@@ -33,6 +33,7 @@ export type Cond = {
 };
 export type Effect = Omit<V1Effect, 'stage' | 'add' | 'set' | 'end'> & {
   status?: Status; track?: TrackId | null; add?: StatMap; set?: StatMap; end?: EndingId;
+  grantCard?: string;
 };
 export type ChanceMod = Omit<V1ChanceMod, 'stat'> & { stat: Stat };
 export type Roll = Omit<V1Roll, 'mods' | 'success' | 'fail'> & {
@@ -75,6 +76,7 @@ export type GameState = {
   home: { map: MapId; tier: number; deposit: number } | null;
   estates: { map: MapId; tier: number; paid: number }[];
   holdings: { id: string; level: 1 | 2 | 3; paid: number }[];
+  hand: { id: string; at: number }[];
   family: { partnerAt: number | null; marriedAt: number | null; dual: boolean; kids: { born: number; pts: number; stage: 0 | 1 | 2 | 3 | 4 }[] };
   fund: { kind: 0 | 1 | 2; amount: number };
   life: 0 | 1 | 2 | 3;

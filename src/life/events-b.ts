@@ -1,4 +1,5 @@
 // §9.2 B. Periodic life draws include personal home/leisure/health rows; market rows remain tile events.
+import { cardReward } from './cards.ts';
 import { careerAge, careerSalary, careerTrack } from './career2.ts';
 import { salary } from './economy.ts';
 import { estateOffers, homeValue } from './home.ts';
@@ -27,9 +28,11 @@ export const EVENTS_B: LifeEvent[] = [
   { id: 'car_trouble', title: '차량 고장', text: '차에서 낯선 소리가 나더니 시동이 잘 걸리지 않는다.', place: 'garage', when: { min: { car: 1 } }, weight: 2, life: true,
     choices: [s => answer('수리', {}, 60 * s.s.car, { carRepair: 1 }), answer('방치', {}, 0, { carWait: 4 })] },
   { id: 'hobby', title: '취미 권유', text: '친구가 주말을 함께 보낼 새로운 취미를 권한다.', place: 'park', when: {}, weight: 1, life: true,
-    choices: [answer('캠핑 장비', { happy: 8, stamina: 10 }, 200), answer('FPV 동호회', { skill: 6, net: 5 }, 120), answer('집에서 쉰다', { stamina: 10 })] },
+    choices: [cardReward(answer('캠핑 장비', { happy: 8, stamina: 10 }, 200), 'field_patch'),
+      cardReward(answer('FPV 동호회', { skill: 6, net: 5 }, 120), 'stick_drill'), answer('집에서 쉰다', { stamina: 10 })] },
   { id: 'world_trip', title: '세계 일주 특가', text: '언젠가 가 보고 싶었던 여행 상품이 눈에 들어왔다.', place: 'airport', when: { min: { money: 3000 } }, weight: 2, life: true,
-    choices: [answer('떠난다', { happy: 45, stamina: 30 }, 2500, { perf: -15 }), answer('한 달 살기', { happy: 15 }, 700), answer('다음에')] },
+    choices: [cardReward(answer('떠난다', { happy: 45, stamina: 30 }, 2500, { perf: -15 }), 'route_notes'),
+      cardReward(answer('한 달 살기', { happy: 15 }, 700), 'peer_intro'), answer('다음에')] },
   { id: 'luxury_sale', title: '명품 세일', text: '도심 쇼윈도에 큰 할인 안내가 붙었다.', place: 'department_store', when: {}, weight: 3,
     eligible: s => ['B', 'E'].includes(s.board.pos[0]), choices: [answer('산다', { happy: 6, rep: 4 }, 500), answer('구경만', { happy: 1 })] },
   { id: 'tax_refund', title: '연말정산 환급', text: '연말정산에서 돌려받을 금액이 확정됐다.', place: 'office', when: {}, weight: 4,

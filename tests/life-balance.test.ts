@@ -17,7 +17,8 @@ function sample(runs = 1): Batch {
     ...structuredClone(template), policy, seed: i + 1, events: {}, wealth: Object.fromEntries(AGES.map(age => [age, 1000])),
   })));
   return { base, single: base.map(r => ({ ...structuredClone(r), experiment: 'single' })),
-    noBank: base.map(r => ({ ...structuredClone(r), experiment: 'no-bank', bankUses: 0 })), failures: [] };
+    noBank: base.map(r => ({ ...structuredClone(r), experiment: 'no-bank', bankUses: 0 })),
+    noCards: base.map(r => ({ ...structuredClone(r), experiment: 'no-cards', cardUses: {} })), failures: [] };
 }
 const check = (out: Batch, id: string, runs = 1) => evaluateCriteria(out, runs).find(c => c.id === id)!;
 
@@ -47,9 +48,9 @@ test('every hard gate uses inclusive raw bounds, rejects nonfinite values and fa
   ] as const) assert.deepEqual([check(sample(), id).min, check(sample(), id).max], [min, max], id);
 });
 
-test('all 14 areas, target policies, 19 careers and 21 endings have separate gates; time also fails closed', () => {
+test('all 14 original areas plus cards, target policies, 19 careers and 21 endings have separate gates; time also fails closed', () => {
   const rows = evaluateCriteria(sample(), 1);
-  assert.equal(new Set(rows.map(c => c.area)).size, 14);
+  assert.equal(new Set(rows.map(c => c.area)).size, 15);
   assert.equal(rows.filter(c => c.id.startsWith('career:seen:')).length, 19);
   assert.equal(rows.filter(c => c.id.startsWith('career:top:')).length, 14);
   assert.equal(rows.filter(c => c.id.startsWith('ending:')).length, 21);
@@ -63,6 +64,8 @@ test('completion checks sample identities, all experiments, action limits, forbi
   out.single[0].turn = 203; assert.equal(check(out, 'complete:turns').status, 'FAIL');
   out.single[0].violations = 1; assert.equal(check(out, 'complete:actions').status, 'FAIL');
   out.noBank[0].bankUses = 1; assert.equal(check(out, 'bank:forbidden').status, 'FAIL');
+  out.noCards[0].cardUses.dream = 1; assert.equal(check(out, 'cards:forbidden').status, 'FAIL');
+  out.noCards.pop(); assert.equal(check(out, 'complete:no-cards').status, 'FAIL');
   out.failures.push('stuck'); assert.equal(check(out, 'complete:stalls').status, 'FAIL');
 });
 

@@ -2,9 +2,10 @@
 // Like v1, distinct qualifications/popups/relocations are incomparable rather than assigned invented prices.
 import { pathToFileURL } from 'node:url';
 import { RULES } from '../src/life/data.ts';
-import { ALL_EVENTS, LIFE_EVENTS, newGame } from '../src/life/engine.ts';
+import { ALL_EVENTS, LIFE_EVENTS, newGame, choose } from '../src/life/engine.ts';
 import { materialize, EVENT_RULES } from '../src/life/events-a.ts';
 import type { LifeChoice, LifeEffect } from '../src/life/events-a.ts';
+import { CARDS, CARD_KEYS, grantCard } from '../src/life/cards.ts';
 import { STATS } from '../src/life/life-data.ts';
 import type { GameState } from '../src/life/types.ts';
 
@@ -20,6 +21,7 @@ function vector(choice: LifeChoice, effect: LifeEffect) {
   values.money = (values.money ?? 0) - (choice.cost ?? 0);
   values.stamina = (values.stamina ?? 0) - (choice.tire ?? 0);
   const tokens = Object.entries(effect.set ?? {}).map(([key, n]) => `set:${key}:${n}`);
+  if (effect.grantCard) tokens.push(`card:${effect.grantCard}`);
   if (effect.flag) tokens.push(`flag:${effect.flag}`);
   if (effect.status) tokens.push(`status:${effect.status}`);
   if (effect.track) tokens.push(`track:${effect.track}`);
@@ -69,6 +71,27 @@ export function checkChoices(id: string, choices: LifeChoice[], legacy = false):
   }
   return [...findings];
 }
+/** Held inventory, free slots and the seasonal use budget are real resources.
+ * Dropping is a capacity tradeoff; using a card cannot be compared as a free stat gain. */
+export function cardDominanceReport() {
+  const dominated: string[] = [];
+  for (const card of CARDS) {
+    const state = grantCard(choose(newGame(1), 'start:self').state, card.id);
+    state.s.drone = 1; state.s.cond = 50;
+    const states = [state, choose(state, `card:use:${card.id}`).state, choose(state, `card:drop:${card.id}`).state];
+    const points: Point[] = states.map(s => {
+      const values: Record<string, number> = { ...s.s, hand: s.hand.length,
+        slots: 3 - s.hand.length, useBudget: s.timers[CARD_KEYS.usedAt] === s.turn ? 0 : 1 };
+      for (const key of Object.keys(values)) if (bad.has(key)) values[key] = -values[key];
+      return { expected: values, worst: values,
+        tokens: JSON.stringify({ flags: s.flags, step: s.board.step, again: s.timers[CARD_KEYS.again], popup: s.timers.asset_popup }) };
+    });
+    for (const [i, a] of points.entries()) for (const [j, b] of points.entries()) {
+      if (i !== j && dominates(a, b)) dominated.push(`${card.id}:${['hold','use','drop'][i]}>${['hold','use','drop'][j]}`);
+    }
+  }
+  return { cards: CARDS.length, dominated };
+}
 export function dominanceReport() {
   const findings = new Set<string>(), missing: string[] = [];
   let responses = 0;
@@ -95,8 +118,10 @@ export function dominanceReport() {
     dominated: [...findings].filter(pair => !SPEC_EXCEPTIONS.includes(pair)) };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const report = dominanceReport();
+  const report = dominanceReport(), held = cardDominanceReport();
   console.log(`life dominance: ${report.events} events, ${report.responses} responses, ${report.missing.length} missing free exits, ${report.dominated.length} unapproved dominated pairs, ${report.exceptions.length} explicit spec exception(s)`);
   for (const pair of [...report.dominated, ...report.exceptions]) console.log(`  ${report.exceptions.includes(pair) ? 'SPEC EXCEPTION' : 'DOMINATED'} ${pair}`);
-  if (report.missing.length || report.dominated.length) process.exitCode = 1;
+  console.log(`held-card dominance: ${held.cards} cards, hold/use/drop with inventory and season budget, ${held.dominated.length} dominated pairs`);
+  for (const pair of held.dominated) console.log(`  CARD DOMINATED ${pair}`);
+  if (report.missing.length || report.dominated.length || held.dominated.length) process.exitCode = 1;
 }

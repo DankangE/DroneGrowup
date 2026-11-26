@@ -1,5 +1,6 @@
 // T09: shops, funds and luck. Public transitions return detached state; tables live in life-data.
 import { RULES } from './data.ts';
+import { CARDS, CARD_TEXT, cappedChanceBonus, grantCard, offeredCard } from './cards.ts';
 import { careerTrack, specialView } from './career2.ts';
 import { ECONOMY_KEYS } from './economy.ts';
 import type { EconomyChoice } from './economy.ts';
@@ -46,9 +47,9 @@ export function discountedChoice(state: GameState, id: string, choice: Choice, t
   const shop = id.startsWith('biz:buy:') ? shopFor(id.split(':')[2]) : undefined;
   return { ...choice, cost, ...(shop && { desc: T.shop(cost, shopIncome(state, shop.id)) }) };
 }
-export const luckChanceBonus = (state: GameState, id: string) =>
+export const luckChanceBonus = (state: GameState, id: string, dialBonus = 0) => cappedChanceBonus(
   (state.flags.includes(K.dream) ? R.dreamPct : 0)
-  + (id === 'promo' && state.flags.includes(K.benefactor) ? R.benefactorPct : 0);
+  + (id === 'promo' && state.flags.includes(K.benefactor) ? R.benefactorPct : 0), dialBonus);
 
 /** Only actual purchases/skill rolls consume these flags, never views, dice or annual returns. */
 export function consumeLuck(prev: GameState, id: string, rolled: boolean, tileAction = true): GameState {
@@ -160,8 +161,11 @@ export function drawLuck(prev: GameState): { state: GameState; card: typeof LUCK
   const card = pool[randInt(state, pool.length)];
   state.timers[K.lastLuck] = LUCK.indexOf(card);
   state.board.step = 'bonus';
-  if (card.action === 'again') { state.board.step = 'spin'; state.board.dice = []; }
-  if (card.action === 'shortcut') { state.timers[K.popup] = K.shortcut; state.board.step = 'space'; }
+  if (CARDS.some(held => held.id === card.id)) {
+    state = grantCard(state, card.id);
+    const text = offeredCard(state) ? CARD_TEXT.offered(card.title) : CARD_TEXT.stored(card.title);
+    return { state, card: { ...card, text }, effect: { text } };
+  }
   const salaried = careerTrack(state)?.salaried;
   if (card.action === 'promotion' && salaried) { state.timers[K.popup] = K.promotion; state.board.step = 'space'; }
   if (card.action === 'demotion' && salaried) state = performance(state, R.demotionPerf);
