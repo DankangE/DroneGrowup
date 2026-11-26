@@ -7,7 +7,9 @@ import { materialize, EVENT_RULES } from '../src/life/events-a.ts';
 import type { LifeChoice, LifeEffect } from '../src/life/events-a.ts';
 import { CARDS, CARD_KEYS, grantCard } from '../src/life/cards.ts';
 import { WORLD } from '../src/life/world.ts';
-import { STATS, ASSET_KEYS } from '../src/life/life-data.ts';
+import { STATS, ASSET_KEYS, DIAL_SETTINGS } from '../src/life/life-data.ts';
+import { ACTIONS } from '../src/life/compat.ts';
+import { CREATOR_VIDEO, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from '../src/life/tracks.ts';
 import type { GameState } from '../src/life/types.ts';
 
 // §9.2 exceptions: headhunter opt-out; scam at low theory; audit counsel at high net worth.
@@ -93,10 +95,24 @@ export function cardDominanceReport() {
   }
   return { cards: CARDS.length, dominated };
 }
+const dialActionIds = [...new Set([...ACTIONS, ...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, CREATOR_VIDEO]
+  .filter(action => action.flight && action.roll).map(action => `act:${action.id}`))];
+/** An enabled notch counts only when it participates in an actual pair comparison. */
+export function dialCoverageFailures(samples: number, pairs: number, compared: Readonly<Record<string, number>>): string[] {
+  const failures: string[] = [];
+  if (samples === 0) failures.push('no dial samples');
+  if (pairs === 0) failures.push('no dial pairs');
+  for (const id of dialActionIds) for (const row of DIAL_SETTINGS) {
+    const key = `${id}@${row.id}`;
+    if (!(compared[key] > 0)) failures.push(`${key}: never enabled and compared`);
+  }
+  return failures;
+}
 /** Compare actual integer wedges and forecast deltas, including cap/rounding cases.
  * Keep all stat axes: score-relevant gains must never disappear into a cash-only proxy. */
 export function dialDominanceReport() {
-  const dominated = new Set<string>(), groups: Record<string, number> = {}; let pairs = 0, samples = 0;
+  const dominated = new Set<string>(), groups: Record<string, number> = {}, compared: Record<string, number> = {};
+  let pairs = 0, samples = 0;
   for (const track of ['pilot', 'employee', 'racer'] as const)
     for (const skill of [30, 150, 1000]) for (const cond of [20, 70]) for (const stamina of [20, 80])
       for (const dream of [false, true]) for (const step of ['space', 'bonus'] as const) {
@@ -119,6 +135,7 @@ export function dialDominanceReport() {
       });
       for (const a of profiles) for (const b of profiles) {
         if (a === b) continue; pairs++;
+        compared[a.row.id] = (compared[a.row.id] ?? 0) + 1;
         if (Object.keys(a.expected).every(key => a.expected[key] >= b.expected[key])) {
           const finding = `${option.id}@${a.row.notch}>${b.row.notch}: skill=${skill}, condition=${cond}, stamina=${stamina}, dream=${dream}, ${step}; chance=${a.row.chance}/${b.row.chance}, crash=${a.row.ticks.crash}/${b.row.ticks.crash}, tire=${a.row.tire}/${b.row.tire}`;
           if (!dominated.has(finding)) {
@@ -135,7 +152,8 @@ export function dialDominanceReport() {
       }
     }
   }
-  return { samples, pairs, dominated: [...dominated], groups };
+  return { samples, pairs, dominated: [...dominated], groups, compared,
+    coverageFailures: dialCoverageFailures(samples, pairs, compared) };
 }
 export function dominanceReport() {
   const findings = new Set<string>(), missing: string[] = [];
@@ -170,6 +188,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   for (const pair of held.dominated) console.log(`  CARD DOMINATED ${pair}`);
   console.log(`dial dominance: ${dial.samples} samples, ${dial.pairs} ordered pairs, ${dial.dominated.length} dominated cases`);
   console.log(`dial dominance groups: ${JSON.stringify(dial.groups)}`);
+  console.log(`dial coverage: ${Object.keys(dial.compared).length} action/notch combinations compared, ${dial.coverageFailures.length} failures`);
+  for (const failure of dial.coverageFailures) console.log(`  DIAL COVERAGE ${failure}`);
   for (const pair of dial.dominated) console.log(`  DIAL DOMINATED ${pair}`);
-  if (report.missing.length || report.dominated.length || held.dominated.length || dial.dominated.length) process.exitCode = 1;
+  if (report.missing.length || report.dominated.length || held.dominated.length || dial.dominated.length || dial.coverageFailures.length) process.exitCode = 1;
 }

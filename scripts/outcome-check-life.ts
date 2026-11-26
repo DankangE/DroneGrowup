@@ -117,11 +117,14 @@ export function outcomeReport() {
     const option: OptionView | undefined=card ? { id,kind:'board',place:WORLD.find(n=>n.id===state.board.pos)!.place,
       title:card.choice.title,desc:card.choice.desc,cost:0,tire:0,free:true,enabled:!card.locks.length,locks:card.locks,missing:[],
       sure:{text:card.choice.effect!.text,add:card.choice.effect!.add??{}} } : options(state,menu).find(o=>o.id===baseOptionId(id));
-    if(!option?.enabled){failures.push(`${key}: unavailable ${option?.locks.join(', ')??id}`);return;}
-    const variants: OptionView[] = [option, ...(option.dial?.settings.filter(row => row.enabled).map(row => ({
-      ...option, id: row.id, tire: row.tire, locks: row.locks, missing: row.missing,
+    if(!option){failures.push(`${key}: unavailable ${id}`);return;}
+    const dialVariants: OptionView[] = option.dial?.settings.map(row => ({
+      ...option, id: row.id, enabled: row.enabled, noEffect: row.noEffect, tire: row.tire, locks: row.locks, missing: row.missing,
       roll: { ...option.roll!, chance: row.chance, crashPct: row.crashPct, ticks: row.ticks, success: row.success },
-    })) ?? [])];
+    })) ?? [];
+    const selected = id === option.id ? option : dialVariants.find(row => row.id === id);
+    if(!selected?.enabled){failures.push(`${key}: unavailable ${selected?.locks.join(', ')??id}`);return;}
+    const variants = [option, ...dialVariants].filter(row => row.enabled);
     for (const variant of variants) {
       const result=checkOutcome(state,variant,menu,force);choices++;cases+=result.cases;
       result.branches.forEach(branch=>coverage.add(`${key}/${variant.id}/${branch}`));

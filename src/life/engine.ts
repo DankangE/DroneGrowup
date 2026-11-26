@@ -21,7 +21,7 @@ import { applyHomeChoice, homeRecovery, yearEndHome } from './home.ts';
 import type { EstateOffer } from './home.ts';
 import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery, familyVisit } from './family.ts';
 import { CREATOR_VIDEO, JOB_RULES, SPECIAL_RULES as S, SPECIAL_TEXT as ST, TRACKS, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
-import { BOARD_CHOICES, CAREER_ACTIONS, DIAL_SETTINGS, ENDING_KEYS, ENDING_RULES, ENDING_TEXT, FAMILY_RULES, FAMILY_TEXT, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
+import { BOARD_CHOICES, CAREER_ACTIONS, DIAL_SETTINGS, DIAL_TEXT, DIAL_ZERO_TIRE_BOLD, ENDING_KEYS, ENDING_RULES, ENDING_TEXT, FAMILY_RULES, FAMILY_TEXT, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
   SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT, WEDDINGS } from './life-data.ts';
 import { answer, childFor, EVENTS_A, EVENT_KEYS as EK, EVENT_RULES as ER, EVENT_TEXT as ET,
   familyEventEffect, materialize } from './events-a.ts';
@@ -79,8 +79,9 @@ export type OptionView = Omit<V1OptionView, 'place' | 'missing' | 'roll' | 'sure
   place: PlaceId; missing: { stat: Stat; need: number }[];
   roll?: { chance: number; staminaPct: number; success: OutcomeView; fail: OutcomeView; crashPct?: number; ticks?: DialTicks };
   sure?: OutcomeView;
+  noEffect?: boolean;
   dial?: { selected: DialNotch; spare: number; settings: {
-    notch: DialNotch; id: string; label: string; enabled: boolean; locks: string[];
+    notch: DialNotch; id: string; label: string; enabled: boolean; noEffect: boolean; locks: string[];
     missing: OptionView['missing']; chance: number; crashPct: number; ticks: DialTicks;
     tire: number; success: OutcomeView;
   }[] };
@@ -228,7 +229,9 @@ function balanceAction(action: ActionDef): ActionDef {
 const BALANCED_ACTIONS = [...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, CREATOR_VIDEO, ...ACTIONS].map(balanceAction);
 function view(state: GameState, id: string, r: Resolved, notch: DialNotch = 'mid', withDial = true): OptionView {
   const dial = !!r.choice.roll && r.flight;
-  const setting = DIAL_SETTINGS.find(row => row.id === notch)!;
+  const baseSetting = DIAL_SETTINGS.find(row => row.id === notch)!;
+  const setting = notch === 'bold' && (r.choice.tire ?? 0) === 0
+    ? { ...baseSetting, ...DIAL_ZERO_TIRE_BOLD } : baseSetting;
   const { kind, place, flight } = r, choice = discountedChoice(state, id, r.choice, !r.free);
   const { locks, missing } = unmet(state, choice.need);
   locks.push(...(r.jobLocks ?? []));
@@ -255,18 +258,24 @@ function view(state: GameState, id: string, r: Resolved, notch: DialNotch = 'mid
       ...(dial && { crashPct: clamp(flightOdds(state, choice).crashPct + setting.crashDelta, 0, LIFE_RULES.percent) }) };
     if (dial) {
       option.roll.ticks = dialTicks(option.roll.chance, option.roll.crashPct!);
+      const midTicks = notch === 'mid' ? option.roll.ticks : view(state, id, r, 'mid', false).roll!.ticks!;
+      option.noEffect = notch !== 'mid' && option.roll.ticks.success === midTicks.success
+        && option.roll.ticks.fail === midTicks.fail && option.roll.ticks.crash === midTicks.crash;
+      if (option.noEffect) { option.enabled = false; locks.push(DIAL_TEXT.noEffect); }
       const money = option.roll.success.add.money;
       if (money && money > 0) option.roll.success.add.money = Math.floor(money * setting.payPct / LIFE_RULES.percent);
     }
     if (id === 'promo') option.desc = CAREER_TEXT.promoDesc(promotionView(state).title, option.roll.chance);
   } else if (choice.effect) option.sure = outcome(state, choice.effect);
-  if (dial && withDial) option.dial = { selected: state.board.dial ?? 'mid',
-    spare: Math.max(0, state.s.drone - (choice.need?.min?.drone ?? 1)),
-    settings: DIAL_SETTINGS.map(row => {
-      const v = view(state, id, r, row.id, false), roll = v.roll!;
-      return { notch: row.id, id: `${id}@${row.id}`, label: row.label, enabled: v.enabled, locks: v.locks,
+  if (dial && withDial) {
+    const settings = DIAL_SETTINGS.map(row => {
+      const v = row.id === notch ? option : view(state, id, r, row.id, false), roll = v.roll!;
+      return { notch: row.id, id: `${id}@${row.id}`, label: row.label, enabled: v.enabled, noEffect: v.noEffect!, locks: v.locks,
         missing: v.missing, chance: roll.chance, crashPct: roll.crashPct!, ticks: roll.ticks!, tire: v.tire, success: roll.success };
-    }) };
+    });
+    option.dial = { selected: settings.find(row => row.notch === state.board.dial && row.enabled)?.notch ?? 'mid',
+      spare: Math.max(0, state.s.drone - (choice.need?.min?.drone ?? 1)), settings };
+  }
   return option;
 }
 
@@ -373,10 +382,13 @@ function resolve(state: GameState, interactive = false): Map<string, Resolved> {
       if (!(recording ? tile && node.kind === 'job'
         : tile ? SPACE_MENU[node.kind]?.includes(original.id) : original.place === node.place)) continue;
       const action = startingAction(state, original, tile);
-      if (!met(state, action.when) || (!tile && state.s.stamina < (action.tire ?? 0))) continue;
+      if (!met(state, action.when)) continue;
       if (SPACE_MENU.rankup?.includes(action.id) && (!tile || canPromote(state))) continue;
-      choices.set(`act:${action.id}`, { kind: action.flight ? 'job' : 'action', place: action.place,
-        choice: tile ? { ...action, tire: 0 } : action, flight: !!action.flight });
+      const id = `act:${action.id}`, resolved: Resolved = { kind: action.flight ? 'job' : 'action', place: action.place,
+        choice: tile ? { ...action, tire: 0 } : action, flight: !!action.flight };
+      if (!tile && state.s.stamina < (action.tire ?? 0)
+        && !(action.flight && action.roll && view(state, id, resolved).dial!.settings.some(row => row.enabled))) continue;
+      choices.set(id, resolved);
     }
     board(tile ? 'skip' : 'end', tile ? BOARD_CHOICES.skip : BOARD_CHOICES.end);
   }
@@ -387,6 +399,13 @@ export function options(state: GameState, menu: 'board' | 'phone' = 'board', int
   if (menu === 'phone') return phoneServices(state).map(({ id, locks, ...service }) =>
     view(state, id, { ...service, flight: false, jobLocks: locks }));
   return [...resolve(state, interactive)].map(([id, r]) => view(state, id, r));
+}
+
+/** A disabled middle can still carry an affordable notch; both flows use this predicate. */
+export function emptyBonus(state: GameState): boolean {
+  if (state.phase !== 'action' || state.board.step !== 'bonus') return false;
+  const enabled = options(state).filter(option => option.enabled || option.dial?.settings.some(row => row.enabled));
+  return enabled.length === 1 && enabled[0].id === 'end';
 }
 
 function phoneServices(state: GameState): ReturnType<typeof economyChoices> {
@@ -732,10 +751,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     state = grantCard(state, effect.grantCard);
     result.notes.push(cardGainText(state, effect.grantCard));
   }
-  if (automatic && !r.card && state.phase === 'action' && state.board.step === 'bonus') {
-    const enabled = options(state).filter(option => option.enabled);
-    if (enabled.length === 1 && enabled[0].id === 'end') state = endSeason(state, result, runHooks);
-  }
+  if (automatic && !r.card && emptyBonus(state)) state = endSeason(state, result, runHooks);
   state = recordAchievements(state);
   result.statusTo = state.status; result.trackTo = state.track;
   const settlement = diff(afterOption, state.s);

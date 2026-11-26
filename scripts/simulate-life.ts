@@ -10,7 +10,7 @@ import type { BotContext, PolicyId } from '../src/life/bots.ts';
 import { CAREER_KEYS } from '../src/life/career2.ts';
 import { ECONOMY_TEXT } from '../src/life/economy.ts';
 import { finalNetWorth, settlementSummary } from '../src/life/ending.ts';
-import { ALL_EVENTS, choose, newGame, options } from '../src/life/engine.ts';
+import { ALL_EVENTS, choose, emptyBonus, newGame, options } from '../src/life/engine.ts';
 import { choose as interactiveChoose } from '../src/life/flow.ts';
 import type { OptionView, Result } from '../src/life/engine.ts';
 import { ENDINGS2, ENDING_KEYS, ENDING_RULES, LIFE_RULES, MAP_IDS } from '../src/life/life-data.ts';
@@ -86,8 +86,6 @@ export function runLife(policy: PolicyId, seed: number, experiment: Experiment =
     tried.push(id); report.steps++;
     // Bots retain their single-step engine semantics. Price presentation as the
     // interactive F5 transaction: collapse only the otherwise empty end menu.
-    const emptyBonus = (s: GameState) => s.phase === 'action' && s.board.step === 'bonus'
-      && options(s).filter(o => o.enabled).every(o => o.id === 'end');
     const timed = menu === 'board' && emptyBonus(state) ? interactiveChoose(before, option.id, menu, experiment === 'single') : next;
     const activity = id === 'end' && emptyBonus(before) ? counts()
       : choiceTiming(before, timed.state, timed.result, options(before, menu), menu).counts;
