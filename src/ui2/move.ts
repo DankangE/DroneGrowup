@@ -29,20 +29,25 @@ export function movementFrames(origin: string, result: Pick<Result, 'move' | 'up
 
 type Schedule = (callback: () => void, ms: number) => () => void;
 const schedule: Schedule = (callback, ms) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); };
+type Completion = (frame: Frame, advance: () => void) => (() => void) | undefined;
 
-/** One cancellable presentation sequence; never calls the engine or changes game state. */
-export function playback(frames: readonly Frame[], show: (frame: Frame) => void, done: () => void, later = schedule) {
+/** A completion hook may own a frame's wait and cleanup; other frames use their exact duration. */
+export function playback(frames: readonly Frame[], show: (frame: Frame) => void, done: () => void,
+  later = schedule, completion?: Completion) {
   let index = -1, active = true, cancelTimer = () => {};
   function cancel() { active = false; cancelTimer(); }
   function finish() { if (active) { cancel(); done(); } }
   function next() {
     if (!active) return;
-    cancelTimer(); index++;
+    cancelTimer(); cancelTimer = () => {}; index++;
     const frame = frames[index];
     if (!frame) { finish(); return; }
-    show(frame);
     const expected = index;
-    cancelTimer = later(() => { if (active && index === expected) next(); }, frame.ms);
+    show(frame);
+    const advance = () => { if (active && index === expected) next(); };
+    const cleanup = completion?.(frame, advance) ?? later(advance, frame.ms);
+    // Also safe when a completion hook settles synchronously.
+    if (!active || index !== expected) cleanup(); else cancelTimer = cleanup;
   }
   return { next, finish, cancel };
 }

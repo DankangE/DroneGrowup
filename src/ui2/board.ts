@@ -145,8 +145,12 @@ export function board(state: GameState, position = state.board.pos): HTMLElement
       const pawn = el('div', 'life2-pawn');
       pawn.dataset.pawn = node.id;
       pawn.setAttribute('aria-label', '내 위치');
-      pawn.append(pilotAvatar(), progressDrone());
-      tile.append(pawn);
+      const marker = el('span', 'life2-pawn-marker');
+      marker.setAttribute('aria-hidden', 'true');
+      marker.append(pilotAvatar(), progressDrone(), el('span', 'life2-pawn-label', '나'));
+      pawn.append(marker);
+      const halo = el('span', 'life2-location-halo'); halo.setAttribute('aria-hidden', 'true');
+      tile.append(halo, pawn);
     }
     grid.append(tile);
   }

@@ -71,10 +71,9 @@ html #app.life2 .life2-bottom [data-action=end-season] { order:3; }
 html #app.life2 .life2-bottom .life2-wheel { justify-content:flex-start; }
 html #app.life2 .life2-wheel-face { background:#fff; border:3px solid #17a9c0; width:clamp(30px,2.4vw,48px); height:clamp(30px,2.4vw,48px); font-size:clamp(20px,1.6vw,34px); color:#173347; }
 html #app.life2 .life2-bottom .life2-dice { background:#173347ed; border:2px solid #fff; border-radius:50px; min-height:6vh; }
-html #app.life2 .life2-roulette { position:absolute; left:5vw; top:31vh; width:14vw; height:14vw; max-height:26vh; max-width:26vh; border:8px solid #fff; border-radius:50%; background:conic-gradient(#ff687a 0 60deg,#ffc936 60deg 120deg,#41d9c1 120deg 180deg,#28b3eb 180deg 240deg,#a678ee 240deg 300deg,#ff9444 300deg); box-shadow:0 9px 0 #18475b,0 14px 18px #164f4c55; display:grid; place-items:center; z-index:2; transform:rotate(-12deg); }
-html #app.life2 .life2-roulette::before { content:'▼'; position:absolute; top:-25px; color:#fff; -webkit-text-stroke:3px #173549; font-size:40px; }
-html #app.life2 .life2-roulette strong { border:5px solid #fff; border-radius:50%; width:52%; height:52%; display:grid; place-content:center; background:#173549; color:#fff; font-size:clamp(27px,3vw,60px); transform:rotate(12deg); }
-html #app.life2 .life2-roulette[data-spinning] { animation:pc-wheel .7s linear infinite; }
+html #app.life2 .life2-roulette { position:absolute; left:5vw; top:31vh; width:14vw; height:14vw; max-height:26vh; max-width:26vh; border:8px solid #fff; border-radius:50%; background:#173549; box-shadow:0 9px 0 #18475b,0 14px 18px #164f4c55; display:grid; place-items:center; z-index:2; pointer-events:none; }
+html #app.life2 .life2-roulette-disc { position:absolute; inset:0; border-radius:50%; background:conic-gradient(#ff687a 0 60deg,#ffc936 60deg 120deg,#41d9c1 120deg 180deg,#28b3eb 180deg 240deg,#a678ee 240deg 300deg,#ff9444 300deg); }
+html #app.life2 .life2-roulette strong { position:relative; border:4px solid #fff; border-radius:50%; width:76%; height:76%; display:grid; place-content:center; background:#173549; color:#fff; font-size:clamp(20px,2.5vw,48px); white-space:nowrap; }
 html #app.life2 .life2-key-hints { position:absolute; right:2vw; bottom:2vh; display:flex; gap:8px; z-index:16; font-size:var(--pc-small); }
 html #app.life2 .life2-key-hints span { padding:7px 12px; background:#183347ee; border:2px solid #fff; border-radius:30px; }
 /* Choice overlays share a list + illustrated detail grammar. */
@@ -153,7 +152,6 @@ html #app.life2 .ng-gate button { background:#ffdc32; color:#173347; border:4px 
 html #app.life2 .life2-ending { background:#117c8f; color:#fff; width:100%; height:100%; max-width:none; padding:4vh 6vw; }
 html #app.life2 .life2-ending h1 { font-size:clamp(38px,4vw,80px); color:#fff; }
 html #app.life2 .life2-ending button { background:#ffe638; color:#173347; border:3px solid #fff; padding:12px 20px; font-size:var(--pc-text); border-radius:30px; }
-@keyframes pc-wheel { to { transform:rotate(348deg); } }
 @media(prefers-reduced-motion:reduce) { html #app.life2 *,html #app.life2 *::before,html #app.life2 *::after { animation:none!important; transition:none!important; } }
 @media(max-width:899px) { html #app.life2 { min-width:900px; min-height:700px; overflow:auto; } }
 html #app.life2 .life2-destinations { top:28vh; bottom:8vh; grid-template:'heading heading' auto 'list scene' minmax(0,1fr) 'pager pager' auto / 44% minmax(0,1fr); }
@@ -245,7 +243,8 @@ html #app.life2 .life2-destinations { inset:26vh 2vw 7vh 70vw; padding:12px; gri
 html #app.life2 .life2-destinations h2 { font-size:clamp(18px,1.45vw,28px); }
 html #app.life2 .life2-destinations .life2-option { min-height:44px; padding:6px 12px; }
 html #app.life2 .life2-destinations .life2-choice-detail { padding:8px; gap:4px; }
-html #app.life2 .life2-shell:has(.life2-popup) .life2-roulette,html #app.life2 .life2-shell:has(.life2-destinations) .life2-roulette { display:none; }
+/* The left console stays clear of both board geometries and the right destination panel. */
+html #app.life2 .life2-shell:has(.life2-popup) .life2-roulette { display:none; }
 html #app.life2 .life2-popup { top:26vh!important; }
 html #app.life2 .life2-popup-list { grid-auto-rows:clamp(48px,7.1vh,88px); align-content:start; }
 html #app.life2 .life2-popup-row,html #app.life2 .life2-popup-choice { height:100%; min-height:44px; }
@@ -425,4 +424,29 @@ html #app.life2 .life2-choice-outcome [data-tone=bad] { color:#ffb5aa; }
 html #app.life2 .life2-choice-outcome [data-tone=neutral] { color:#e0edf4; }
 html #app.life2 :is(.life2-choice-outcomes,.life2-outcome-notes,.life2-outcome-overflow):empty { display:none; }
 html #app.life2 .life2-choice-detail[data-inline-details] [data-action=popup-details] { margin-top:auto; font-size:clamp(12px,.95vw,17px); }
+}
+
+/* The measured pawn stays fixed; only its inset badge hops inside that box. */
+html #app.life2 .life2-pawn-label,html #app.life2 .life2-location-halo { display:none; }
+@media(min-width:900px) {
+html #app.life2 .life2-pawn-marker { position:absolute; inset:4px 3px 2px; border:3px solid #142f46; border-radius:50% 50% 45% 45%; background:#fff5b0; outline:2px solid #fff; box-shadow:0 2px 0 #142f46,0 0 0 4px #ffe538; transform-origin:center bottom; }
+html #app.life2 .life2-pawn .life2-hud-avatar { inset:1px auto auto 15%; width:70%; height:65%; border:2px solid #fff; border-radius:50%; background:#24bbcd; }
+html #app.life2 .life2-pawn .life2-progress-drone { left:6%; bottom:1px; top:auto; width:88%; height:38%; }
+html #app.life2 .life2-pawn-label { position:absolute; right:-2px; bottom:-2px; z-index:1; display:grid; place-items:center; width:19px; height:19px; border:1px solid #fff; border-radius:50%; background:#142f46; color:#fff; text-shadow:none; font-size:12px; line-height:1; }
+html #app.life2 .life2-tile[aria-current=location] { border-color:#ffe538; box-shadow:0 0 0 3px #142f46,0 0 0 5px #fff59e,0 7px 0 #214c65; }
+html #app.life2 .life2-board-tilted .life2-tile[aria-current=location]::before { border-color:#ffe538; box-shadow:0 0 0 3px #142f46,0 0 0 5px #fff59e,0 9px 0 #214c65; }
+html #app.life2 .life2-location-halo { display:block; position:absolute; inset:-3px; border:2px solid #fff9c3; border-radius:inherit; box-shadow:0 0 0 5px #ffe53850; pointer-events:none; animation:life2-location-pulse 1.6s ease-in-out infinite; }
+html #app.life2 [data-hopping] .life2-pawn-marker { animation:life2-pawn-hop var(--step-ms) ease-out var(--move-delay,0ms) both; }
+html #app.life2 [data-landing] .life2-location-halo { animation:life2-pawn-landing var(--step-ms) ease-out var(--move-delay,0ms) both; }
+@keyframes life2-location-pulse { 0%,100% { opacity:.6; box-shadow:0 0 0 3px #ffe53850; } 50% { opacity:1; box-shadow:0 0 0 6px #ffe53825; } }
+@keyframes life2-pawn-hop {
+  0% { transform:scale(.94,.9); }
+  35% { transform:translateY(-3px) scale(.96,1.02); }
+  65% { transform:scale(1.04,.9); }
+  80%,100% { transform:none; }
+}
+@keyframes life2-pawn-landing { 0% { opacity:.6; box-shadow:0 0 0 2px #fff59e; } 45% { opacity:1; box-shadow:0 0 0 7px #ffe53880; } 80%,100% { opacity:1; box-shadow:0 0 0 4px #ffe53850; } }
+@media(prefers-reduced-motion:reduce) {
+  html #app.life2 .life2-pawn-marker,html #app.life2 .life2-location-halo { animation:none!important; transform:none; }
+}
 }
