@@ -14,39 +14,58 @@ export const WHEEL_STYLE = `
 .life2 .life2-spin-value { display:grid; place-items:center; }
 .life2 .life2-spin-value > span { grid-area:1 / 1; }
 .life2 .life2-roll-question { visibility:hidden; }
+.life2 .life2-roll-question::before { content:'?'; }
 .life2 :is([data-spinning],[data-rolling]) .life2-roll-question {
   animation:life2-wheel-question ${SPIN_MS}ms linear var(--spin-delay,0ms) both; }
 .life2 :is([data-spinning],[data-rolling]) .life2-roll-value {
   animation:life2-wheel-number ${SPIN_MS}ms linear var(--spin-delay,0ms) both; }
+.life2 [data-spinning] .life2-spin-total { animation-name:life2-wheel-total; }
 /* Decorative sectors have no pointer or numbered wedges. The engine supplies both values. */
 @keyframes life2-wheel-turn {
   0% { transform:rotate(0deg); animation-timing-function:cubic-bezier(.12,.8,.22,1); }
   80%,100% { transform:rotate(1080deg); }
 }
-@keyframes life2-wheel-question { 0%,79.99% { visibility:visible; } 80%,100% { visibility:hidden; } }
+@keyframes life2-wheel-question { 0%,54.99% { visibility:visible; } 55%,100% { visibility:hidden; } }
 @keyframes life2-wheel-number {
+  0%,54.99% { visibility:hidden; transform:scale(.8); }
+  55% { visibility:visible; transform:scale(.8); }
+  69% { transform:scale(1.08); }
+  80%,100% { visibility:visible; transform:scale(1); }
+}
+@keyframes life2-wheel-total {
   0%,79.99% { visibility:hidden; transform:scale(.8); }
   80% { visibility:visible; transform:scale(.8); }
   92% { transform:scale(1.08); }
   100% { visibility:visible; transform:scale(1); }
 }
 @media(prefers-reduced-motion:reduce) {
-  .life2 .life2-wheel-face::before,.life2 .life2-roulette-disc,.life2 .life2-spin-value > span { animation:none!important; }
+  .life2 .life2-wheel-face::before,.life2 .life2-roulette-disc,.life2 .life2-spin-value > span,
+  .life2 .life2-spin-total { animation:none!important; }
 }
 `;
 
+export function diceDisplay(dice: readonly number[]) {
+  const numbers = dice.join(dice.length === 2 ? ' + ' : ' · ') || 'GO!';
+  const total = dice.length === 2 ? dice[0] + dice[1] : undefined;
+  return { numbers, total, text: total === undefined ? numbers : `${numbers} = ${total}`,
+    label: `룰렛 ${dice.join(', ')}${total === undefined ? '' : ` 합계 ${total}`}` };
+}
+
 function spinValue(value: string) {
   const face = el('span', 'life2-spin-value');
-  face.append(el('span', 'life2-roll-question', '?'), el('span', 'life2-roll-value', value));
+  face.append(el('span', 'life2-roll-question'), el('span', 'life2-roll-value', value));
   return face;
 }
 
-export function roulette(dice: readonly number[], spinning: boolean) {
+export function roulette(dice: readonly number[], spinning: boolean, remaining?: number) {
   const display = el('div', 'life2-roulette');
   display.setAttribute('aria-hidden', 'true');
   if (spinning) display.dataset.spinning = '';
   const hub = el('strong');
-  hub.append(spinValue(dice.length ? dice.join(' · ') : 'GO!'));
+  const value = diceDisplay(dice);
+  hub.append(spinValue(value.numbers));
+  if (value.total !== undefined) hub.append(el('span', 'life2-roll-value life2-spin-total', ` = ${value.total}`));
+  if (remaining !== undefined) hub.append(el('small', 'life2-remaining', `남은 걸음 ${remaining}`));
   display.append(el('span', 'life2-roulette-disc'), hub);
   return display;
 }
@@ -97,7 +116,7 @@ export function wheel(dice: readonly number[], mode: 'ready' | 'spin' | 'idle' |
     }, mode === 'spin' ? 'stop-spin' : mode === 'ready' ? 'spin' : 'skip-move');
   if (mode === 'ready') control.dataset.option = 'spin';
   if (mode === 'spin') control.dataset.rolling = '';
-  control.setAttribute('aria-label', mode === 'idle' ? `룰렛 ${dice.join(', ')}` : `룰렛 두 개 ${label}`);
+  control.setAttribute('aria-label', mode === 'ready' ? `룰렛 두 개 ${label}` : [diceDisplay(dice).label, label].filter(Boolean).join(' '));
   for (let index = 0; index < 2; index++) {
     const value = String(dice[index] ?? '—');
     const face = el('span', 'life2-wheel-face', mode === 'spin' ? undefined : value);

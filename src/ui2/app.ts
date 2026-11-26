@@ -28,7 +28,7 @@ import { PLATFORM, bootPlatform, sessionOk, runStatus } from '../platform.ts';
 const DESTINATION_PAGE_SIZE = 6;
 const PHASE_LABEL = { spin: '이번 계절', pick: '갈 곳 고르기', space: '이곳에서 할 일',
   bonus: '추가 행동', event: '사건', chapter: '인생 결산', move: '이동 중', transfer: '지도 환승' } as const;
-const MOTION_LABEL = { spin: '룰렛이 멈추면 숫자를 확인해요.', move: '선택한 길을 따라 이동하고 있어요.',
+const MOTION_LABEL = { spin: '두 숫자를 더한 만큼 이동해요.', move: '한 칸씩 이동하고 있어요.',
   transfer: '다음 지도로 이동하고 있어요.' } as const;
 type PendingPopup = { model: PopupModel; resume?: 'phone' };
 
@@ -55,6 +55,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
   let glowBefore: GameState | undefined;
   let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
   let spin: ReturnType<typeof spinMotion> | undefined, frameStartedAt = 0;
+  let travelledPath: readonly string[] = [];
   root.classList.add('life2');
   const skip = (event?: MouseEvent) => {
     // The second click of a double-click lands on the freshly rendered stop control; ignore it.
@@ -98,6 +99,8 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     pending = [...cards, ...pending];
     menu = undefined;
     const frames = movementFrames(before.board.pos, outcome.result, id === 'spin');
+    const route = outcome.result.move;
+    travelledPath = route ? (route.stop ? route.path.slice(0, route.path.indexOf(route.stop) + 1) : route.path) : [];
     const landing = WORLD.find(node => node.id === state.board.pos)!;
     if (outcome.result.move && P.calloutKinds.includes(landing.kind)) frames.push({ phase: 'move', pos: landing.id, ms: P.calloutMs, callout: true });
     const done = () => { frame = undefined; spin = undefined; before = undefined; sequence = undefined; render(true); };
@@ -219,7 +222,8 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     // Popup docking removes the options row on mobile. Measure the tilted board
     // only after that final shell geometry is in place, including on resize.
     if (model && !dismissed) panel.classList.add('life2-popup-host');
-    const display = roulette(state.board.dice, mode === 'spin');
+    const remaining = frame?.phase === 'move' ? travelledPath.length - (travelledPath.indexOf(frame.pos) + 1) : undefined;
+    const display = roulette(state.board.dice, mode === 'spin', remaining);
     const hints = el('div', 'life2-key-hints');
     for (const hint of ['↑ ↓ 선택', 'Enter 결정', 'Esc 닫기']) hints.append(el('span', '', hint));
     shell.append(bands.top, map, display, panel, bands.bottom, hints);

@@ -73,7 +73,9 @@ html #app.life2 .life2-wheel-face { background:#fff; border:3px solid #17a9c0; w
 html #app.life2 .life2-bottom .life2-dice { background:#173347ed; border:2px solid #fff; border-radius:50px; min-height:6vh; }
 html #app.life2 .life2-roulette { position:absolute; left:5vw; top:31vh; width:14vw; height:14vw; max-height:26vh; max-width:26vh; border:8px solid #fff; border-radius:50%; background:#173549; box-shadow:0 9px 0 #18475b,0 14px 18px #164f4c55; display:grid; place-items:center; z-index:2; pointer-events:none; }
 html #app.life2 .life2-roulette-disc { position:absolute; inset:0; border-radius:50%; background:conic-gradient(#ff687a 0 60deg,#ffc936 60deg 120deg,#41d9c1 120deg 180deg,#28b3eb 180deg 240deg,#a678ee 240deg 300deg,#ff9444 300deg); }
-html #app.life2 .life2-roulette strong { position:relative; border:4px solid #fff; border-radius:50%; width:76%; height:76%; display:grid; place-content:center; background:#173549; color:#fff; font-size:clamp(20px,2.5vw,48px); white-space:nowrap; }
+html #app.life2 .life2-roulette strong { position:relative; border:4px solid #fff; border-radius:50%; width:76%; height:76%; display:grid; place-content:center; background:#173549; color:#fff; font-size:clamp(11px,1.65vw,32px); line-height:1.1; text-align:center; white-space:nowrap; }
+html #app.life2 .life2-spin-total { color:#ffe538; font-size:clamp(20px,3.5vw,64px); line-height:1.1; }
+html #app.life2 .life2-remaining { font-size:clamp(11px,.9vw,17px); line-height:1.4; }
 html #app.life2 .life2-key-hints { position:absolute; right:2vw; bottom:2vh; display:flex; gap:8px; z-index:16; font-size:var(--pc-small); }
 html #app.life2 .life2-key-hints span { padding:7px 12px; background:#183347ee; border:2px solid #fff; border-radius:30px; }
 /* Choice overlays share a list + illustrated detail grammar. */

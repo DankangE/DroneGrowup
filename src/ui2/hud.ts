@@ -8,6 +8,7 @@ import { COPY } from './popups/data.ts';
 import { button, el } from '../ui/dom.ts';
 import { fundsChangeTone, GRADE_COLOURS, HUD_GRADE_NAMES, lifeProgress, LIFE_MILESTONES, LIFE_ROUTE_SEGMENTS } from './hud-model.ts';
 import { creditCoin, pilotAvatar, progressDrone } from './hud-art.ts';
+import { diceDisplay } from './wheel.ts';
 
 const COMPACT_HUD_MAX = { width: 499, height: 739 };
 
@@ -348,9 +349,9 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
   }
   const spin = offered.find(option => option.id === 'spin');
   const center = spin ? button(spin.title, 'life2-spin', () => choose(spin.id))
-    : el('output', 'life2-dice', state.board.dice.join(' · ') || '— · —');
+    : el('output', 'life2-dice', diceDisplay(state.board.dice).text);
   if (spin) { center.dataset.option = spin.id; (center as HTMLButtonElement).disabled = !spin.enabled; }
-  else center.setAttribute('aria-label', `룰렛 ${state.board.dice.join(', ')}`);
+  else center.setAttribute('aria-label', diceDisplay(state.board.dice).label);
   bottom.insertBefore(center, bottom.lastChild);
   return { top, bottom };
 }
