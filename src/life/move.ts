@@ -14,7 +14,7 @@ const RNG = { increment: 0x6d2b79f5, firstShift: 15, secondShift: 7, lastShift: 
 const MAP_INDEX: Record<MapId, number> = { A: 0, B: 1, C: 2, D: 3, E: 4, F: 5 };
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 
-export type StopReason = 'review' | 'exam' | 'life';
+export type StopReason = 'review' | 'exam' | 'life' | 'estate';
 /** canPromote stops on review tiles; stopFor names any other forced stop on the way. */
 export type MoveOptions = { canPromote?: (state: GameState, node: WorldNode) => boolean;
   stopFor?: (state: GameState, node: WorldNode, spent: number) => StopReason | undefined };

@@ -7,7 +7,7 @@ import { COPY } from './popups/data.ts';
 
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 /** Why the token stops short of the rolled sum; older moves without a reason were review stops. */
-export const STOP_LABEL: Record<StopReason, string> = { review: '심사 정차', exam: '시험장 정차', life: '결혼·출산 정차' };
+export const STOP_LABEL: Record<StopReason, string> = { review: '심사 정차', exam: '시험장 정차', life: '결혼·출산 정차', estate: '부동산 정차' };
 export const stopLabel = (move: Pick<Move, 'stop' | 'stopReason'>): string =>
   move.stop ? STOP_LABEL[move.stopReason ?? 'review'] : '';
 export const destinationDetails = (move: Move): string =>

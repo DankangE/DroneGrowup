@@ -22,7 +22,7 @@ import type { EstateOffer } from './home.ts';
 import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery, familyVisit } from './family.ts';
 import { CREATOR_VIDEO, JOB_RULES, SPECIAL_RULES as S, SPECIAL_TEXT as ST, TRACKS, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
 import { BOARD_CHOICES, CAREER_ACTIONS, DIAL_SETTINGS, DIAL_TEXT, DIAL_ZERO_TIRE_BOLD, ENDING_KEYS, ENDING_RULES, ENDING_TEXT, FAMILY_RULES, FAMILY_TEXT, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
-  SPACE_MENU, STOP_RULES, STAT_LABEL, STAT_MAX, STATS, TEXT, WEDDINGS } from './life-data.ts';
+  HOME_RULES, SPACE_MENU, STOP_RULES, STAT_LABEL, STAT_MAX, STATS, TEXT, WEDDINGS } from './life-data.ts';
 import { answer, childFor, EVENTS_A, EVENT_KEYS as EK, EVENT_RULES as ER, EVENT_TEXT as ET,
   familyEventEffect, materialize } from './events-a.ts';
 import type { LifeChoice, LifeEffect } from './events-a.ts';
@@ -290,6 +290,12 @@ function stopFor(prev: GameState, node: WorldNode, spent: number): StopReason | 
     && view(state, `act:${exam.id}`, { kind: 'action', place: exam.place, choice: exam, flight: false }).enabled) return 'exam';
   if (node.map === FAMILY_RULES.localMap && node.kind === 'life' && node.place === FAMILY_RULES.localPlace
     && EVENTS_A.some(event => STOP_RULES.familyEvents.includes(event.id) && event.eligible?.(state))) return 'life';
+  // Estate: only on the first map, below an owned home, and only if a tier-3 residence offer is enabled there.
+  if (node.map === FAMILY_RULES.localMap && node.kind === 'estate' && prev.family.partnerAt !== null && (state.home?.tier ?? 0) < HOME_RULES.ownedTier) {
+    const there: GameState = { ...state, phase: 'action', board: { ...state.board, pos: node.id, step: 'space' } };
+    if (estateOffers(there).some(home => home.action === 'buy' && home.tier === HOME_RULES.ownedTier && home.residence
+      && view(there, home.id, { kind: 'action', place: node.place, choice: home.choice, flight: false, jobLocks: home.locked, home }).enabled)) return 'estate';
+  }
   return undefined;
 }
 
