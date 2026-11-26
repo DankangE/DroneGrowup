@@ -18,6 +18,7 @@ import { flightPay } from '../src/life/economy.ts';
 import { eventFlightPenalty } from '../src/life/events-f.ts';
 import { cloneSimulationState } from '../scripts/simulate-life.ts';
 import { dialCoverageFailures, dialDominanceReport } from '../scripts/dominance-life.ts';
+import { dialTicks } from '../src/life/dial.ts';
 
 const clamp = (n: number) => Math.min(95, Math.max(5, n));
 function ready() {
@@ -29,6 +30,21 @@ function ready() {
 }
 const get = (s: ReturnType<typeof ready>, id = 'act:job_event') => options(s).find(o => o.id === id)!;
 const context = { phoneUsed: true, tried: [], salaryIncome: 0, invested: 0, noCards: true };
+
+test('dialTicks rounds crash ticks to the nearest integer with halves up and preserves all 100 ticks', () => {
+  assert.deepEqual(dialTicks(95, 10), { success: 95, fail: 4, crash: 1 }, '0.5 rounds up to 1');
+  assert.deepEqual(dialTicks(85, 10), { success: 85, fail: 13, crash: 2 }, '1.5 rounds up to 2');
+  assert.deepEqual(dialTicks(90, 14), { success: 90, fail: 9, crash: 1 }, '1.4 rounds down to 1');
+  assert.deepEqual(dialTicks(80, 50), { success: 80, fail: 10, crash: 10 }, 'exact integers stay unchanged');
+  for (let chance = 5; chance <= 95; chance++) for (let crashPct = 0; crashPct <= 100; crashPct++) {
+    const numerator = (100 - chance) * crashPct, remainder = numerator % 100;
+    const expectedCrash = (numerator - remainder) / 100 + Number(remainder >= 50);
+    const ticks = dialTicks(chance, crashPct), message = `chance=${chance}, crashPct=${crashPct}`;
+    assert.deepEqual(ticks, { success: chance, fail: 100 - chance - expectedCrash, crash: expectedCrash }, message);
+    assert.equal(ticks.success + ticks.fail + ticks.crash, 100, message);
+    assert.ok(ticks.fail >= 0, message);
+  }
+});
 
 test('middle keeps old flight formula; lists and bare IDs remain stable, settings are integer data', () => {
   for (const stamina of [10, 30, 60, 90]) for (const cond of [10, 40, 90]) {
@@ -64,9 +80,11 @@ test('dial and active luck share +30 cap, negative adjustments survive, clamp ha
   const s = ready(); s.flags.push(ASSET_KEYS.dream, ASSET_KEYS.benefactor);
   assert.equal(luckChanceBonus(s, 'promo', 10), 30);
   assert.equal(luckChanceBonus(s, 'act:job_event', 10), 30);
-  s.s.skill = 1000; s.s.stamina = 100;
+  // This fixture avoids the rounded-wedge lock.
+  s.s.skill = 30; s.s.stamina = 80;
   const v = get(s), bold = v.dial!.settings.find(row => row.notch === 'bold')!;
   assert.equal(v.roll!.chance, 95); assert.equal(bold.chance, 95, 'do not subtract from an already clamped middle chance');
+  assert.equal(bold.enabled, true);
   const result = choose(s, bold.id);
   assert.ok(!result.state.flags.includes(ASSET_KEYS.dream));
   assert.ok(result.state.flags.includes(ASSET_KEYS.benefactor), 'promotion-only card remains armed');
@@ -104,15 +122,16 @@ test('zero-tick crash is absent even when conditional crash probability is posit
   assert.ok(!forecast(s, row.id).branches.some(b => b.id === 'crash'));
 });
 
-test('identical final wedges at 95 lock safe or bold, expose the reason and fall back to middle', () => {
+test('identical rounded wedges at 95 lock safe or bold, expose the reason and fall back to middle', () => {
   for (const notch of ['safe', 'bold'] as const) {
     const s = ready(); s.s.stamina = 80;
-    s.s.skill = notch === 'safe' ? 1000 : 30;
-    if (notch === 'bold') s.flags.push(ASSET_KEYS.dream);
+    s.s.skill = notch === 'safe' ? 30 : 1000;
+    if (notch === 'safe') s.flags.push(ASSET_KEYS.dream);
     s.board.dial = notch;
     const original = structuredClone(s), v = get(s), rows = v.dial!.settings;
     const mid = rows.find(row => row.notch === 'mid')!, locked = rows.find(row => row.notch === notch)!;
     assert.equal(mid.chance, 95); assert.equal(locked.chance, 95);
+    assert.deepEqual(mid.ticks, { success: 95, fail: 4, crash: 1 });
     assert.deepEqual(locked.ticks, mid.ticks);
     assert.notEqual(locked.crashPct, mid.crashPct, 'compare rounded wedges, not conditional crash odds');
     assert.equal(locked.noEffect, true); assert.equal(locked.enabled, false);
@@ -124,6 +143,7 @@ test('identical final wedges at 95 lock safe or bold, expose the reason and fall
     assert.deepEqual(choose(s, v.id).state, choose(s, mid.id).state);
     const other = rows.find(row => row.notch !== notch && row.notch !== 'mid')!;
     assert.equal(other.chance, 95); assert.notDeepEqual(other.ticks, mid.ticks);
+    assert.deepEqual(other.ticks, notch === 'safe' ? { success: 95, fail: 3, crash: 2 } : { success: 95, fail: 5, crash: 0 });
     assert.equal(other.noEffect, false); assert.equal(other.enabled, true, 'equal success alone does not lock');
     for (const policy of POLICY_IDS) {
       const picked = pickDial(policy, s, v);
@@ -252,7 +272,7 @@ test('dial dominance guard rejects empty comparisons and every missing action/no
   }
   const report = dialDominanceReport();
   assert.ok(report.samples > 0); assert.ok(report.pairs > 0);
-  assert.deepEqual([report.samples, report.pairs], [690, 2800]);
+  assert.deepEqual([report.samples, report.pairs], [690, 2828], 'nearest-rounded wedges determine enabled comparison pairs');
   assert.deepEqual(report.coverageFailures, []); assert.deepEqual(report.dominated, []);
   assert.deepEqual(Object.keys(report.compared).sort(), keys.sort());
 });
