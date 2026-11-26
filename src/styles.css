@@ -1,3 +1,5 @@
+@import './ui2/pc-style.css';
+
 @font-face {
   font-family: "Bagel Fat One";
   src: url("/fonts/bagel-fat-one-display.woff2") format("woff2");

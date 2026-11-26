@@ -1,4 +1,5 @@
 import { tileIcon } from '../icons.ts';
+import { choiceDetail, highlightChoices } from '../choice-detail.ts';
 import { button, el } from '../../ui/dom.ts';
 import { jobPortrait, placeArt } from '../art.ts';
 import { COPY, PHONE_TABS, POPUP_RULES, SETTINGS_COPY } from './data.ts';
@@ -133,7 +134,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
       if (tight) header.insertBefore(nextText, header.lastChild); else copy.append(nextText);
     }
     panel.append(header);
-    if (card) panel.append(cardHero(model));
+    if (card && reading) panel.append(cardHero(model));
     else if (model.stage && !detail && !confirming) { panel.append(stageBanner(model.stage)); panel.dataset.stage = ''; }
     panel.append(copy);
     const footer = el('footer', 'life2-popup-footer');
@@ -145,8 +146,9 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     } else if (detail) {
       footer.append(button(COPY.back, '', () => { detail = undefined; copyPage = 0; render(); }, 'popup-back'));
     } else if (!model.notification) {
-      const choices = choicePage(model.choices, page, compact ? 1 : POPUP_RULES.pageSize); page = choices.page;
+      const choices = choicePage(model.choices, page, compact ? 1 : 6); page = choices.page;
       const list = el('div', 'life2-popup-list');
+      const inspector = choiceDetail(model.place, model.track);
       for (const option of choices.items) {
         const row = el('div', 'life2-popup-row');
         const control = button('', 'life2-popup-choice', () => {
@@ -158,11 +160,18 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
         if (option.destination) control.dataset.dest = option.destination;
         control.setAttribute('aria-label', option.details.join('. '));
         control.append(el('strong', '', shortTitle(option.title)), el('small', '', option.summary));
-        const info = button(COPY.details, '', () => { detail = option.details; copyPage = 0; render(); }, 'popup-details');
-        info.setAttribute('aria-label', `${option.title} · ${COPY.details}`);
-        row.append(control, info); list.append(row);
+        row.append(control); list.append(row);
       }
-      if (!reading) panel.append(list);
+      if (!reading) {
+        panel.append(list, inspector.pane);
+        const description = el('p', 'life2-selected-description');
+        description.setAttribute('aria-live', 'polite'); copy.append(description);
+        highlightChoices(list, id => {
+          const option = choices.items.find(item => item.id === id)!;
+          inspector.update(option, () => { detail = option.details; copyPage = 0; render(); });
+          description.textContent = textPages([option.details[1] ?? option.summary], 85)[0];
+        });
+      }
       if (selectedTab) {
         copy.dataset.tabPanel = selectedTab.id; copy.setAttribute('role', 'tabpanel');
         copy.setAttribute('aria-label', selectedTab.title);
@@ -185,9 +194,11 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
           control.setAttribute('aria-selected', String(id === tab)); footer.append(control);
         }
         // Phone categories must not displace the choice pager.
-        header.insertBefore(button(COPY.pages(page, choices.count), '', () => {
+        const pageControl = button(COPY.pages(page, choices.count), '', () => {
           page = (page + 1) % choices.count; render();
-        }, 'popup-page-next'), header.lastChild);
+        }, 'popup-page-next');
+        if (choices.count === 1) pageControl.dataset.singlePage = '';
+        header.insertBefore(pageControl, header.lastChild);
       } else if (reading) {
         footer.append(button(COPY.exit, '', close, 'popup-continue'));
       } else {
@@ -195,6 +206,29 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
         const next = button(COPY.next, '', () => { page++; render(); }, 'popup-page-next');
         previous.disabled = page === 0; next.disabled = page === choices.count - 1;
         footer.append(previous, el('span', '', COPY.pages(page, choices.count)), next);
+        if (choices.count === 1) footer.dataset.singlePage = '';
+      }
+    }
+    if (model.kind === 'my-life' && selectedTab?.id === 'ability' && !detail && !confirming) {
+      panel.dataset.overview = '';
+      const overview = el('aside', 'life2-life-overview');
+      for (const id of ['career', 'family', 'assets']) {
+        const section = model.tabs?.find(item => item.id === id);
+        if (!section) continue;
+        const column = el('section', 'life2-life-column');
+        column.append(el('h3', '', section.title));
+        for (const line of section.lines.slice(0, 3)) column.append(el('p', '', line));
+        overview.append(column);
+      }
+      panel.append(overview);
+    }
+    if ((reading && model.kind !== 'my-life') || detail || confirming) {
+      if (!card) {
+        const scene = choiceDetail(model.place, model.track);
+        scene.update({ id: model.kind, title: model.title, summary: '', details: [], enabled: true });
+        const resultWheel = copy.querySelector<HTMLElement>('[data-result-wheel]');
+        if (resultWheel) scene.scene.append(resultWheel);
+        panel.append(scene.pane);
       }
     }
     if (!model.notification) panel.append(footer);

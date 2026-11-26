@@ -1,7 +1,7 @@
 # AGENTS.md — DroneGrowup (파일럿 키우기)
 
 ## What this is
-Static browser game, Korean text, mobile first. Vite 5 + TypeScript strict, vanilla DOM + inline SVG.
+Static browser game, Korean text, PC-first. Vite 5 + TypeScript strict, vanilla DOM + inline SVG.
 No framework, no runtime dependencies (devDependencies only). Node 22+ runs .ts scripts and tests directly.
 The default client is src/ui2; src/main.ts boots it without a query flag.
 The v2 spec is docs/design/life-board.md. It is the source of truth for rules and numbers; do one ticket
@@ -31,7 +31,7 @@ from its section 14.3 per session and do not go beyond that ticket's scope.
   It never computes odds, pay, eligibility or endings.
 
 ## UI rules
-- Nothing scrolls, on any screen at any size (390x844, 360x740, 1280x800, 1366x768). More content = tab or pager.
+- Nothing scrolls, on any screen at any size (1920x1080, 1536x864, 1366x768, 1280x800). More content = tab or pager.
 - Tap targets >= 44 px, text >= 11 px.
 - Keep the hooks: data-option, data-pick, data-nav, data-tab, data-action, data-screen, data-phase,
   and the v2 hooks data-dest, data-map, data-popup.
@@ -47,3 +47,5 @@ from its section 14.3 per session and do not go beyond that ticket's scope.
 - Also run the ticket's own commands listed in its "검증" line and paste their summary lines in the PR body.
 - After changing a balance number: run the simulation and update the tables in docs/design.md.
 - Tests: `tests/life-*.test.ts`, run by `npm test` (node --test). New rule = new test.
+
+PC-first target sizes: 1920×1080, 1536×864, 1366×768, 1280×800. No scrolling at these sizes; below 900px only basic operation is required.

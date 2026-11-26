@@ -20,6 +20,7 @@ export class TestNode {
     } });
   }
   get lastChild() { return this.children.at(-1); }
+  getAttribute(key: string) { return this.attributes[key] ?? null; }
   setAttribute(key: string, value: string) {
     this.attributes[key] = value;
     if (key === 'class') this.className = value;

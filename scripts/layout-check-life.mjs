@@ -382,13 +382,14 @@ async function hudChangeChecks(page, load, check) {
 // HUD checks are separate from board geometry; timed play keeps its existing audit cost.
 export function auditHud() {
   const issues = [], vw = innerWidth, vh = innerHeight;
-  // UX1: every audited map/phase at all six SIZES, plus the narrow/short HUD regression.
+  // PC overlays at all four desktop sizes; calendar is intentionally detached.
   const hud = document.querySelector('.life2-hud');
   if (!hud) issues.push('HUD: missing');
   else {
-    const short = vw < 900 && vh <= 739, box = hud.getBoundingClientRect();
-    const expectedHeight = vw >= 900 ? 138 : short ? 60 : 110;
+    const box = hud.getBoundingClientRect();
+    const expectedHeight = Math.max(148, vh * .20);
     if (Math.abs(box.height - expectedHeight) > .1) issues.push(`HUD: expected ${expectedHeight}px row`);
+    if (Math.abs(box.width - Math.max(355, vw * .282)) > 1) issues.push('HUD: incorrect PC card width');
     const visible = node => node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true })
       && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
     const overlaps = (one, two) => Math.min(one.right, two.right) > Math.max(one.left, two.left) + .1
@@ -433,9 +434,9 @@ export function auditHud() {
     const marks = [...hud.querySelectorAll('[data-changed-stat]')].map(node => node.dataset.changedStat);
     if (new Set(marks).size !== marks.length) issues.push('HUD: stat is marked twice');
     const bar = hud.querySelector('.life2-progress-track')?.getBoundingClientRect();
-    if (!bar || bar.height < 8 || bar.height > 10) issues.push('HUD: route bar must be 8–10px thick');
+    if (!bar || bar.height < 12 || bar.height > 18) issues.push('HUD: route bar must be 12–18px thick');
     const drone = hud.querySelector('.life2-progress-drone')?.getBoundingClientRect();
-    if (!drone || drone.width < 28 || drone.height < 18) issues.push('HUD: drone marker below 28x18px');
+    if (!drone || drone.width < 40 || drone.height < 26) issues.push('HUD: drone marker below 40x26px');
     if (![...hud.querySelectorAll('.life2-progress-label[data-age]')].some(visible))
       issues.push('HUD: no visible milestone age labels');
     const hudCss = getComputedStyle(hud);
@@ -445,6 +446,26 @@ export function auditHud() {
       if (!visible(node) || (node.closest('svg') && node.tagName.toLowerCase() !== 'svg'
         && node.tagName.toLowerCase() !== 'text')) continue;
       const rect = node.getBoundingClientRect(), label = node.getAttribute('class') ?? node.tagName;
+      const detached = node.closest('.life2-date, .life2-change-strip');
+      if (detached) {
+        const bounds = detached.getBoundingClientRect();
+        if (rect.left < 0 || rect.right > vw || rect.top < 0 || rect.bottom > vh
+          || rect.left < bounds.left - 1 || rect.right > bounds.right + 1
+          || rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1)
+          issues.push(`HUD: detached ${label} clipped or outside viewport`);
+        const parent = node.parentElement;
+        if (parent && parent !== hud && parent !== detached.parentElement) {
+          const parentBox = parent.getBoundingClientRect();
+          if (rect.left < parentBox.left - 1 || rect.right > parentBox.right + 1
+            || rect.top < parentBox.top - 1 || rect.bottom > parentBox.bottom + 1)
+            issues.push(`HUD: detached ${label} overflows parent`);
+        }
+        if (node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1)
+          issues.push(`HUD: detached ${label} text overflows`);
+        if ([...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim())
+          && parseFloat(getComputedStyle(node).fontSize) < 11) issues.push('HUD: detached text below 11px');
+        continue;
+      }
       if (rect.left < Math.max(0, box.left) - .1 || rect.right > Math.min(vw, box.right) + .1
         || rect.top < Math.max(0, box.top) - .1 || rect.bottom > Math.min(vh, box.bottom) + .1)
         issues.push(`HUD: ${label} outside HUD or viewport`);
@@ -531,7 +552,7 @@ export function audit() {
       ((node.scrollWidth > node.clientWidth + 1 && ['hidden', 'clip'].includes(style.overflowX)) ||
        (node.scrollHeight > node.clientHeight + 1 && ['hidden', 'clip'].includes(style.overflowY)))) issues.push(`${label}: content clipped`);
     if (!node.closest('[inert]') && node.matches('button, [data-space]') && (rect.width < 43.99 || rect.height < 43.99)) issues.push(`${label}: smaller than 44px`);
-    if (node.matches('[data-space]') && Math.abs(rect.width - rect.height) > .1) issues.push(`${label}: tile is not square`);
+    if (node.matches('[data-space]') && rect.width < rect.height) issues.push(`${label}: road tile must be wider than tall`);
     if ([...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim()) && parseFloat(style.fontSize) < 11) issues.push(`${label}: text below 11px`);
     for (let parent = node.parentElement; parent; parent = parent.parentElement) {
       const box = parent.getBoundingClientRect(), css = getComputedStyle(parent);
@@ -546,8 +567,14 @@ export function audit() {
     if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('tiles overlap');
   }
-  const regions = ['.life2-hud', '.life2-board', '.life2-options', '.life2-bottom']
-    .map(selector => document.querySelector(selector).getBoundingClientRect());
+  // World/board intentionally sit behind overlays. Independent overlay controls must stay disjoint.
+  const regions = ['.life2-hud', '.life2-date', '.life2-popup', '.life2-bottom']
+    .map(selector => document.querySelector(selector)).filter(node => node?.checkVisibility())
+    .map(node => node.getBoundingClientRect());
+  const world = document.querySelector('.life2-board-frame')?.getBoundingClientRect();
+  const board = document.querySelector('.life2-board')?.getBoundingClientRect();
+  if (!world || Math.abs(world.width - vw) > 1 || Math.abs(world.height - vh) > 1) issues.push('world does not fill viewport');
+  if (!board || board.width < vw * .65) issues.push('board below 65% viewport width');
   for (const [index, one] of regions.entries()) for (const two of regions.slice(index + 1)) {
     if (Math.min(one.right, two.right) > Math.max(one.left, two.left) + 1 &&
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('screen regions overlap');
@@ -564,12 +591,13 @@ export function audit() {
   if (popup) {
     const sheet = popup.getBoundingClientRect();
     const paint = getComputedStyle(popup);
-    if (paint.opacity !== '1' || paint.backgroundColor === 'transparent'
-      || /rgba\(.*,[\s]*0(?:\.\d+)?\)/.test(paint.backgroundColor)) issues.push('popup sheet is translucent');
-    if (vw < 900 && !popup.hasAttribute('data-fullscreen') && sheet.height > vh * .55 + 1) issues.push('sheet exceeds 55%');
+    const alpha = paint.backgroundColor.startsWith('rgba') ? Number(paint.backgroundColor.split(',').at(-1).replace(')', '')) : 1;
+    if (paint.opacity !== '1' || paint.backgroundColor === 'transparent' || alpha < .85) issues.push('popup needs a readable dark backing');
     for (const node of popup.querySelectorAll('p, button, h2, dt, dd, .life2-card-hero, .life2-stage-banner')) {
+      if (!node.checkVisibility()) continue;
       const box = node.getBoundingClientRect();
-      if (box.top < sheet.top - 1 || box.bottom > sheet.bottom + 1 || box.left < sheet.left - 1 || box.right > sheet.right + 1)
+      const bounds = node.closest('.life2-popup-tabs') ? { top:0, bottom:vh, left:0, right:vw } : sheet;
+      if (box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1 || box.left < bounds.left - 1 || box.right > bounds.right + 1)
         issues.push('popup content outside sheet');
       if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push('popup text overflows');
     }
@@ -577,10 +605,7 @@ export function audit() {
       const box = control.getBoundingClientRect(), hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
       if (!control.contains(hit)) issues.push('popup covers bottom navigation');
     }
-    if (vw < 900 && !popup.hasAttribute('data-fullscreen')) {
-      const pawn = document.querySelector('[aria-current=location]').getBoundingClientRect();
-      if (pawn.bottom > sheet.top && pawn.top < sheet.bottom) issues.push('sheet hides the pawn row');
-    }
+
   }
   return [...new Set(issues)];
 }
@@ -755,7 +780,7 @@ async function fix5Checks(page, load, check) {
   assert.deepEqual(await page.evaluate(() => window.__life.state()), expected);
   await pagingChecks(page, check).checkPages('F5 all hospital family choices');
   assert.deepEqual(options(expected).filter(row => row.id.startsWith('dual:')).map(row => row.title), ['가정 중심', '맞벌이']);
-  console.log('  F5: every A pawn row, 55% sheets, debt HUD and one-tap family travel with all dual choices checked');
+  console.log('  F5: every A pawn row, PC overlays, debt HUD and one-tap family travel with all dual choices checked');
 }
 
 // T18 isolated popup section: no changes to the existing map/movement fixtures.
@@ -772,12 +797,12 @@ async function popupChecks(page, base) {
       await checkTextPages(page, '[data-action=popup-text-next]', async () => {
         assert.deepEqual(await popup.evaluate(panel => {
         const issues = [], box = panel.getBoundingClientRect();
-        if (innerHeight > innerWidth && !panel.hasAttribute('data-fullscreen') && box.height > innerHeight * .55 + 1) issues.push('sheet exceeds 55%');
-        if (panel.querySelectorAll('[data-option]').length > 3) issues.push('more than three choices');
+        if (panel.querySelectorAll('[data-option]').length > 6) issues.push('more than six choices');
         for (const node of [panel, ...panel.querySelectorAll('*')]) {
-          if (node.closest('svg')) continue;
+          if (node.closest('svg') || !node.checkVisibility()) continue;
           const rect = node.getBoundingClientRect(), css = getComputedStyle(node);
-          if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) issues.push('popup content outside sheet');
+          const bounds = node.closest('.life2-popup-tabs') ? { left:0, right:innerWidth, top:0, bottom:innerHeight } : box;
+          if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1 || rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1) issues.push('popup content outside sheet');
           if (node.matches('button') && (rect.width < 44 || rect.height < 44)) issues.push('tap target below 44px');
           if (['auto', 'scroll'].includes(css.overflowY) || node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push(`popup content overflows (${innerWidth}x${innerHeight} ${node.tagName}.${node.className} sh${node.scrollHeight}/ch${node.clientHeight} sw${node.scrollWidth}/cw${node.clientWidth})`);
           if (parseFloat(css.fontSize) < 11) issues.push('text below 11px');
@@ -806,7 +831,7 @@ async function popupChecks(page, base) {
   await page.evaluate(() => window.__popupFixture.show('result', true));
   assert.equal(await page.locator('[data-notification]').count(), 1);
   assert.equal(await page.locator('[data-result-wheel]').count(), 0);
-  console.log('  T18: 11 popup kinds, three choices per page, portrait sheets <=55%, keyboard exit checked');
+  console.log('  T18: 11 popup kinds, six choices per page, PC list/detail panels, keyboard exit checked');
   return kinds;
 }
 
@@ -816,12 +841,12 @@ async function popup2Checks(page, base) {
   await page.waitForFunction(() => window.__popup2Fixture);
   const audit = async selector => assert.deepEqual(await page.locator(selector).evaluate(panel => {
     const issues = [], box = panel.getBoundingClientRect();
-    if (panel.dataset.popup && innerHeight > innerWidth && !panel.hasAttribute('data-fullscreen') && box.height > innerHeight * .55 + 1) issues.push('sheet exceeds 55%');
-    if (panel.querySelectorAll('[data-option]').length > 3) issues.push('more than three choices');
+    if (panel.querySelectorAll('[data-option]').length > 6) issues.push('more than six choices');
     for (const node of [panel, ...panel.querySelectorAll('*')]) {
-      if (node.closest('svg')) continue;
+      if (node.closest('svg') || !node.checkVisibility()) continue;
       const rect = node.getBoundingClientRect(), css = getComputedStyle(node);
-      if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) issues.push('content outside panel');
+      const bounds = node.closest('.life2-popup-tabs') ? { left:0, right:innerWidth, top:0, bottom:innerHeight } : box;
+      if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1 || rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1) issues.push('content outside panel');
       if (node.matches('button') && (rect.width < 44 || rect.height < 44)) issues.push('tap target below 44px');
       if (['auto', 'scroll'].includes(css.overflowY) || node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) issues.push('content overflows');
       if (parseFloat(css.fontSize) < 11) issues.push('text below 11px');
@@ -883,8 +908,7 @@ async function main() {
     const base = server.resolvedUrls?.local[0];
     assert.ok(base, 'preview has a local URL');
     browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, channel: process.env.CHROME_PATH ? undefined : 'chrome' });
-    for (const [width, height] of [...SIZES, [360, 700]]) {
-      const hudOnly = width === 360 && height === 700;
+    for (const [width, height] of SIZES) {
       const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce', locale: 'ko-KR' });
       try {
         const page = await context.newPage(), size = `${width}x${height}`;
@@ -898,7 +922,7 @@ async function main() {
         const load = async state => page.evaluate(run => window.__life.load(run), state);
         const check = async name => {
           views++;
-          for (const auditView of hudOnly ? [auditHud] : [audit, auditHud]) {
+          for (const auditView of [audit, auditHud]) {
             for (const issue of await page.evaluate(auditView)) failures.push(`${size} ${name}: ${issue}`);
           }
         };
@@ -909,12 +933,6 @@ async function main() {
         assert.deepEqual(await page.evaluate(() => window.__life.state()), newGame(11), 'default entry starts exactly newGame(seed)');
         assert.equal(await page.evaluate(() => window.__game === undefined), true, 'v1 is not mounted');
         assert.equal(await page.locator('#app').getAttribute('data-screen'), 'play');
-        if (hudOnly) {
-          await load(lateHudFixture('A', true)); await check('late S grades with maximum funds');
-          await hudChangeChecks(page, load, check);
-          console.log(`  ${size}: HUD only; late S grades with maximum funds and both signed delta fixtures checked`);
-          continue;
-        }
         await checkPages('start choices');
         await clickChoice('start:school');
         const started = choose(newGame(11), 'start:school').state;
@@ -996,7 +1014,7 @@ async function main() {
     finally { await server.close(); }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
-  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll; HUD five grades, signed deltas, 8–10px route, 28x18 drone, 2px border clearance, overlaps and hidden cards checked`);
+  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll; HUD five grades, signed deltas, 12–18px route, 40x26 drone, 2px border clearance, overlaps and hidden cards checked`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

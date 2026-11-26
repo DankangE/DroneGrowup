@@ -1,6 +1,6 @@
 # DroneGrowup — 파일럿 키우기
 
-A Korean, mobile-first life board game: start at age 19, play 204 seasons across six maps and
+A Korean, PC-first life board game: start at age 19, play 204 seasons across six maps and
 212 spaces, and settle at age 70. There are 19 careers, 120 events and 21 endings. Each season
 has one spin, at most one tile action and one extra action. The life board is the default entry;
 existing `?life=1` URLs remain valid. Rules and numbers: `docs/design/life-board.md`.
@@ -49,6 +49,8 @@ Balance changes require simulation and an updated `docs/design.md`. Preserve `GR
 The engine has no DOM, Date, Math.random or floating-point state. Displayed odds are the rolled odds.
 Every event has a cost-free, requirement-free choice, every popup an exit, and no run may get stuck.
 The UI renders engine views and calls `choose`; retain the hooks in `docs/ui-spec.md`.
-Nothing scrolls at 390×844, 360×740, 1280×800 or 1366×768. Use tabs/pagers for additional content.
+Nothing scrolls at 1920×1080, 1536×864, 1366×768 or 1280×800. Use tabs/pagers for additional content.
 Render untrusted text with `textContent`. Keep platform calls inside `if (PLATFORM)` so the default
 build makes no platform request. All names, text and art are original.
+
+PC-first target sizes: 1920×1080, 1536×864, 1366×768, 1280×800. No scrolling at these sizes; below 900px only basic operation is required.

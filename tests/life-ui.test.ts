@@ -106,7 +106,7 @@ class PagingPage {
   }
 }
 
-test('life layout paging can audit the same four-option state twice from the last page', async () => {
+test('life layout audits all four choices twice on one six-row PC page', async () => {
   const started = choose(newGame(11), 'start:school').state;
   const state = choose(started, 'spin').state;
   state.s.money = 0;
@@ -115,13 +115,13 @@ test('life layout paging can audit the same four-option state twice from the las
   const page = new PagingPage(state), seen: string[][] = [];
   const { checkPages } = pagingChecks(page, async () => { seen.push(page.visible().map(option => option.id)); });
   await checkPages('after spin');
-  assert.equal(page.index, 1);
+  assert.equal(page.index, 0);
   await checkPages('same season');
   assert.deepEqual(seen, [
-    ['act:st_theory', 'act:st_sim', 'act:st_flight'], ['skip'],
-    ['act:st_theory', 'act:st_sim', 'act:st_flight'], ['skip'],
+    ['act:st_theory', 'act:st_sim', 'act:st_flight', 'skip'],
+    ['act:st_theory', 'act:st_sim', 'act:st_flight', 'skip'],
   ]);
-  assert.equal(page.popupRenders, 3, 'paging only replaces the popup, including rewind');
+  assert.equal(page.popupRenders, 0, 'all choices fit without replacing the popup');
   assert.equal(page.shellRenders, 0);
   assert.deepEqual(page.state, state, 'paging never changes the game');
 });
@@ -148,8 +148,9 @@ test('life layout still traverses plain destination pages and can choose an earl
   assert.equal(panelAt(page.root), undefined);
   await checkPages('destinations'); await checkPages('destinations again');
   const ids = options(state).map(option => option.id);
-  assert.deepEqual(seen, [...ids, ...ids].map(id => [id]));
-  assert.ok(page.shellRenders > 0); assert.equal(page.popupRenders, 0);
+  const chunks = Array.from({ length: Math.ceil(ids.length / 6) }, (_, index) => ids.slice(index * 6, index * 6 + 6));
+  assert.deepEqual(seen, [...chunks, ...chunks]);
+  assert.equal(page.shellRenders, chunks.length > 1 ? (chunks.length - 1) * 3 : 0); assert.equal(page.popupRenders, 0);
   await clickChoice(ids[0]); assert.deepEqual(page.state, choose(state, ids[0]).state);
 });
 

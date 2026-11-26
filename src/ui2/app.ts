@@ -8,6 +8,9 @@ import { POLISH as P } from './popups/polish-data.ts';
 import { POLISH_STYLE } from './popups/polish-style.ts';
 import { tileIcon } from './icons.ts';
 import { hud } from './hud.ts';
+import { townScene } from './pc-scenery.ts';
+import { choiceDetail, highlightChoices } from './choice-detail.ts';
+import { placeArt } from './art.ts';
 import { wheel, WHEEL_STYLE } from './wheel.ts';
 import { destinationDetails, destinationName, pick, PICK_STYLE } from './pick.ts';
 import { movementFrames, playback, MOVE_STYLE } from './move.ts';
@@ -21,7 +24,7 @@ import { mountEnding, mountEndingCollection } from './popups/ending.ts';
 import { loadLifeRun, loadLifeMeta, mergeLifeMeta, saveLifeRun, recordLifeEnding, migrateLifeSave, V1_NOTICE, loadLifeSettings, saveLifeSettings } from '../save.ts';
 import { PLATFORM, bootPlatform, sessionOk, runStatus } from '../platform.ts';
 
-const DESTINATION_PAGE_SIZE = 1;
+const DESTINATION_PAGE_SIZE = 6;
 const PHASE_LABEL = { spin: '이번 계절', pick: '갈 곳 고르기', space: '이곳에서 할 일',
   bonus: '추가 행동', event: '사건', chapter: '인생 결산', move: '이동 중', transfer: '지도 환승' } as const;
 type PendingPopup = { model: PopupModel; resume?: 'phone' };
@@ -173,11 +176,30 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     previous.disabled = page === 0; next.disabled = page === pages - 1;
     pager.append(previous, el('span', '', `${page + 1} / ${pages}`), next);
     panel.append(heading, list, pager);
+    if (moves.length && choices.length) {
+      panel.classList.add('life2-destinations');
+      const inspector = choiceDetail(WORLD.find(node => node.id === shown.board.pos)!.place);
+      panel.append(inspector.pane);
+      highlightChoices(list, id => {
+        const option = choices.find(item => item.id === id)!;
+        const move = moves.find(item => id === `go:${item.node}`);
+        inspector.update({ id, title: move ? destinationName(move, state.board.pos) : option.title,
+          summary: move ? destinationDetails(move) : option.desc, details: [option.desc], enabled: option.enabled });
+        const destination = move && WORLD.find(node => node.id === move.node);
+        if (destination) inspector.scene.replaceChildren(placeArt(destination.place));
+      });
+    }
     if (pages === 1) { pager.hidden = true; panel.dataset.singlePage = ''; }
     // Popup docking removes the options row on mobile. Measure the tilted board
     // only after that final shell geometry is in place, including on resize.
     if (model && !dismissed) panel.classList.add('life2-popup-host');
-    shell.append(bands.top, map, panel, bands.bottom);
+    const roulette = el('div', 'life2-roulette');
+    roulette.setAttribute('aria-hidden', 'true');
+    if (mode === 'spin') roulette.dataset.spinning = '';
+    roulette.append(el('strong', '', state.board.dice.length ? state.board.dice.join(' · ') : 'GO!'));
+    const hints = el('div', 'life2-key-hints');
+    for (const hint of ['↑ ↓ 선택', 'Enter 결정', 'Esc 닫기']) hints.append(el('span', '', hint));
+    shell.append(bands.top, map, roulette, panel, bands.bottom, hints);
     const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE + POLISH_STYLE + TILT_STYLE);
     root.replaceChildren(style, shell);
     setBoardTilt(map, settings.tilt);
@@ -219,7 +241,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     card.append(button('새 인생 시작', '', restart, 'new'), button('엔딩 모음', '', () => {
       notice = false; mountEndingCollection(root, collection(), showTitle);
     }, 'gallery'));
-    root.replaceChildren(card); title.focus({ preventScroll: true });
+    root.replaceChildren(townScene('A'), card); title.focus({ preventScroll: true });
   }
   function refreshStatus() {
     if (root.dataset.screen !== 'ending') return;

@@ -44,13 +44,13 @@ function app(run: (root: TestNode, api: NonNullable<Window['__life']>) => void) 
   });
 }
 
-test('T25: layout covers all six required sizes and rejects clipping or offscreen turn controls', () => {
-  for (const size of [[390, 844], [360, 740], [500, 679], [600, 700], [1280, 800], [1366, 768]]) {
+test('T25: layout covers all four PC sizes and rejects clipping or offscreen turn controls', () => {
+  for (const size of [[1920, 1080], [1536, 864], [1366, 768], [1280, 800]]) {
     assert.ok(SIZES.some((row: number[]) => row.join() === size.join()));
   }
   const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 500, width: 500, height: bottom - top });
   const nodes = new Map([
-    ['.life2-hud', box(6, 66)], ['.life2-board', box(72, 509)], ['.life2-options', box(515, 619)],
+    ['.life2-board-frame', box(0, 679)], ['.life2-hud', box(6, 66)], ['.life2-board', box(72, 509)], ['.life2-options', box(515, 619)],
     ['.life2-bottom', box(625, 669)], ['.life2-bottom .life2-wheel', box(625, 669)],
     ['[data-action=end-season]', box(625, 669)],
   ].map(([key, rect]) => [key, { getBoundingClientRect: () => rect, checkVisibility: () => true }]));
