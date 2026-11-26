@@ -6,7 +6,7 @@ import { LIFE_RULES, STAT_LABEL } from '../src/life/life-data.ts';
 import { MAPS } from '../src/life/world.ts';
 import type { GameState, MapId } from '../src/life/types.ts';
 import { hud } from '../src/ui2/hud.ts';
-import { LIFE_MILESTONES, lifeProgress } from '../src/ui2/hud-model.ts';
+import { GRADE_COLOURS, LIFE_MILESTONES, LIFE_ROUTE_SEGMENTS, lifeProgress } from '../src/ui2/hud-model.ts';
 import { COPY } from '../src/ui2/popups/data.ts';
 import { TestNode, textOf, withDOM } from './life-popup2-dom-helper.ts';
 
@@ -54,7 +54,7 @@ test('UX1 HUD retains calendar, map, money, debt, stamina and neutral career ide
     assert.equal(panel.querySelector('.life2-money')!.textContent, '자금 1,234,567만');
     assert.equal(panel.querySelector('.life2-debt')!.textContent, '빚 9,876만');
     assert.equal(panel.querySelector('.life2-funds')!.dataset.debtState, 'owing');
-    assert.ok(textOf(panel.querySelector('.life2-stats')!).includes(`체력 ${state.s.stamina}/${view.capStamina}`));
+    assert.equal(panel.querySelector('.life2-stamina')!.attributes['aria-label'], `체력 ${state.s.stamina}/${view.capStamina}`);
     assert.equal(panel.querySelector('.life2-rank-pill')!.textContent, view.rankName || view.stageName);
     assert.deepEqual(state, before, 'HUD is read-only');
   }
@@ -71,6 +71,8 @@ test('UX1 drone progress marker, accessible counter and empty reserved slot surv
     assert.equal(progress.attributes['aria-valuetext'], `${derived(state).dateLabel} · ${turn}/204계절 완료`);
     assert.equal(top.querySelector('[data-hud-season]')!.textContent, `계절 ${p.season}/204`);
     assert.equal(progress.querySelectorAll('.life2-progress-tick').length, 3);
+    assert.deepEqual(progress.querySelectorAll('[data-age]').map(label => label.textContent), ['35세', '55세', '60세']);
+    assert.equal(progress.querySelectorAll('.life2-progress-segment').length, 4);
     assert.ok(progress.querySelector('.life2-progress-drone')!.querySelectorAll('path').length);
     const avatar = top.querySelector('[data-hud-avatar]')!;
     assert.equal(avatar.tagName, 'svg'); assert.ok(avatar.attributes['aria-label']);
@@ -93,7 +95,8 @@ test('UX1 grade letters, current values and change directions remain accessible 
     const chip = top.querySelector(`[data-grade=${stat}]`)!, letter = grade(stat, after.s[stat])!.letter;
     assert.equal(chip.querySelector('.life2-grade-letter')!.textContent, letter);
     assert.ok(chip.attributes['aria-label'].includes(`${STAT_LABEL[stat]} ${letter}등급`));
-    if (after.s[stat] !== before.s[stat]) {
+    assert.equal(chip.attributes.role, 'group');
+    if (!(chip as unknown as HTMLElement).hidden && after.s[stat] !== before.s[stat]) {
       assert.equal(chip.dataset.changedStat, stat);
       assert.equal(chip.dataset.direction, after.s[stat] > before.s[stat] ? 'up' : 'down');
     } else assert.equal(chip.dataset.changedStat, undefined);
@@ -101,8 +104,12 @@ test('UX1 grade letters, current values and change directions remain accessible 
   }
   assert.equal(top.querySelector('[data-changed-stat=stamina]')!.dataset.direction, 'down');
   assert.ok(top.querySelector('[data-changed-stat=stamina]')!.attributes['aria-label'].includes(`체력 ${after.s.stamina}/100`));
-  assert.match(top.querySelector('.life2-change-strip')!.textContent, /자금 \+250만 · 빚 \+100만/);
+  assert.equal(top.querySelectorAll('[data-changed-stat=stamina]').length, 1, 'only the visible stamina readout glows');
+  assert.match(textOf(top.querySelector('.life2-change-strip')!), /자금 \+250만 빚 \+100만/);
   assert.equal(top.querySelector('.life2-change-strip')!.attributes['aria-live'], 'polite');
+  for (const selector of ['.life2-money', '.life2-debt', '.life2-stamina', '.life2-grades']) {
+    assert.equal(top.querySelector(selector)!.attributes.role, 'group', `${selector} exposes its accessible name`);
+  }
 }));
 
 test('UX1 segmented battery reflects depleted, partial and age-capped stamina', () => withDOM(() => {
@@ -111,8 +118,49 @@ test('UX1 segmented battery reflects depleted, partial and age-capped stamina', 
     const top = render(state), battery = top.querySelector('.life2-battery')!;
     assert.equal(battery.children.length, 5);
     assert.equal(battery.querySelectorAll('[data-filled]').length, segments);
-    assert.ok(textOf(top.querySelector('.life2-stats')!).includes(`체력 ${stamina}/${cap}`));
+    assert.equal(top.querySelector('.life2-stamina')!.attributes['aria-label'], `체력 ${stamina}/${cap}`);
   }
+}));
+
+test('UX1b grade colours are distinct AA inks on the navy chips; route legs meet at the milestones', () => {
+  const luminance = (hex: string) => {
+    const rgb = hex.slice(1).match(/../g)!.map(channel => {
+      const value = parseInt(channel, 16) / 255;
+      return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+    });
+    return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+  };
+  assert.deepEqual(Object.keys(GRADE_COLOURS), ['G', 'F', 'E', 'D', 'C', 'B', 'A', 'S']);
+  assert.equal(new Set(Object.values(GRADE_COLOURS)).size, 8);
+  for (const ink of Object.values(GRADE_COLOURS)) {
+    assert.ok((luminance(ink) + .05) / (luminance('#102b40') + .05) >= 4.5, `${ink} meets AA`);
+  }
+  assert.equal(LIFE_ROUTE_SEGMENTS[0].from, 0);
+  assert.equal(LIFE_ROUTE_SEGMENTS.at(-1)!.to, 100);
+  for (const [index, milestone] of LIFE_MILESTONES.entries()) {
+    assert.equal(LIFE_ROUTE_SEGMENTS[index].to, milestone.percent);
+    assert.equal(LIFE_ROUTE_SEGMENTS[index + 1].from, milestone.percent);
+    assert.equal(LIFE_ROUTE_SEGMENTS[index].colour, milestone.colour);
+  }
+});
+
+test('UX1b hidden grades never get change marks, while money and debt deltas stay beside the funds', () => withDOM(() => {
+  const before = started(), after = structuredClone(before);
+  Object.assign(after.s, { theory: 90, rep: 90, net: 90, stamina: 20, money: 0, debt: 9_000_000 });
+  const top = render(after, before), funds = top.querySelector('.life2-funds')!;
+  for (const stat of ['stamina', 'theory', 'rep', 'net']) {
+    const cell = top.querySelector(`[data-grade=${stat}]`)!;
+    assert.equal((cell as unknown as HTMLElement).hidden, true);
+    assert.equal(cell.dataset.changedStat, undefined);
+    assert.equal(cell.dataset.direction, undefined);
+  }
+  assert.equal(funds.querySelector('[data-hud-delta-stat=money]')!.textContent, `자금 -${before.s.money}만`);
+  assert.equal(funds.querySelector('[data-hud-delta-stat=debt]')!.textContent, '빚 +9000000만');
+  assert.ok(funds.querySelector('.life2-credit-coin'));
+  const marks = top.querySelectorAll('[data-changed-stat]').map(cell => cell.dataset.changedStat);
+  assert.equal(marks.length, new Set(marks).size);
+  assert.equal(top.querySelector('[data-hud-player]')!.dataset.hudDelta, '');
+  assert.equal(render(before).querySelector('[data-hud-player]')!.dataset.hudDelta, undefined);
 }));
 
 test('UX1 destination prompt does not replace the rank or remove debt state', () => withDOM(() => {

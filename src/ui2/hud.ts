@@ -6,92 +6,119 @@ import { MAPS, WORLD } from '../life/world.ts';
 import { statChanges } from './popups/polish-model.ts';
 import { COPY } from './popups/data.ts';
 import { button, el } from '../ui/dom.ts';
-import { lifeProgress, LIFE_MILESTONES } from './hud-model.ts';
-import { pilotAvatar, progressDrone } from './hud-art.ts';
+import { GRADE_COLOURS, lifeProgress, LIFE_MILESTONES, LIFE_ROUTE_SEGMENTS } from './hud-model.ts';
+import { creditCoin, pilotAvatar, progressDrone } from './hud-art.ts';
 
 export const HUD_STYLE = `
 .life2 .life2-shell { grid-template-rows:110px minmax(0,1fr) clamp(50px,18dvh,136px) 44px; }
 .life2 .life2-bottom { position:relative; z-index:11; }
-/* 110px = 2 border + 8 padding + 8 gaps + 14 + 34 + 18 + 12 + 14.
-   Fixed rows include every line box; no overflow clipping or shrinking text. */
+/* 110 = 2 border + 8 padding + 4 gaps + 12 date + 54 player + 30 route.
+   The 44px avatar spans the player's 30 + 2 + 20px rows, inside 1px padding. */
 .life2 .life2-hud {
-  grid-template-rows:14px 34px 18px 12px 14px; grid-template-columns:minmax(0,1fr);
-  gap:2px; padding:4px 8px; color:#234554; background:#f7fbf8;
-  border-color:#657d87; border-radius:12px; box-shadow:0 2px 0 #9aafb5;
-  font-size:11px; line-height:14px; font-variant-numeric:tabular-nums;
+  grid-template:'date' 12px 'player' 54px 'route' 30px / minmax(0,1fr);
+  gap:2px; padding:4px 8px; color:#e9f6fa; background:#16394a;
+  border-color:#0b2436; border-radius:12px; box-shadow:0 2px 0 #557681;
+  font-size:11px; line-height:12px; font-variant-numeric:tabular-nums;
 }
 .life2 .life2-hud :is(div,span,h1,strong) { min-width:0; }
-.life2 .life2-date { display:flex; align-items:center; gap:6px; white-space:nowrap; }
-.life2 .life2-date h1 { font-size:12px; line-height:14px; letter-spacing:0; }
-.life2 .life2-date > span { font-size:11px; line-height:14px; }
-.life2 .life2-hud-season { margin-left:auto; color:#526974; }
+.life2 :is(.life2-money,.life2-debt,.life2-change-strip,.life2-stats,.life2-hud-season) { font-family:system-ui,sans-serif; }
+.life2 .life2-date { grid-area:date; display:flex; align-items:center; gap:5px; white-space:nowrap; }
+.life2 .life2-date h1 { font-size:12px; line-height:12px; letter-spacing:0; }
+.life2 .life2-date > span { font-size:11px; line-height:12px; }
+.life2 .life2-hud-season { margin-left:auto; color:#c3dce5; }
 .life2 .life2-player-card {
-  display:grid; grid-template-columns:32px minmax(0,1fr) auto; align-items:center; gap:6px;
-  border-radius:8px; background:#eaf2f2;
+  grid-area:player; display:grid; grid-template-columns:44px minmax(0,1fr) auto;
+  grid-template-rows:30px 20px; align-items:center; gap:2px 6px; padding:1px 4px;
+  border-radius:8px; background:linear-gradient(115deg,#123246,#0e4c59);
+  box-shadow:inset 0 0 0 1px #316474;
 }
-.life2 .life2-hud-avatar { width:32px; height:32px; }
-.life2 .life2-hud-identity { display:grid; grid-template-rows:16px 14px; gap:2px; }
+.life2 .life2-hud-avatar { grid-column:1; grid-row:1 / 3; width:44px; height:44px; }
+.life2 .life2-hud-identity { grid-column:2; grid-row:1; display:grid; grid-template-rows:14px 14px; gap:2px; }
 .life2 .life2-hud-rank { display:flex; align-items:center; gap:4px; white-space:nowrap; }
-.life2 .life2-pilot-name { font-size:11px; color:#526974; }
-.life2 .life2-rank-pill { padding:0 5px; border-radius:5px; background:#f3dcc8; color:#70472f; line-height:16px; }
-.life2 .life2-funds { display:grid; grid-template-rows:18px 14px; text-align:right; padding-right:4px; white-space:nowrap; }
-.life2 .life2-money { font-size:16px; line-height:18px; letter-spacing:-.025em; }
-.life2 .life2-debt { font-size:11px; line-height:14px; color:#526974; }
-.life2 [data-debt-state=owing] .life2-debt { color:#9b323b; font-weight:800; }
-.life2 .life2-stats { display:flex; align-items:center; gap:5px; font-size:11px; line-height:14px; white-space:nowrap; }
-.life2 .life2-battery { display:flex; gap:2px; width:32px; height:10px; padding:1px 3px 1px 1px;
-  border:1px solid #527778; border-radius:2px; position:relative; flex:none; }
-.life2 .life2-battery::after { content:''; position:absolute; right:-3px; top:2px; width:2px; height:4px; background:#527778; }
-.life2 .life2-battery-cell { flex:1; background:#c7d7d7; }
-.life2 .life2-battery-cell[data-filled] { background:#447f78; }
-.life2 .life2-grades { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }
-.life2 .life2-grade { display:flex; justify-content:center; align-items:start; gap:5px; position:relative;
-  border:1px solid #bdcdd2; border-radius:5px; background:#fffdf6; font-size:11px; line-height:13px; }
+.life2 .life2-pilot-name { display:none; }
+.life2 .life2-rank-pill { padding:0 4px; border-radius:4px; background:#194559; color:#f2fbff; line-height:14px; }
+.life2 .life2-funds { grid-column:3; grid-row:1; display:grid; grid-template-rows:16px 14px;
+  justify-items:end; text-align:right; white-space:nowrap; }
+.life2 .life2-coin-chip { display:flex; align-items:center; gap:3px; padding:0 3px;
+  height:16px; border-radius:5px; background:#0b2839; color:#ffe49a; }
+.life2 .life2-credit-coin { flex:none; width:14px; height:14px; }
+.life2 .life2-money { font-size:14px; line-height:16px; letter-spacing:-.025em; }
+.life2 .life2-debt { font-size:11px; line-height:14px; color:#c3dce5; }
+.life2 [data-debt-state=owing] .life2-debt { color:#ffbac6; font-weight:800; }
+.life2 .life2-stats { display:flex; align-items:center; gap:4px; font-size:11px; line-height:14px; white-space:nowrap; }
+.life2 .life2-battery { display:flex; gap:2px; width:30px; height:10px; padding:1px 4px 1px 1px;
+  border:1px solid #a4c9d3; border-radius:2px; position:relative; flex:none; }
+.life2 .life2-battery::after { content:''; position:absolute; right:1px; top:2px; width:2px; height:4px; background:#a4c9d3; }
+.life2 .life2-battery-cell { min-width:0; flex:1 1 0; background:#385d70; }
+.life2 .life2-battery-cell[data-filled] { background:#78e0b0; }
+.life2 .life2-grades { grid-row:2; grid-column:2 / 4; align-self:stretch;
+  display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:2px; }
+.life2 .life2-grade { display:flex; justify-content:center; align-items:start; gap:3px; position:relative;
+  border:1px solid #477080; border-radius:4px; background:#102b40; font-size:11px; line-height:13px; }
 .life2 .life2-grade[hidden] { display:none; }
-.life2 .life2-grade-letter { font-size:13px; line-height:13px; color:#39586f; }
-.life2 .life2-grade-gauge { position:absolute; left:4px; right:4px; bottom:1px; height:2px;
-  border-radius:2px; background:linear-gradient(to right,#527f90 var(--grade-progress),#dce6e8 var(--grade-progress)); }
-.life2 .life2-progress { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:5px;
+.life2 .life2-grade-letter { font-size:13px; line-height:13px; color:var(--grade-colour); }
+.life2 .life2-grade-gauge { position:absolute; left:3px; right:3px; bottom:1px; height:4px;
+  border-radius:2px; background:linear-gradient(to right,var(--grade-colour) var(--grade-progress),#648094 var(--grade-progress)); }
+.life2 .life2-hud-footer { grid-area:route; display:flex; align-items:center; gap:8px; }
+.life2 .life2-hud-status { flex:none; padding:0 4px; border-radius:4px; background:#2b5265; color:#e9f6fa; white-space:nowrap; }
+.life2 [data-pick-prompt] { background:#e9dbff; color:#46216f; line-height:12px; }
+.life2 .life2-progress { flex:1; position:relative; height:30px; container:life-route / inline-size;
   font-size:11px; line-height:12px; }
-.life2 .life2-progress-track { position:relative; height:12px;
-  background:linear-gradient(to right,#527f90 var(--life-progress),#cddcde var(--life-progress)) center / 100% 4px no-repeat; }
-.life2 .life2-progress-tick { position:absolute; top:2px; width:1px; height:8px; background:#809ba6; }
-.life2 .life2-progress-drone { position:absolute; top:0; width:18px; height:12px;
-  left:clamp(0px,calc(var(--life-progress) - 9px),calc(100% - 18px)); }
-.life2 .life2-hud-footer { display:flex; align-items:center; justify-content:space-between; gap:6px; }
-.life2 .life2-hud-status { padding:0 5px; border-radius:7px; background:#e4edef; white-space:nowrap; }
-.life2 [data-pick-prompt] { background:#e6dcf1; color:#563a7b; }
-.life2 .life2-change-strip { height:14px; font-size:11px; line-height:14px; white-space:nowrap; }
-/* UX5b reserved: up to three chips with >=44px targets. Allocate a row in that
-   ticket; the empty hidden slot must consume neither space nor a grid gap. */
+.life2 .life2-progress-track { position:absolute; top:5px; left:0; right:0; height:8px;
+  display:flex; border-radius:4px; background:#496579; }
+.life2 .life2-progress-segment { height:100%; box-shadow:inset -1px 0 #16394a; }
+.life2 .life2-progress-segment:first-child { border-radius:4px 0 0 4px; }
+.life2 .life2-progress-segment:last-child { border-radius:0 4px 4px 0; }
+.life2 .life2-progress-tick { position:absolute; top:4px; width:2px; height:10px; background:#e9f6fa; }
+.life2 .life2-progress-label { position:absolute; top:18px; line-height:12px; white-space:nowrap;
+  transform:translateX(-50%); color:#e9f6fa; }
+.life2 .life2-progress-label[data-route-end=start] { transform:none; }
+.life2 .life2-progress-label[data-route-end=end] { transform:translateX(-100%); }
+.life2 .life2-progress-drone { position:absolute; top:0; width:28px; height:18px;
+  left:clamp(0px,calc(var(--life-progress) - 14px),calc(100% - 28px)); }
+/* Tick positions stay exact. Only labels that would crowd neighbours disappear. */
+@container life-route (max-width:359px) { .life2 .life2-progress-label[data-age="60"] { display:none; } }
+@container life-route (max-width:189px) { .life2 .life2-progress-label[data-age="55"] { display:none; } }
+@container life-route (max-width:109px) { .life2 .life2-progress-label[data-age="35"] { display:none; } }
+.life2 .life2-change-strip { display:none; font-size:11px; line-height:12px; white-space:nowrap; color:#e9f6fa; }
+.life2 .life2-player-card[data-hud-delta] .life2-funds { grid-row:1 / 3; grid-template-rows:16px 12px 24px; }
+.life2 .life2-player-card[data-hud-delta] .life2-debt { line-height:12px; }
+.life2 .life2-player-card[data-hud-delta] .life2-change-strip { display:grid; grid-template-rows:12px 12px; }
+.life2 .life2-player-card[data-hud-delta] .life2-grades { grid-column:2; }
+.life2 .life2-player-card[data-hud-delta] .life2-grade-name { display:none; }
+.life2 .life2-hud [data-changed-stat][data-direction=down] { color:#ffbac6; }
+/* Keep the navy background and readable inks throughout change feedback. */
+.life2 .life2-hud [data-changed-stat] { animation-name:life2-hud-glow; }
+@keyframes life2-hud-glow { from { box-shadow:inset 0 0 0 2px #ffdc68; } to { box-shadow:inset 0 0 0 0 transparent; } }
+/* UX5b owns this future row. The empty slot must consume no space or gap. */
 .life2 .life2-hud-cards[hidden] { display:none; }
 .life2 .life2-options[data-single-page] { grid-template-rows:18px minmax(0,1fr); }
 .life2 .life2-pager[hidden] { display:none; }
-/* Short screens: the visible heading shares a 44px row with the pager;
-   the single choice gets the full width and another 44px row.
-   Options = 2px border + 10px padding + 4px gap + 44px + 44px = 104px.
-   At 500x679: 16px app padding + 60px HUD + 437px board + 104px options
-   + 44px nav + 18px gaps. The board cell is (437 - 16) / 9 = 46.78px.
-   Detailed abilities remain in My Life. No clipped, 1px heading: its wrapped
-   text can otherwise enlarge the root's scrollable overflow despite clip-path. */
 @media (max-width:899px) and (max-height:739px) {
   .life2 .life2-shell { --life2-hud-height:60px; grid-template-rows:60px minmax(0,1fr) 104px 44px; }
-  /* 60px = 2 border + 4 padding + 12 metadata + 30 player + 12 progress.
-     The status shares the progress row, so the destination prompt stays visible. */
+  /* 60 = 2 border + 4 padding + 54 player; the right column is 24 date + 30 route.
+     During pick it is 12 date + (12 prompt + 30 route). No vertical gap.
+     At 500x679 the unchanged board row is 437px: (437 - 16) / 9 = 46.78px tiles. */
   .life2 .life2-hud { padding:2px 8px; gap:0 8px;
-    grid-template:'date date' 12px 'player player' 30px 'status progress' 12px / auto minmax(0,1fr); }
-  .life2 .life2-date { grid-area:date; }
-  .life2 .life2-date h1,.life2 .life2-date > span { font-size:11px; line-height:12px; }
-  .life2 .life2-player-card { grid-area:player; grid-template-columns:28px minmax(0,1fr) auto; }
+    grid-template:'player date' 24px 'player route' 30px / minmax(0,1fr) clamp(176px,36vw,216px); }
+  .life2 .life2-hud:has([data-pick-prompt]) { grid-template-rows:12px 42px; }
+  .life2 .life2-date { height:24px; display:grid; grid-template:'calendar season' 12px 'map status' 12px / auto auto; gap:0 4px; }
+  .life2 .life2-date h1 { grid-area:calendar; font-size:11px; line-height:12px; }
+  .life2 .life2-hud-map { grid-area:map; }
+  .life2 .life2-hud-season { grid-area:season; }
+  .life2 .life2-date .life2-hud-status { grid-area:status; justify-self:end; }
+  .life2 .life2-hud:has([data-pick-prompt]) .life2-date { height:12px; grid-template-rows:12px; }
+  .life2 .life2-hud:has([data-pick-prompt]) .life2-hud-map { display:none; }
+  .life2 .life2-player-card { grid-template-columns:28px minmax(0,1fr) auto; column-gap:4px; }
   .life2 .life2-hud-avatar { width:28px; height:28px; }
-  .life2 .life2-hud-identity { gap:0; }
-  .life2 .life2-pilot-name { display:none; }
-  .life2 .life2-funds { grid-template-rows:18px 12px; }
-  .life2 .life2-debt { line-height:12px; }
-  .life2 .life2-grades,.life2 .life2-change-strip { display:none; }
-  .life2 .life2-hud-footer { display:contents; }
-  .life2 .life2-hud-status { grid-area:status; line-height:12px; }
-  .life2 .life2-progress { grid-area:progress; }
+  .life2 .life2-stamina-word,.life2 .life2-grade-name { display:none; }
+  .life2 .life2-money { font-size:11px; letter-spacing:0; }
+  .life2 .life2-credit-coin { width:12px; height:12px; }
+  .life2 .life2-coin-chip { gap:2px; padding:0 2px; }
+  .life2 .life2-grades { grid-column:2; }
+  .life2 .life2-hud-footer { display:grid; grid-template-rows:30px; gap:0; align-items:stretch; }
+  .life2 .life2-hud-footer:has([data-pick-prompt]) { grid-template-rows:12px 30px; }
+  .life2 [data-pick-prompt] { justify-self:start; }
   .life2 .life2-options,.life2 .life2-options[data-single-page] {
     padding:5px; gap:4px;
     grid-template:'heading pager' 44px 'choices choices' minmax(0,1fr) / minmax(0,1fr) auto;
@@ -102,17 +129,34 @@ export const HUD_STYLE = `
   .life2 .life2-pager button { padding:0 6px; }
 }
 @media (min-width:900px) {
-  .life2 .life2-shell { grid-template-rows:138px minmax(0,1fr) 44px; }
-  /* 138px = 2 border + 12 padding + 16 gaps + 14 + 44 + 22 + 14 + 14. */
-  .life2 .life2-hud { padding:6px 10px; gap:4px; grid-template-rows:14px 44px 22px 14px 14px; }
-  .life2 .life2-player-card { grid-template-columns:42px minmax(0,1fr) auto; }
-  .life2 .life2-hud-avatar { width:42px; height:42px; }
-  .life2 .life2-hud-identity { grid-template-rows:18px 14px; gap:4px; }
-  .life2 .life2-rank-pill { line-height:18px; }
-  .life2 .life2-funds { grid-template-rows:24px 14px; }
-  .life2 .life2-money { font-size:18px; line-height:24px; }
-  .life2 .life2-grade { line-height:16px; }
-  .life2 .life2-grade-letter { font-size:15px; line-height:16px; }
+  .life2 .life2-shell { grid-template-rows:138px minmax(0,1fr) 44px;
+    grid-template-columns:minmax(0,1fr) clamp(380px,40vw,480px); }
+  /* 138 = 2 border + 12 padding + 8 gaps + 16 date + 64 player + 36 route. */
+  .life2 .life2-hud { padding:6px 10px; gap:4px; grid-template-rows:16px 64px 36px; font-size:12px; line-height:14px; }
+  .life2 .life2-date h1 { font-size:14px; line-height:16px; }
+  .life2 .life2-date > span { font-size:12px; line-height:16px; }
+  .life2 .life2-player-card { padding:2px 4px; grid-template-columns:56px minmax(0,1fr) auto; grid-template-rows:36px 22px; }
+  .life2 .life2-hud-avatar { width:56px; height:56px; }
+  .life2 .life2-hud-identity { grid-template-rows:16px 16px; gap:4px; }
+  .life2 .life2-rank-pill { line-height:16px; }
+  .life2 .life2-funds { grid-template-rows:22px 14px; }
+  .life2 .life2-coin-chip { height:22px; }
+  .life2 .life2-credit-coin { width:18px; height:18px; }
+  .life2 .life2-money { font-size:18px; line-height:22px; }
+  .life2 .life2-debt,.life2 .life2-stats { font-size:12px; line-height:14px; }
+  .life2 .life2-grade { font-size:12px; line-height:15px; }
+  .life2 .life2-grade-letter { font-size:16px; line-height:15px; }
+  .life2 .life2-progress { height:36px; font-size:12px; line-height:14px; }
+  .life2 .life2-progress-track { height:10px; }
+  .life2 .life2-progress-tick { height:12px; }
+  .life2 .life2-progress-label { top:22px; line-height:14px; }
+  .life2 .life2-progress-drone { width:32px; height:20px; left:clamp(0px,calc(var(--life-progress) - 16px),calc(100% - 32px)); }
+  .life2 [data-pick-prompt] { line-height:16px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-funds { grid-template-rows:20px 14px 26px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-coin-chip { height:20px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-money { line-height:20px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-debt { line-height:14px; }
+  .life2 .life2-player-card[data-hud-delta] .life2-change-strip { grid-template-rows:13px 13px; font-size:12px; line-height:13px; }
 }
 `;
 const GRADE_NAMES = { skill: '조종', xp: '경험', teach: '교육', biz: '사업', support: '지지' };
@@ -121,6 +165,7 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
   open?: (menu: 'my-life' | 'phone') => void, before?: GameState) {
   const changes = before ? statChanges(before, state) : [];
   const mark = (cell: HTMLElement, stat: string, label = cell.textContent ?? '') => {
+    cell.setAttribute('role', 'group');
     const change = changes.find(row => row.stat === stat);
     if (change) { cell.dataset.changedStat = stat; cell.dataset.direction = change.direction;
       cell.setAttribute('aria-label', `${label} · ${change.label} ${change.value}`); }
@@ -149,48 +194,74 @@ export function hud(state: GameState, view: Derived, offered: OptionView[], choo
     if (state.s.stamina > index * view.capStamina / 5) segment.dataset.filled = '';
     battery.append(segment);
   }
-  stats.append(mark(el('span', '', staminaText), 'stamina'), battery);
+  const stamina = el('span', 'life2-stamina');
+  stamina.append(el('span', 'life2-stamina-word', '체력 '), el('span', '', `${state.s.stamina}/${view.capStamina}`));
+  stats.append(mark(stamina, 'stamina', staminaText), battery);
   identity.append(rank, stats);
   const funds = el('div', 'life2-funds'); funds.dataset.debtState = state.s.debt > 0 ? 'owing' : 'clear';
-  funds.append(mark(el('strong', 'life2-money', `자금 ${state.s.money.toLocaleString('ko-KR')}만`), 'money'),
-    mark(el('span', 'life2-debt', `빚 ${state.s.debt.toLocaleString('ko-KR')}만`), 'debt'));
-  player.append(pilotAvatar(), identity, funds);
+  const coin = el('div', 'life2-coin-chip');
+  coin.append(creditCoin(), mark(el('strong', 'life2-money', `자금 ${state.s.money.toLocaleString('ko-KR')}만`), 'money'));
+  const ticks = el('div', 'life2-change-strip'); ticks.setAttribute('aria-live', 'polite');
+  const changed = changes.filter(row => ['money', 'debt'].includes(row.stat!));
+  if (changed.length) player.dataset.hudDelta = '';
+  for (const row of changed) {
+    const delta = state.s[row.stat!] - before!.s[row.stat!];
+    const tick = el('span', '', `${row.label} ${delta > 0 ? '+' : ''}${delta}만`);
+    tick.dataset.hudDeltaStat = row.stat; ticks.append(tick);
+  }
+  funds.append(coin, mark(el('span', 'life2-debt', `빚 ${state.s.debt.toLocaleString('ko-KR')}만`), 'debt'), ticks);
   const status = el('span', 'life2-hud-status', picking ? COPY.pickDestination : starting ? '진로 선택 전' : view.period);
   if (picking) { status.dataset.pickPrompt = ''; status.setAttribute('role', 'status'); }
-  const grades = el('div', 'life2-grades'); grades.setAttribute('aria-label', '능력치 등급');
+  const grades = el('div', 'life2-grades'); grades.setAttribute('role', 'group'); grades.setAttribute('aria-label', '능력치 등급');
   for (const stat of GRADED_STATS) {
     const { letter, from, next } = grade(stat, state.s[stat])!;
     const cell = el('span', 'life2-grade'); cell.dataset.grade = stat;
     // UX1 shows five career grades. Preserve the other shared grade hooks;
     // their visible details remain in My Life, without a second HUD row.
     cell.hidden = !(stat in GRADE_NAMES);
+    cell.setAttribute('role', 'group');
+    cell.style.setProperty('--grade-colour', GRADE_COLOURS[letter]);
     const gauge = el('span', 'life2-grade-gauge'); gauge.setAttribute('aria-hidden', 'true');
     const filled = next === null ? 100 : Math.max(0, Math.min(100, (state.s[stat] - from) * 100 / (next - from)));
     gauge.style.setProperty('--grade-progress', `${filled}%`);
-    cell.append(el('span', '', GRADE_NAMES[stat as keyof typeof GRADE_NAMES] ?? STAT_LABEL[stat]),
+    cell.append(el('span', 'life2-grade-name', GRADE_NAMES[stat as keyof typeof GRADE_NAMES] ?? STAT_LABEL[stat]),
       el('b', 'life2-grade-letter', letter), gauge);
-    grades.append(mark(cell, stat, `${STAT_LABEL[stat]} ${letter}등급`));
+    const label = `${STAT_LABEL[stat]} ${letter}등급`;
+    if (cell.hidden) cell.setAttribute('aria-label', label);
+    else mark(cell, stat, label);
+    grades.append(cell);
   }
+  player.append(pilotAvatar(), identity, funds, grades);
   const timeline = el('div', 'life2-progress'); timeline.dataset.hudProgress = '';
   timeline.setAttribute('role', 'progressbar'); timeline.setAttribute('aria-label', '인생 항로');
   timeline.setAttribute('aria-valuemin', '0'); timeline.setAttribute('aria-valuemax', String(progress.total));
   timeline.setAttribute('aria-valuenow', String(progress.completed));
   timeline.setAttribute('aria-valuetext', `${view.dateLabel} · ${progress.completed}/${progress.total}계절 완료`);
   const track = el('div', 'life2-progress-track'); track.setAttribute('aria-hidden', 'true');
-  track.style.setProperty('--life-progress', `${progress.percent}%`);
-  for (const milestone of LIFE_MILESTONES) {
-    const tick = el('span', 'life2-progress-tick'); tick.title = `${milestone.age}세`;
-    tick.style.left = `${milestone.percent}%`; track.append(tick);
+  timeline.style.setProperty('--life-progress', `${progress.percent}%`);
+  for (const part of LIFE_ROUTE_SEGMENTS) {
+    const segment = el('span', 'life2-progress-segment');
+    segment.style.width = `${part.to - part.from}%`; segment.style.backgroundColor = part.colour;
+    track.append(segment);
   }
-  track.append(progressDrone());
-  timeline.append(el('span', '', `${progress.startAge}세`), track, el('span', '', `${progress.endAge}세`));
-  const ticks = el('div', 'life2-change-strip'); ticks.setAttribute('aria-live', 'polite');
-  const changed = changes.filter(row => ['money', 'debt'].includes(row.stat!));
-  ticks.textContent = changed.map(row => { const delta = state.s[row.stat!] - before!.s[row.stat!];
-    return `${row.label} ${delta > 0 ? '+' : ''}${delta}만`; }).join(' · ');
-  const footer = el('div', 'life2-hud-footer'); footer.append(status, ticks);
+  timeline.append(track);
+  for (const milestone of LIFE_MILESTONES) {
+    const tick = el('span', 'life2-progress-tick'); tick.setAttribute('aria-hidden', 'true');
+    tick.style.left = `${milestone.percent}%`;
+    const label = el('span', 'life2-progress-label', `${milestone.age}세`);
+    label.dataset.age = String(milestone.age); label.style.left = `${milestone.percent}%`;
+    timeline.append(tick, label);
+  }
+  for (const [end, age, percent] of [['start', progress.startAge, 0], ['end', progress.endAge, 100]] as const) {
+    const label = el('span', 'life2-progress-label', `${age}세`);
+    label.dataset.routeEnd = end; label.style.left = `${percent}%`; timeline.append(label);
+  }
+  timeline.append(progressDrone());
+  const footer = el('div', 'life2-hud-footer');
+  if (picking) footer.append(status); else date.insertBefore(status, season);
+  footer.append(timeline);
   const cards = el('div', 'life2-hud-cards'); cards.dataset.hudSlot = 'cards'; cards.hidden = true;
-  top.append(el('style', '', HUD_STYLE), date, player, grades, timeline, footer, cards);
+  top.append(el('style', '', HUD_STYLE), date, player, footer, cards);
   const bottom = el('footer', 'life2-bottom');
   // Navigation opens presentation views; engine options still own every service.
   for (const [name, nav] of [['내 인생', 'life'], ['휴대폰', 'phone']]) {

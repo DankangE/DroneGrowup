@@ -14,8 +14,7 @@ const PILOT: VectorArt = { viewBox: '0 0 64 64', paths: [
   path('M24 29v2m16-2v2m-12 6q4 3 8 0', 'none', '#684d42'),
   path('M15 25h4v10h-4Zm30 0h4v10h-4Z', '#426777', '#234554'),
   path('M48 34v5h-9', 'none', '#234554'),
-  path('m20 46 6 10 6-6 6 6 6-10M32 51v10', 'none', '#b7d6cd'),
-  path('M13 51h8v7h-8Zm33-4v10m-3-7h6', 'none', '#e6c38a'),
+  path('m22 46 10 6 10-6M32 52v9', 'none', '#b7d6cd', 3),
 ] };
 
 export function pilotAvatar() {
@@ -25,10 +24,22 @@ export function pilotAvatar() {
 }
 
 export function progressDrone() {
-  const drone = svg('svg', { viewBox: '0 0 24 16', width: 18, height: 12,
+  // Front-on courier: two broad rotors, a bright cargo body and one landing skid.
+  const drone = svg('svg', { viewBox: '0 0 28 18', width: 28, height: 18,
     class: 'life2-progress-drone', 'aria-hidden': 'true', focusable: 'false',
-    fill: '#fffaf0', stroke: '#234554', 'stroke-width': 1.5, 'stroke-linecap': 'round' });
-  drone.append(svg('path', { d: 'm6 4 12 8M18 4 6 12M2 3h8m4 0h8M2 13h8m4 0h8' }),
-    svg('path', { d: 'm9 5 3-2 3 2v6l-3 2-3-2Z', fill: '#c58259' }));
+    fill: '#ffdc68', stroke: '#102c40', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+  drone.append(svg('path', { d: 'M2 3h8m8 0h8M6 3v5h16V3', fill: 'none' }),
+    svg('path', { d: 'M9 6h10v7H9ZM10 14v2h8v-2' }),
+    svg('path', { d: 'M12 9h4', stroke: '#102c40' }));
   return drone;
+}
+
+export function creditCoin() {
+  const coin = svg('svg', { viewBox: '0 0 20 20', width: 16, height: 16,
+    class: 'life2-credit-coin', 'aria-hidden': 'true', focusable: 'false' });
+  coin.append(svg('path', { d: 'M10 1a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z',
+    fill: '#ffdc68', stroke: '#9b641e', 'stroke-width': 1.5 }),
+  svg('path', { d: 'M4 6h4m4 0h4M6 6v4h8V6M8 9h4v5H8Z',
+    fill: '#fff1b6', stroke: '#66431c', 'stroke-width': 1.5, 'stroke-linecap': 'round' }));
+  return coin;
 }

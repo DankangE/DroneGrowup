@@ -325,6 +325,37 @@ async function movementChecks(page, load, check) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
 }
 
+// Real phone choices supply both signs of change, including maximum-value text.
+// Inspect the first result render: dismissing it intentionally clears HUD glows.
+async function hudChangeChecks(page, load, check) {
+  for (const id of ['loan:500', `repay:${LIFE_RULES.statMax}`]) {
+    const run = choose(newGame(11), 'start:school').state;
+    run.status = 'working'; run.track = 'academy'; run.job.rank = 3; run.job.tracks = ['academy'];
+    run.s.money = id.startsWith('loan:') ? LIFE_RULES.statMax - 500 : LIFE_RULES.statMax;
+    run.s.debt = id.startsWith('loan:') ? 0 : LIFE_RULES.statMax;
+    assert.ok(options(run, 'phone').some(option => option.id === id && option.enabled));
+    await load(run);
+    await page.locator('[data-nav=phone]').click();
+    await page.locator('[data-tab=bank]').click();
+    const choice = page.locator(`[data-option="${id}"]`);
+    for (let count = 0; !await choice.count(); count++) {
+      assert.ok(count < 10, `${id}: bounded bank pages`);
+      await page.locator('[data-action=popup-page-next]').click();
+    }
+    const after = choose(run, id, 'phone').state;
+    await choice.click();
+    assert.deepEqual(await page.evaluate(() => window.__life.state()), after);
+    await check(`HUD ${id} delta with long rank`);
+    for (const stat of ['money', 'debt']) {
+      const delta = after.s[stat] - run.s[stat];
+      assert.notEqual(delta, 0);
+      const chip = page.locator(`[data-hud-delta-stat="${stat}"]`);
+      assert.equal(await chip.isVisible(), true, `${stat} delta visible at every size`);
+      assert.ok((await chip.textContent()).endsWith(`${delta > 0 ? '+' : ''}${delta}만`));
+    }
+  }
+}
+
 // HUD checks are separate from board geometry; timed play keeps its existing audit cost.
 export function auditHud() {
   const issues = [], vw = innerWidth, vh = innerHeight;
@@ -341,25 +372,45 @@ export function auditHud() {
       && Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + .1;
     const required = ['.life2-date', '[data-hud-player]', '[data-hud-avatar]', '.life2-rank-pill',
       '.life2-money', '.life2-debt', '.life2-stats', '.life2-battery', '[data-hud-progress]',
-      '.life2-progress-track', '.life2-progress-drone', '[data-hud-season]', '.life2-hud-status'];
-    if (!short) required.push('.life2-grades', '.life2-change-strip');
+      '.life2-progress-track', '.life2-progress-drone', '[data-hud-season]', '.life2-hud-status', '.life2-grades'];
     for (const selector of required) {
       const node = hud.querySelector(selector);
-      // An empty, live change strip has no text width until an amount changes.
-      if (!node || (!visible(node) && !(selector === '.life2-change-strip' && !node.textContent
-        && node.getBoundingClientRect().height === 14)))
-        issues.push(`HUD: ${selector} missing or hidden`);
+      if (!node || !visible(node)) issues.push(`HUD: ${selector} missing or hidden`);
+    }
+    const strip = hud.querySelector('.life2-change-strip');
+    if (!strip || (strip.textContent.trim() && !visible(strip))) issues.push('HUD: money/debt change strip missing or hidden');
+    for (const stat of ['money', 'debt']) {
+      if (!hud.querySelector(`[data-changed-stat="${stat}"]`)) continue;
+      const delta = hud.querySelector(`[data-hud-delta-stat="${stat}"]`);
+      if (!delta || !visible(delta) || !delta.textContent.match(/[+-]\d+만/))
+        issues.push(`HUD: changed ${stat} has no visible delta`);
     }
     const grades = [...hud.querySelectorAll('[data-grade]')];
     const primaryGrades = ['skill', 'xp', 'teach', 'biz', 'support'];
     if (primaryGrades.some(stat => !grades.some(chip => chip.dataset.grade === stat))
-      || grades.filter(visible).length !== (short ? 0 : 5)) issues.push('HUD: expected five career grade chips');
+      || grades.filter(visible).length !== 5) issues.push('HUD: expected five career grade chips at every size');
     for (const chip of grades) {
-      if (visible(chip) !== (!short && primaryGrades.includes(chip.dataset.grade)))
+      if (visible(chip) !== primaryGrades.includes(chip.dataset.grade))
         issues.push('HUD: grade visibility does not match size');
-      if (!chip.getAttribute('aria-label') || !chip.querySelector('.life2-grade-letter')
+      if (chip.getAttribute('role') !== 'group' || !chip.getAttribute('aria-label') || !chip.querySelector('.life2-grade-letter')
         || !chip.querySelector('.life2-grade-gauge')) issues.push('HUD: incomplete grade chip');
+      if (visible(chip)) {
+        const gauge = chip.querySelector('.life2-grade-gauge'), letter = chip.querySelector('.life2-grade-letter');
+        if (!gauge || !visible(gauge) || gauge.getBoundingClientRect().height < 4 || !letter || !visible(letter))
+          issues.push('HUD: grade letter/gauge hidden or gauge below 4px');
+      } else if (chip.hasAttribute('data-changed-stat')) issues.push('HUD: hidden grade receives change glow');
     }
+    const marks = [...hud.querySelectorAll('[data-changed-stat]')].map(node => node.dataset.changedStat);
+    if (new Set(marks).size !== marks.length) issues.push('HUD: stat is marked twice');
+    const bar = hud.querySelector('.life2-progress-track')?.getBoundingClientRect();
+    if (!bar || bar.height < 8 || bar.height > 10) issues.push('HUD: route bar must be 8–10px thick');
+    const drone = hud.querySelector('.life2-progress-drone')?.getBoundingClientRect();
+    if (!drone || drone.width < 28 || drone.height < 18) issues.push('HUD: drone marker below 28x18px');
+    if (![...hud.querySelectorAll('.life2-progress-label[data-age]')].some(visible))
+      issues.push('HUD: no visible milestone age labels');
+    const hudCss = getComputedStyle(hud);
+    const border = Object.fromEntries(['Left', 'Right', 'Top', 'Bottom'].map(side =>
+      [side, parseFloat(hudCss[`border${side}Width`])]));
     for (const node of hud.querySelectorAll('*')) {
       if (!visible(node) || (node.closest('svg') && node.tagName.toLowerCase() !== 'svg'
         && node.tagName.toLowerCase() !== 'text')) continue;
@@ -367,6 +418,10 @@ export function auditHud() {
       if (rect.left < Math.max(0, box.left) - .1 || rect.right > Math.min(vw, box.right) + .1
         || rect.top < Math.max(0, box.top) - .1 || rect.bottom > Math.min(vh, box.bottom) + .1)
         issues.push(`HUD: ${label} outside HUD or viewport`);
+      // At least 2px from the inner border edge, including prompt and marker.
+      if (rect.left < box.left + border.Left + 2 - .1 || rect.right > box.right - border.Right - 2 + .1
+        || rect.top < box.top + border.Top + 2 - .1 || rect.bottom > box.bottom - border.Bottom - 2 + .1)
+        issues.push(`HUD: ${label} touches HUD border (needs 2px clearance)`);
       let parent = node.parentElement;
       while (parent && getComputedStyle(parent).display === 'contents') parent = parent.parentElement;
       if (parent) {
@@ -376,8 +431,9 @@ export function auditHud() {
           issues.push(`HUD: ${label} overflows parent`);
       }
       const textNodes = [...node.childNodes].filter(child => child.nodeType === 3 && child.textContent.trim());
-      if (textNodes.length && parseFloat(getComputedStyle(node).fontSize) < 11)
-        issues.push(`HUD: ${label} text below 11px`);
+      const minFont = vw >= 900 ? 12 : 11;
+      if (textNodes.length && parseFloat(getComputedStyle(node).fontSize) < minFont)
+        issues.push(`HUD: ${label} text below ${minFont}px`);
       // Check unwrapped text too: overflow:visible must not hide an undersized column.
       for (const text of textNodes) {
         const range = document.createRange(); range.selectNodeContents(text);
@@ -388,19 +444,21 @@ export function auditHud() {
       }
     }
     const disjoint = (nodes, label) => {
-      const boxes = nodes.filter(visible).map(node => node.getBoundingClientRect());
-      for (const [index, one] of boxes.entries()) for (const two of boxes.slice(index + 1)) {
-        if (overlaps(one, two)) issues.push(`HUD: ${label} overlap`);
+      const shown = nodes.filter(visible);
+      for (const [index, one] of shown.entries()) for (const two of shown.slice(index + 1)) {
+        if (!one.contains(two) && !two.contains(one) && overlaps(one.getBoundingClientRect(), two.getBoundingClientRect()))
+          issues.push(`HUD: ${label} overlap`);
       }
     };
     // Check independent regions, then their sibling contents. Parent/child
     // containment and deliberate gauge/marker overlays are not collisions.
     disjoint([...hud.querySelectorAll('.life2-date, [data-hud-player], .life2-grades, [data-hud-progress], .life2-hud-status, .life2-change-strip')], 'regions');
     for (const selector of ['.life2-date', '[data-hud-player]', '.life2-hud-identity', '.life2-hud-rank',
-      '.life2-funds', '.life2-stats', '.life2-grades', '[data-hud-progress]', '[data-grade]']) {
+      '.life2-funds', '.life2-coin-chip', '.life2-change-strip', '.life2-stats', '.life2-grades', '[data-grade]']) {
       for (const parent of hud.querySelectorAll(selector)) disjoint(
-        [...parent.children].filter(node => !node.matches('.life2-grade-gauge')), selector);
+        [...parent.children], selector);
     }
+    disjoint([...hud.querySelectorAll('.life2-progress-label, .life2-progress-drone')], 'route labels/marker');
     const cards = hud.querySelector('[data-hud-slot=cards]');
     if (!cards || !cards.hidden || cards.children.length || cards.textContent.trim()
       || cards.getBoundingClientRect().height !== 0 || cards.getBoundingClientRect().width !== 0)
@@ -465,9 +523,12 @@ export function audit() {
         Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + 1) issues.push('screen regions overlap');
   }
   const strip = document.querySelector('.life2-change-strip')?.getBoundingClientRect();
-  if (strip) for (const row of document.querySelectorAll('.life2-stats, .life2-funds, .life2-grades')) {
+  // Deltas now live inside funds; compare their actual sibling rectangles in
+  // both axes so inline content is checked just as strictly as stacked rows.
+  if (strip) for (const row of document.querySelectorAll('.life2-stats, .life2-coin-chip, .life2-debt, .life2-grades')) {
     const box = row.getBoundingClientRect();
-    if (strip.top < box.bottom && strip.bottom > box.top) issues.push('money change overlaps HUD rows');
+    if (strip.width && strip.height && strip.left < box.right && strip.right > box.left
+      && strip.top < box.bottom && strip.bottom > box.top) issues.push('money change overlaps HUD rows');
   }
   const popup = document.querySelector('.life2-popup');
   if (popup) {
@@ -872,6 +933,7 @@ async function main() {
           assert.equal(await page.locator('[data-hud-progress]').getAttribute('aria-valuenow'), String(late.turn));
           assert.equal(await page.locator('[data-hud-season]').textContent(), `계절 204/204`);
         }
+        await hudChangeChecks(page, load, check);
         await movementChecks(page, load, check); seasons++;
         const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
         event.board.step = 'space'; event.board.dice = [1, 1];
@@ -901,7 +963,7 @@ async function main() {
     finally { await server.close(); }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
-  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll; HUD bounds/overlaps, progress and hidden cards checked`);
+  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll; HUD five grades, signed deltas, 8–10px route, 28x18 drone, 2px border clearance, overlaps and hidden cards checked`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
