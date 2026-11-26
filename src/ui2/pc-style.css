@@ -426,26 +426,68 @@ html #app.life2 :is(.life2-choice-outcomes,.life2-outcome-notes,.life2-outcome-o
 html #app.life2 .life2-choice-detail[data-inline-details] [data-action=popup-details] { margin-top:auto; font-size:clamp(12px,.95vw,17px); }
 }
 
-/* The measured pawn stays fixed; only its inset badge hops inside that box. */
+/* Keep the measured pawn/placement unchanged. All paint, including the hop,
+   stays inside that box; the flag has its own row above the avatar/drone. */
 html #app.life2 .life2-pawn-label,html #app.life2 .life2-location-halo { display:none; }
 @media(min-width:900px) {
-html #app.life2 .life2-pawn-marker { position:absolute; inset:4px 3px 2px; border:3px solid #142f46; border-radius:50% 50% 45% 45%; background:#fff5b0; outline:2px solid #fff; box-shadow:0 2px 0 #142f46,0 0 0 4px #ffe538; transform-origin:center bottom; }
-html #app.life2 .life2-pawn .life2-hud-avatar { inset:1px auto auto 15%; width:70%; height:65%; border:2px solid #fff; border-radius:50%; background:#24bbcd; }
-html #app.life2 .life2-pawn .life2-progress-drone { left:6%; bottom:1px; top:auto; width:88%; height:38%; }
-html #app.life2 .life2-pawn-label { position:absolute; right:-2px; bottom:-2px; z-index:1; display:grid; place-items:center; width:19px; height:19px; border:1px solid #fff; border-radius:50%; background:#142f46; color:#fff; text-shadow:none; font-size:12px; line-height:1; }
-html #app.life2 .life2-tile[aria-current=location] { border-color:#ffe538; box-shadow:0 0 0 3px #142f46,0 0 0 5px #fff59e,0 7px 0 #214c65; }
-html #app.life2 .life2-board-tilted .life2-tile[aria-current=location]::before { border-color:#ffe538; box-shadow:0 0 0 3px #142f46,0 0 0 5px #fff59e,0 9px 0 #214c65; }
-html #app.life2 .life2-location-halo { display:block; position:absolute; inset:-3px; border:2px solid #fff9c3; border-radius:inherit; box-shadow:0 0 0 5px #ffe53850; pointer-events:none; animation:life2-location-pulse 1.6s ease-in-out infinite; }
+html #app.life2 .life2-tile[aria-current=location] { --player-accent:#e60046; --player-ink:#142f46; border-color:var(--player-ink); box-shadow:none; }
+html #app.life2 .life2-pawn-marker {
+  --pawn-flag-height:clamp(24px,2.8vh,30px);
+  position:absolute; inset:3px 1px 1px; isolation:isolate;
+  border:2px solid #fff; border-radius:8px 8px 10px 2px;
+  background:var(--player-ink); box-shadow:inset 0 0 0 1px var(--player-ink);
+}
+html #app.life2 .life2-pawn-label {
+  position:absolute; inset:0 0 auto; z-index:2; display:grid; place-items:center;
+  height:var(--pawn-flag-height); border-radius:5px 5px 2px 2px;
+  background:var(--player-accent); color:#fff; text-shadow:none;
+  font:700 clamp(18px,2vh,22px)/1.2 'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  white-space:nowrap; overflow-wrap:normal; letter-spacing:0;
+}
+html #app.life2 .life2-pawn .life2-hud-avatar {
+  inset:calc(var(--pawn-flag-height) + 1px) auto auto 2px; z-index:1;
+  width:36%; height:calc(100% - var(--pawn-flag-height) - 1px); max-height:none;
+  padding:0; border:1px solid #fff; border-radius:50%; background:#24bbcd; transform:none;
+}
+html #app.life2 .life2-pawn .life2-progress-drone {
+  inset:auto 2px 0 auto; z-index:1; width:54%; height:calc(100% - var(--pawn-flag-height) - 1px);
+}
+html #app.life2 .life2-board-tilted .life2-tile[aria-current=location]::before { border-color:var(--player-ink); box-shadow:inset 0 3px 0 #ffffff60; }
+/* The tile has a 3px border: -2px starts the ring 1px INSIDE its outer box.
+   Paint behind the contents, including pick's step counts/fares, with no spread
+   into the 2px road gaps or a neighbouring tile's icon/label. */
+html #app.life2 .life2-location-halo {
+  display:block; position:absolute; inset:-2px; z-index:-1;
+  border:4px solid var(--player-accent); border-radius:inherit;
+  box-shadow:inset 0 0 0 1px #fff; pointer-events:none;
+  animation:life2-location-pulse 2.4s ease-in-out infinite;
+}
 html #app.life2 [data-hopping] .life2-pawn-marker { animation:life2-pawn-hop var(--step-ms) ease-out var(--move-delay,0ms) both; }
 html #app.life2 [data-landing] .life2-location-halo { animation:life2-pawn-landing var(--step-ms) ease-out var(--move-delay,0ms) both; }
-@keyframes life2-location-pulse { 0%,100% { opacity:.6; box-shadow:0 0 0 3px #ffe53850; } 50% { opacity:1; box-shadow:0 0 0 6px #ffe53825; } }
-@keyframes life2-pawn-hop {
-  0% { transform:scale(.94,.9); }
-  35% { transform:translateY(-3px) scale(.96,1.02); }
-  65% { transform:scale(1.04,.9); }
-  80%,100% { transform:none; }
+@keyframes life2-location-pulse {
+  0%,100% { border-color:var(--player-accent); box-shadow:inset 0 0 0 1px #fff; }
+  50% { border-color:#ff5a80; box-shadow:inset 0 0 0 2px #fff; }
 }
-@keyframes life2-pawn-landing { 0% { opacity:.6; box-shadow:0 0 0 2px #fff59e; } 45% { opacity:1; box-shadow:0 0 0 7px #ffe53880; } 80%,100% { opacity:1; box-shadow:0 0 0 4px #ffe53850; } }
+/* Translation only: the Korean flag never shrinks or stretches during a step. */
+@keyframes life2-pawn-hop {
+  0%,80%,100% { transform:none; }
+  35% { transform:translateY(-2px); }
+}
+@keyframes life2-pawn-landing {
+  0%,100% { border-color:var(--player-accent); }
+  45% { border-color:#fff; }
+}
+/* Keep the transfer overview in the clear band above the board, so the origin
+   marker stays visible even when the board is flat. Timing/frames are unchanged. */
+html #app.life2 .life2-transfer { inset:17vh 32vw auto 36vw; padding:6px 10px; gap:4px; border:2px solid #fff; border-radius:12px; background:#173549; color:#fff; place-content:stretch; }
+html #app.life2 .life2-transfer > strong { font-size:14px; line-height:18px; }
+html #app.life2 .life2-map-overview { gap:4px; }
+html #app.life2 .life2-map-overview span { padding:2px 6px; font-size:12px; line-height:16px; }
+/* Reuse the transfer duration without shrinking the overview's 12px text. */
+html #app.life2 .life2-map-overview [data-from] { animation-name:life2-transfer-fade-out; }
+html #app.life2 .life2-map-overview [data-to] { color:#142f46; animation-name:life2-transfer-fade-in; }
+@keyframes life2-transfer-fade-out { to { opacity:.35; } }
+@keyframes life2-transfer-fade-in { from { opacity:.35; } to { opacity:1; } }
 @media(prefers-reduced-motion:reduce) {
   html #app.life2 .life2-pawn-marker,html #app.life2 .life2-location-halo { animation:none!important; transform:none; }
 }
