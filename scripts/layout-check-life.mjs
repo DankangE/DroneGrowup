@@ -8,6 +8,7 @@ import { chromium } from 'playwright-core';
 import { choose, derived, newGame, options } from '../src/life/flow.ts';
 import { EVENTS } from '../src/life/compat.ts';
 import { MAPS, WORLD } from '../src/life/world.ts';
+import { LIFE_RULES } from '../src/life/life-data.ts';
 import { reachable } from '../src/life/move.ts';
 import { destinationDetails } from '../src/ui2/pick.ts';
 import { POPUP_GROUPS } from '../src/ui2/popups/data.ts';
@@ -322,6 +323,100 @@ async function movementChecks(page, load, check) {
   await load(newGame(42)); await page.clock.runFor(2000);
   assert.deepEqual(await actual(), newGame(42), 'loading cancels stale animation callbacks');
   await page.emulateMedia({ reducedMotion: 'reduce' });
+}
+
+// HUD checks are separate from board geometry; timed play keeps its existing audit cost.
+export function auditHud() {
+  const issues = [], vw = innerWidth, vh = innerHeight;
+  // UX1: run on every audited map/phase at all six SIZES, even behind a sheet.
+  const hud = document.querySelector('.life2-hud');
+  if (!hud) issues.push('HUD: missing');
+  else {
+    const short = vw < 900 && vh <= 739, box = hud.getBoundingClientRect();
+    const expectedHeight = vw >= 900 ? 138 : short ? 60 : 110;
+    if (Math.abs(box.height - expectedHeight) > .1) issues.push(`HUD: expected ${expectedHeight}px row`);
+    const visible = node => node.checkVisibility({ checkOpacity:true, checkVisibilityCSS:true })
+      && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+    const overlaps = (one, two) => Math.min(one.right, two.right) > Math.max(one.left, two.left) + .1
+      && Math.min(one.bottom, two.bottom) > Math.max(one.top, two.top) + .1;
+    const required = ['.life2-date', '[data-hud-player]', '[data-hud-avatar]', '.life2-rank-pill',
+      '.life2-money', '.life2-debt', '.life2-stats', '.life2-battery', '[data-hud-progress]',
+      '.life2-progress-track', '.life2-progress-drone', '[data-hud-season]', '.life2-hud-status'];
+    if (!short) required.push('.life2-grades', '.life2-change-strip');
+    for (const selector of required) {
+      const node = hud.querySelector(selector);
+      // An empty, live change strip has no text width until an amount changes.
+      if (!node || (!visible(node) && !(selector === '.life2-change-strip' && !node.textContent
+        && node.getBoundingClientRect().height === 14)))
+        issues.push(`HUD: ${selector} missing or hidden`);
+    }
+    const grades = [...hud.querySelectorAll('[data-grade]')];
+    const primaryGrades = ['skill', 'xp', 'teach', 'biz', 'support'];
+    if (primaryGrades.some(stat => !grades.some(chip => chip.dataset.grade === stat))
+      || grades.filter(visible).length !== (short ? 0 : 5)) issues.push('HUD: expected five career grade chips');
+    for (const chip of grades) {
+      if (visible(chip) !== (!short && primaryGrades.includes(chip.dataset.grade)))
+        issues.push('HUD: grade visibility does not match size');
+      if (!chip.getAttribute('aria-label') || !chip.querySelector('.life2-grade-letter')
+        || !chip.querySelector('.life2-grade-gauge')) issues.push('HUD: incomplete grade chip');
+    }
+    for (const node of hud.querySelectorAll('*')) {
+      if (!visible(node) || (node.closest('svg') && node.tagName.toLowerCase() !== 'svg'
+        && node.tagName.toLowerCase() !== 'text')) continue;
+      const rect = node.getBoundingClientRect(), label = node.getAttribute('class') ?? node.tagName;
+      if (rect.left < Math.max(0, box.left) - .1 || rect.right > Math.min(vw, box.right) + .1
+        || rect.top < Math.max(0, box.top) - .1 || rect.bottom > Math.min(vh, box.bottom) + .1)
+        issues.push(`HUD: ${label} outside HUD or viewport`);
+      let parent = node.parentElement;
+      while (parent && getComputedStyle(parent).display === 'contents') parent = parent.parentElement;
+      if (parent) {
+        const bounds = parent.getBoundingClientRect();
+        if (rect.left < bounds.left - .1 || rect.right > bounds.right + .1
+          || rect.top < bounds.top - .1 || rect.bottom > bounds.bottom + .1)
+          issues.push(`HUD: ${label} overflows parent`);
+      }
+      const textNodes = [...node.childNodes].filter(child => child.nodeType === 3 && child.textContent.trim());
+      if (textNodes.length && parseFloat(getComputedStyle(node).fontSize) < 11)
+        issues.push(`HUD: ${label} text below 11px`);
+      // Check unwrapped text too: overflow:visible must not hide an undersized column.
+      for (const text of textNodes) {
+        const range = document.createRange(); range.selectNodeContents(text);
+        for (const glyphs of range.getClientRects()) {
+          if (glyphs.left < rect.left - 1 || glyphs.right > rect.right + 1)
+            issues.push(`HUD: ${label} text overflows its column`);
+        }
+      }
+    }
+    const disjoint = (nodes, label) => {
+      const boxes = nodes.filter(visible).map(node => node.getBoundingClientRect());
+      for (const [index, one] of boxes.entries()) for (const two of boxes.slice(index + 1)) {
+        if (overlaps(one, two)) issues.push(`HUD: ${label} overlap`);
+      }
+    };
+    // Check independent regions, then their sibling contents. Parent/child
+    // containment and deliberate gauge/marker overlays are not collisions.
+    disjoint([...hud.querySelectorAll('.life2-date, [data-hud-player], .life2-grades, [data-hud-progress], .life2-hud-status, .life2-change-strip')], 'regions');
+    for (const selector of ['.life2-date', '[data-hud-player]', '.life2-hud-identity', '.life2-hud-rank',
+      '.life2-funds', '.life2-stats', '.life2-grades', '[data-hud-progress]', '[data-grade]']) {
+      for (const parent of hud.querySelectorAll(selector)) disjoint(
+        [...parent.children].filter(node => !node.matches('.life2-grade-gauge')), selector);
+    }
+    const cards = hud.querySelector('[data-hud-slot=cards]');
+    if (!cards || !cards.hidden || cards.children.length || cards.textContent.trim()
+      || cards.getBoundingClientRect().height !== 0 || cards.getBoundingClientRect().width !== 0)
+      issues.push('HUD: reserved cards slot must be empty, hidden and zero size');
+    const progress = hud.querySelector('[data-hud-progress]');
+    if (progress) {
+      const values = ['aria-valuemin', 'aria-valuenow', 'aria-valuemax'].map(key =>
+        progress.hasAttribute(key) ? Number(progress.getAttribute(key)) : NaN);
+      const [min, now, max] = values;
+      if (progress.getAttribute('role') !== 'progressbar' || values.some(value => !Number.isFinite(value))
+        || min !== 0 || max !== 204 || now < min || now > max || !Number.isInteger(now)
+        || !progress.getAttribute('aria-valuetext')?.includes(hud.querySelector('.life2-date h1')?.textContent))
+        issues.push('HUD: invalid life progress semantics/range');
+    }
+  }
+  return [...new Set(issues)];
 }
 
 // Runs in Chromium. Check actual boxes and clipping, not merely overflow:hidden on the root.
@@ -711,7 +806,9 @@ async function main() {
         const load = async state => page.evaluate(run => window.__life.load(run), state);
         const check = async name => {
           views++;
-          for (const issue of await page.evaluate(audit)) failures.push(`${size} ${name}: ${issue}`);
+          for (const auditView of [audit, auditHud]) {
+            for (const issue of await page.evaluate(auditView)) failures.push(`${size} ${name}: ${issue}`);
+          }
         };
         const { checkPages, clickChoice } = pagingChecks(page, check);
         await page.goto(`${base}?seed=11&debug=1`);
@@ -763,6 +860,17 @@ async function main() {
             fixture.board.step = step; fixture.board.dice = step === 'pick' ? [6, 6] : [1, 1];
             await load(fixture); await checkPages(`${map} ${step} menu`);
           }
+          // Long rank, largest stored funds/debt, empty age-capped battery and
+          // a marker near the end: ordinary first-season fixtures miss these.
+          const late = structuredClone(started);
+          late.board.pos = `${map}-o0`; late.board.step = 'pick'; late.board.dice = [2, 3];
+          late.turn = LIFE_RULES.maxTurns - 1; late.status = 'working'; late.track = 'academy';
+          late.job.rank = 3; late.job.tracks = ['academy'];
+          late.s.money = late.s.debt = LIFE_RULES.statMax;
+          late.s.capStamina = derived(late).capStamina; late.s.stamina = 0;
+          await load(late); await check(`${map} late HUD with maximum funds`);
+          assert.equal(await page.locator('[data-hud-progress]').getAttribute('aria-valuenow'), String(late.turn));
+          assert.equal(await page.locator('[data-hud-season]').textContent(), `계절 204/204`);
         }
         await movementChecks(page, load, check); seasons++;
         const event = structuredClone(started); event.phase = 'event'; event.eventId = EVENTS[0].id;
@@ -793,7 +901,7 @@ async function main() {
     finally { await server.close(); }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
-  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll`);
+  console.log(`layout:life OK: ${mapViews} map/size checks, 20 popup groups x ${SIZES.length} sizes, ${views} views, ${seasons} seasons; tiles >=44px, text >=11px, no scroll; HUD bounds/overlaps, progress and hidden cards checked`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

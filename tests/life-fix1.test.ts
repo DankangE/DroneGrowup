@@ -61,7 +61,7 @@ test('F1 actual app mounts all three start choices, neutral identity, and shared
   assert.deepEqual(top.querySelectorAll('[data-grade]').map(node => node.dataset.grade), GRADED_STATS);
   for (const cell of top.querySelectorAll('[data-grade]')) {
     const stat = cell.dataset.grade as typeof GRADED_STATS[number];
-    assert.ok(cell.textContent.endsWith(grade(stat, api.state().s[stat])!.letter));
+    assert.equal(cell.querySelector('.life2-grade-letter')!.textContent, grade(stat, api.state().s[stat])!.letter);
   }
   click(root, 'start:self'); assert.deepEqual(api.state(), choose(newGame(11), 'start:self').state);
   assert.equal(panelAt(root).dataset.popup, 'result'); close(root);

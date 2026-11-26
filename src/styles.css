@@ -583,11 +583,8 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
 .life2 .life2-hud,.life2 .life2-options,.life2 .life2-bottom {
   min-width: 0; border: 1px solid var(--ink); border-radius: 10px; background: var(--paper);
 }
-.life2 .life2-hud { grid-area: hud; display: grid; align-content: center; gap: 4px; padding: 4px 8px; }
-.life2 .life2-date,.life2 .life2-stats { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.life2 .life2-date h1 { font-size: 17px; }
-.life2 .life2-date > span { font-size: 13px; }
-.life2 .life2-stats { font-size: 12px; }
+/* HUD line boxes and responsive content rows are owned by hud.ts / HUD_STYLE. */
+.life2 .life2-hud { grid-area: hud; display: grid; min-height: 0; }
 .life2 .life2-board-frame { grid-area: board; z-index:0; min-width: 0; min-height: 0; container-type: size; display: grid; place-items: center; }
 .life2 .life2-board {
   --cell: min(calc((100cqw - 12px) / 7),calc((100cqh - 16px) / 9),72px);
@@ -631,10 +628,7 @@ button:enabled:active { transform: translateY(4px); box-shadow: none; }
 .life2 .life2-dice { display: grid; place-content: center; border: 1px solid var(--ink); border-radius: 10px; background: var(--paper); font-size: 20px; }
 @media (min-width: 900px) {
   #app.life2 { padding: 12px; }
-  .life2 .life2-shell { gap: 12px; grid-template: 'board hud' 100px 'board options' minmax(0,1fr) 'bottom bottom' 44px / minmax(0,1fr) 380px; }
-  .life2 .life2-hud { padding: 12px; gap: 12px; }
-  .life2 .life2-date h1 { font-size: 21px; }
-  .life2 .life2-stats { font-size: 14px; }
+  .life2 .life2-shell { gap: 12px; grid-template: 'board hud' 138px 'board options' minmax(0,1fr) 'bottom bottom' 44px / minmax(0,1fr) 380px; }
   .life2 .life2-options { padding: 12px; gap: 12px; }
   .life2 .life2-option-list { gap: 12px; }
   .life2 .life2-option { min-height: 64px; padding: 8px; }
