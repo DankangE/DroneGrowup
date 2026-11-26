@@ -22,7 +22,7 @@ import { readCalibration } from './life-time-calibration.ts';
 export { TIME_MODEL } from './life-time-model.ts';
 export const AGES = [25, 30, 40, 50, 60, 70];
 const TARGETS = [1200, 3500, 12000, 28000, 45000, 55000];
-const C = { runs: 300, coverageRuns: 3000, minute: 60, percent: 100, scoreCap: 59970, workers: 10 };
+const C = { runs: 300, coverageRuns: 3000, minute: 60, percent: 100, scoreCap: 59970, workers: 8 };
 export type Experiment = 'base' | 'single' | 'no-bank' | 'no-cards';
 export type TraceStep = { before: GameState; after: GameState; option: OptionView; result: Result; menu: 'board' | 'phone' };
 export type RunReport = {
@@ -324,7 +324,13 @@ function batch(policy: PolicyId, runs: number): Batch {
   }
   return out;
 }
-export async function simulate(runs: number, workers = Math.min(C.workers, availableParallelism()), policies: PolicyId[] = POLICY_IDS): Promise<Batch> {
+/** Worker threads for SIM_WORKERS (unset or empty = 8), never more than the core count. */
+export function workerCount(setting: string | undefined, cores = availableParallelism()): number {
+  const requested = Number(setting || C.workers);
+  if (!Number.isSafeInteger(requested) || requested < 1) throw new Error('SIM_WORKERS must be a positive integer');
+  return Math.min(requested, cores);
+}
+export async function simulate(runs: number, workers = workerCount(undefined), policies: PolicyId[] = POLICY_IDS): Promise<Batch> {
   if (!Number.isSafeInteger(runs) || runs < 1) throw new Error('SIM_RUNS must be a positive integer');
   if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('workers must be a positive integer');
   if (!policies.length || new Set(policies).size !== policies.length || policies.some(p => !POLICY_IDS.includes(p))) throw new Error('invalid SIM_POLICIES');
@@ -370,7 +376,7 @@ if (isMainThread && process.argv[1] && import.meta.url === pathToFileURL(process
   try {
     const runs = Number(process.env.SIM_RUNS ?? C.runs);
     const policies = (process.env.SIM_POLICIES ? process.env.SIM_POLICIES.split(',') : undefined) as PolicyId[] | undefined;
-    const out = await simulate(runs, undefined, policies);
+    const out = await simulate(runs, workerCount(process.env.SIM_WORKERS), policies);
     const criteria = evaluateCriteria(out, runs);
     console.log('T24 hard gates; timing fails without a current six-map browser measurement. Planned = all except drifter/random. No-bank blocks loans, repayments and mortgages; automatic shortfall debt remains an engine obligation. Income excludes capital transfers; spending includes housing/family upkeep. Promotion intervals are observational, not matched cohorts.');
     console.log(reportTables(out.base,out.single,out.noBank,out.noCards));
