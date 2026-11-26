@@ -65,7 +65,9 @@ export function roulette(dice: readonly number[], spinning: boolean, remaining?:
   const value = diceDisplay(dice);
   hub.append(spinValue(value.numbers));
   if (value.total !== undefined) hub.append(el('span', 'life2-roll-value life2-spin-total', ` = ${value.total}`));
-  if (remaining !== undefined) hub.append(el('small', 'life2-remaining', `남은 걸음 ${remaining}${stop ? ` · ${stop}` : ''}`));
+  if (remaining !== undefined) hub.append(el('small', 'life2-remaining', `남은 걸음 ${remaining}`));
+  // A forced stop says why the token stops short of the sum, on its own line under the count.
+  if (remaining !== undefined && stop) hub.append(el('small', 'life2-remaining life2-stop-reason', stop));
   display.append(el('span', 'life2-roulette-disc'), hub);
   return display;
 }
