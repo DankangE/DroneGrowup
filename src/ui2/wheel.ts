@@ -2,7 +2,6 @@ import { button, el } from '../ui/dom.ts';
 import { progressDrone } from './hud-art.ts';
 
 export const SPIN_MS = 700;
-export const SPIN_INPUT_GUARD_MS = 150;
 export const WHEEL_STYLE = `
 .life2 .life2-wheel { display:flex; align-items:center; justify-content:center; gap:6px; padding:0 4px; }
 .life2 .life2-wheel-face { position:relative; display:grid; place-items:center; width:30px; height:30px; border:2px solid #6c3ec4;

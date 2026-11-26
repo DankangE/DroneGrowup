@@ -12,7 +12,7 @@ import { hud } from './hud.ts';
 import { townScene } from './pc-scenery.ts';
 import { choiceDetail, highlightChoices } from './choice-detail.ts';
 import { placeArt } from './art.ts';
-import { roulette, spinMotion, SPIN_INPUT_GUARD_MS, wheel, WHEEL_STYLE } from './wheel.ts';
+import { roulette, spinMotion, wheel, WHEEL_STYLE } from './wheel.ts';
 import { destinationDetails, destinationName, pick, PICK_STYLE } from './pick.ts';
 import { movementFrames, playback, MOVE_STYLE, STEP_MS } from './move.ts';
 import type { Frame } from './move.ts';
@@ -57,13 +57,14 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
   let spin: ReturnType<typeof spinMotion> | undefined, frameStartedAt = 0;
   root.classList.add('life2');
   const skip = (event?: MouseEvent) => {
-    if ((event?.detail ?? 0) > 1 || (spin && spin.elapsed() < SPIN_INPUT_GUARD_MS)) return;
+    // The second click of a double-click lands on the freshly rendered stop control; ignore it.
+    if ((event?.detail ?? 0) > 1) return;
     if (frame?.phase === 'spin') { spin?.settle(); sequence?.next(); }
     else sequence?.finish();
   };
   root.addEventListener('keydown', event => {
-    if (sequence && ['Enter', ' ', 'Escape'].includes(event.key)
-      && (event.repeat || (spin && spin.elapsed() < SPIN_INPUT_GUARD_MS))) {
+    // A held key auto-repeats onto the stop control; only a fresh press may stop or skip.
+    if (sequence && ['Enter', ' ', 'Escape'].includes(event.key) && event.repeat) {
       event.preventDefault(); return;
     }
     if (sequence && event.key === 'Escape') { event.preventDefault(); skip(); }
