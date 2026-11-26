@@ -170,7 +170,7 @@ export const CAREER_ACTIONS = [...SPACE_MENU.job!, 'pi_assist', 'ac_teach', 'dir
 export const SETTLEMENT_KINDS: SpaceKind[] = ['pay', 'start'];
 
 export const BOARD_CHOICES: Record<'spin' | 'skip' | 'end', Choice> = {
-  spin: { title: '룰렛 돌리기', desc: '룰렛 두 개를 돌리고 갈 곳을 고른다.', effect: { text: '룰렛을 돌렸다.' } },
+  spin: { title: '룰렛 돌리기', desc: '룰렛 두 개를 돌려 나온 수를 더한 만큼 간다.', effect: { text: '룰렛을 돌렸다.' } },
   skip: { title: '그냥 지나간다', desc: '이번 칸의 행동을 건너뛴다.', effect: { text: '이번 칸을 그냥 지나갔다.' } },
   end: { title: '계절 마치기', desc: '이번 계절을 마무리한다.', effect: { text: '이번 계절을 마무리했다.' } },
 };
@@ -234,7 +234,7 @@ export const ASSET_RULES = {
   upgradePct: 60, incomeStepPct: 50, resalePct: 70, maxLevel: 3, phoneFeePct: 2,
   fundAmounts: [100, 500, 2000], couponPct: 20, benefactorPct: 10, dreamPct: 20,
   demotionPerf: -15, promotionPerf: 60, waitPerf: 10, waitRep: 3,
-  singleStep: 1, tripleDice: 3,
+  singleStep: 1,
 } as const;
 export const ASSET_KEYS = {
   lastLuck: 'asset_last_luck', popup: 'asset_popup', shortcut: 1, promotion: 2,
@@ -249,7 +249,7 @@ export const LUCK: readonly LuckDef[] = [
   { id: 'parking', title: '주차 위반', text: '주차 위반으로 80만원을 냈다.', add: { money: -80 } },
   { id: 'wedding_gift', title: '축의금', text: '축의금 100만원을 내고 인맥이 5 늘었다.', add: { money: -100, net: 5 } },
   { id: 'again', title: '한 번 더', text: '이번 계절에 한 번 더 돌린다.', action: 'again' },
-  { id: 'triple', title: '세 개의 룰렛', text: '다음 이동에서 룰렛 세 개 중 하나를 고른다.', flag: ASSET_KEYS.triple },
+  { id: 'triple', title: '세 개의 룰렛', text: '다음 이동에서 룰렛 세 개 중 두 개를 골라 더한 만큼 간다.', flag: ASSET_KEYS.triple },
   { id: 'transfer', title: '무료 환승권', text: '다음 환승은 통행료가 없다. 특구 진입 조건은 필요하다.', flag: ASSET_KEYS.transfer },
   { id: 'shortcut', title: '지름길', text: '이 지도에서 원하는 칸 종류를 골라 가장 가까운 칸으로 간다.', action: 'shortcut' },
   { id: 'promotion', title: '발탁', text: '급여 직군은 특별 승진 제안을 받는다. 그 밖에는 평판 +8.', action: 'promotion', fallback: { rep: 8 } },

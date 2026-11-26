@@ -206,7 +206,7 @@ function route(path: string[], tolls: number[], via: string | null, state: GameS
 /** Reuse T02 for every edge; only the first transfer's payment changes. Gate checks stay in T02. */
 function ticketEdges(state: GameState): { state: GameState; move: Move }[] {
   const probe = structuredClone(state);
-  probe.board.dice = [R.singleStep, R.singleStep]; probe.s.car = 0;
+  probe.board.dice = [R.singleStep]; probe.s.car = 0;
   probe.s.money = LIFE_RULES.statMax;
   return reachable(probe).flatMap(move => {
     const waived = !!move.via && state.flags.includes(K.transfer), fare = waived ? 0 : move.fare;
@@ -219,13 +219,8 @@ function ticketEdges(state: GameState): { state: GameState; move: Move }[] {
 }
 
 export function assetReachable(state: GameState, opts: MoveOptions = {}): Move[] {
-  if (!state.flags.includes(K.transfer)) {
-    const normal = reachable(state, opts);
-    if (state.board.dice.length !== R.tripleDice) return normal;
-    const third = state.board.dice[2];
-    return bestMoves([...normal, ...reachable({ ...state, board: { ...state.board, dice: [third, third] } }, opts)]);
-  }
-  const steps = [...new Set(state.board.dice.flatMap(die => stepsFor([die, die], carLevel(state))))];
+  if (!state.flags.includes(K.transfer)) return reachable(state, opts);
+  const steps = stepsFor(state.board.dice, carLevel(state));
   const limit = Math.max(0, ...steps), moves: Move[] = [];
   function walk(current: GameState, path: string[], tolls: number[], via: string | null) {
     if (steps.includes(path.length)) moves.push(route(path, tolls, via, state, opts));
@@ -238,7 +233,7 @@ export function assetReachable(state: GameState, opts: MoveOptions = {}): Move[]
 }
 
 export function applyAssetMove(prev: GameState, destination: string, opts: MoveOptions = {}): { state: GameState; move: Move } {
-  if (!prev.flags.includes(K.transfer) && prev.board.dice.length !== R.tripleDice) return applyMove(prev, destination, opts);
+  if (!prev.flags.includes(K.transfer)) return applyMove(prev, destination, opts);
   const move = assetReachable(prev, opts).find(row => row.node === destination);
   if (!move) throw new Error(`${T.badMove}: ${destination}`);
   let state = structuredClone(prev);

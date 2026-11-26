@@ -65,7 +65,7 @@ export type GameState = {
   board: {
     pos: string;
     step: 'spin' | 'pick' | 'space' | 'bonus';
-    dice: [number, number] | [number, number, number] | [];
+    dice: [number] | [number, number] | [number, number, number] | []; // [n]: single-roulette counterfactual or one-step probe; never saved.
     ledger: Record<string, number>;
     lapAt: Record<MapId, number>; // Last start crossing per map, or -1.
     visited: number; laps: number; // Six-map bitmasks.

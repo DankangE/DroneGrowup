@@ -1,7 +1,6 @@
 import { WORLD } from './world.ts';
 import type { Cond, GameState, MapId, Stat, WorldNode } from './types.ts';
 
-const DICE_COUNT = 2;
 const DIE_SIDES = 6;
 const MIN_STEPS = 1;
 const CAR_MINUS_LEVEL = 1;
@@ -42,13 +41,23 @@ export function carLevel(state: GameState): number {
   return state.timers[CAR_TROUBLE] > state.turn ? 0 : state.s.car;
 }
 
+/** The move is the sum of two roulettes. One die is the single-roulette counterfactual and a
+ * one-step probe; three dice (the triple card) offer the sum of any two. A car shifts the sum by one. */
+export function moveTotals(dice: readonly number[]): number[] {
+  if (dice.length === 1) return [dice[0]];
+  const totals = new Set<number>();
+  for (let first = 0; first < dice.length; first++) {
+    for (let second = first + 1; second < dice.length; second++) totals.add(dice[first] + dice[second]);
+  }
+  return [...totals];
+}
+
 export function stepsFor(dice: readonly number[], level: number): number[] {
-  if (dice.length < DICE_COUNT) return [];
   const steps = new Set<number>();
-  for (const die of dice.slice(0, DICE_COUNT)) {
-    steps.add(die);
-    if (level >= CAR_MINUS_LEVEL) steps.add(Math.max(MIN_STEPS, die - STEP_ADJUSTMENT));
-    if (level >= CAR_PLUS_LEVEL) steps.add(die + STEP_ADJUSTMENT);
+  for (const total of moveTotals(dice)) {
+    steps.add(total);
+    if (level >= CAR_MINUS_LEVEL) steps.add(Math.max(MIN_STEPS, total - STEP_ADJUSTMENT));
+    if (level >= CAR_PLUS_LEVEL) steps.add(total + STEP_ADJUSTMENT);
   }
   return [...steps].sort((a, b) => a - b);
 }

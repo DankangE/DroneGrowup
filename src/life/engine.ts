@@ -729,8 +729,8 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
       fare: S.expressFare, via: origin, passed: { pay: [], start: [] } }, result, origin);
   } else if (id === 'spin') {
     state = rollAssetDice(state); state.board.step = 'pick';
-    // T14 counterfactual: preserve RNG consumption, use only the first eye before auto-travel.
-    if (singleDie) state.board.dice = [state.board.dice[0]!, state.board.dice[0]!];
+    // T14 counterfactual: preserve RNG consumption, move by the first roulette alone before auto-travel.
+    if (singleDie) state.board.dice = [state.board.dice[0]!];
     const moves = reachable(state);
     if (moves.length === 1) state = travel(state, moves[0].node, result);
     else if (!moves.length) state = land(state, result);
