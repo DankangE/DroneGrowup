@@ -2,7 +2,6 @@ import { button, el } from '../ui/dom.ts';
 import { progressDrone } from './hud-art.ts';
 
 export const SPIN_MS = 700;
-const SPIN_FALLBACK_MS = 300;
 export const SPIN_INPUT_GUARD_MS = 150;
 export const WHEEL_STYLE = `
 .life2 .life2-wheel { display:flex; align-items:center; justify-content:center; gap:6px; padding:0 4px; }
@@ -81,8 +80,10 @@ export function spinMotion() {
         active = false; clearTimeout(timer); complete = undefined;
         settle(); advance();
       };
-      // A missing animation event (hidden tab, removed node, motion preference) cannot trap the turn.
-      const timer = setTimeout(finish, Math.max(0, SPIN_MS + SPIN_FALLBACK_MS - elapsed()));
+      // The spin clock owns the 700ms boundary (timing model and layout gate). The disc reaches its final
+      // angle and shows the number at 80%, so ending on the clock never cuts the motion; a missing
+      // animation event (hidden tab, removed node, motion preference) cannot trap the turn either.
+      const timer = setTimeout(finish, Math.max(0, SPIN_MS - elapsed()));
       complete = finish;
       return () => { active = false; clearTimeout(timer); complete = undefined; };
     },
