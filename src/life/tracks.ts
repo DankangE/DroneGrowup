@@ -9,6 +9,11 @@ const rank = (title: string, salary: number, condition: Cond = {}, tenure = 0, j
 const salaried = { salaried: true, warnBelow: 30, pensionPct: 30 };
 const independent = { salaried: false, warnBelow: 30, pensionPct: 0 };
 
+export const DIRECTOR_RULES = {
+  track: 'director', viceAction: 'dir_vice', chairAction: 'dir_chair', viceRank: 1, chairRank: 2,
+  termSeasons: 16, pension: 120,
+} as const;
+
 export const TRACKS: TrackDef[] = [
   { id: 'service', name: '가게 직원', tier: 1, maps: ['A', 'B', 'F'], ...salaried, entry: {}, ranks: [
     rank('알바', 70), rank('정직원', 110, { min: { xp: 100 } }, 4),
@@ -125,7 +130,8 @@ export const TRACKS: TrackDef[] = [
   { id: 'director', name: '협회 임원', tier: 4, maps: 'any', ...independent,
     entry: { ...need('assoc_run'), flags: ['member'] }, entryFee: 375,
     entryRoll: structuredClone(V1_ACTIONS.find(action => action.id === 'assoc_run')!.roll!), ranks: [
-      rank('이사', 80), rank('부회장', 140, need('dir_vice')), rank('총협회장', 400, need('dir_chair')),
+      rank('이사', 80), rank('부회장', 140, need('dir_vice')),
+      rank('총협회장', 400, { ...need('dir_chair'), flags: ['elected'] }),
     ] },
 ];
 

@@ -13,7 +13,7 @@ import { accrue, applyEconomyChoice, checkCredit, economyChoices, economyView, E
   flightPay, ledgerSum, passStart, settle as settleLedger } from './economy.ts';
 import { canRetireEarly, finish, recordAchievements, recordEndingEffect, retireEarly } from './ending.ts';
 import { advanceCareer, advanceStudies, afterStartPass, applyJobChoice, canPromote, isJobChoice,
-  contestPrize, creatorIncome, entryRank, performance, review, specialistChoices, startingAction } from './jobs.ts';
+  contestPrize, creatorIncome, electionWin, entryRank, performance, review, specialistChoices, startingAction } from './jobs.ts';
 import { applyHomeChoice, homeRecovery, yearEndHome } from './home.ts';
 import type { EstateOffer } from './home.ts';
 import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery, familyVisit } from './family.ts';
@@ -215,7 +215,7 @@ function balanceAction(action: ActionDef): ActionDef {
 }
 const BALANCED_ACTIONS = [...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, CREATOR_VIDEO, ...ACTIONS].map(balanceAction);
 function view(state: GameState, id: string, r: Resolved): OptionView {
-  const { kind, place, flight } = r, choice = discountedChoice(state, id, r.choice);
+  const { kind, place, flight } = r, choice = discountedChoice(state, id, r.choice, !r.free);
   const { locks, missing } = unmet(state, choice.need);
   locks.push(...(r.jobLocks ?? []));
   const cost = choice.cost ?? 0, tire = choice.tire ?? 0;
@@ -403,7 +403,8 @@ function endSeason(state: GameState, result: Result, runHooks: boolean, drawLife
   }
   if (state.status === 'working' && state.track === 'company') {
     const c = RULES.company;
-    setStat(state, 'value', state.s.value + Math.min(state.s.contracts, state.s.staff * c.perStaff) * c.valuePerContract);
+    const growth = state.flags.includes('listed') ? Math.floor(state.s.value * c.listedGrowthPct / LIFE_RULES.percent) : 0;
+    setStat(state, 'value', state.s.value + growth + Math.min(state.s.contracts, state.s.staff * c.perStaff) * c.valuePerContract);
   }
   state.turn++;
   // Career close includes yearEndReview at spring and age-based retirement, before stamina refill.
@@ -558,7 +559,7 @@ function applyEffect(state: GameState, effect: Effect, add: StatMap): string | u
       tracks: track ? [...new Set([...state.job.tracks, track.id])] : [...state.job.tracks] };
     state.s.rank = Math.min(rank, STAT_MAX.rank!);
     for (const key of [CAREER_KEYS.retry, CAREER_KEYS.bonus, CAREER_KEYS.idle, CAREER_KEYS.worked,
-      CAREER_KEYS.deferred, CAREER_KEYS.benefitUntil, CAREER_KEYS.pension, JOB_RULES.retirementBase]) delete state.timers[key];
+      CAREER_KEYS.deferred, CAREER_KEYS.benefitUntil, CAREER_KEYS.pension, CAREER_KEYS.chairStarted, JOB_RULES.retirementBase]) delete state.timers[key];
     state.flags = state.flags.filter(flag => flag !== CAREER_KEYS.rehire);
   }
   // Imported v1 achievement endings cannot shorten the T03 lifetime either.
@@ -579,7 +580,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
   const result: Result = { optionId: v.id, title: v.title, place: v.place, free: v.free, text: effect.text,
     deltas: {}, crashed, notes: [], statusFrom: state.status, statusTo: state.status, trackFrom: state.track, trackTo: state.track };
   state.s.money -= v.cost; state.s.stamina = Math.max(0, state.s.stamina - v.tire);
-  state = consumeLuck(state, v.id, !!v.roll);
+  state = consumeLuck(state, v.id, !!v.roll, !v.free);
   if (branch !== 'sure' && !r.jobLocks) {
     setStat(state, success ? 'wins' : 'losses', state.s[success ? 'wins' : 'losses'] + 1);
     if (r.flight) {
@@ -604,6 +605,7 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
     }
   }
   else if (v.id.startsWith('act:')) {
+    if (success) state = electionWin(state, v.id.slice('act:'.length));
     if (v.id === `act:${S.videoId}` && success) randInt(state, S.fanMax - S.fanMin + 1);
     if (state.board.step === 'space' && nodeAt(state).kind === 'job') {
       state = performance(state, branch === 'sure' || success ? 'workSuccess' : 'workFailure');

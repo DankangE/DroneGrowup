@@ -35,10 +35,10 @@ export const RULES = {
   repairPerLevel: 10,
   itemResalePct: 50,
   score: { turnBonus: 50, max: 9_999_999 },
-  academy: { tuition: 22, baseSeats: 8, seatsPerStaff: 8, pay: 70, overhead: 60, overheadPerLevel: 30, leaveDiv: 8, worthPerLevel: 900, timeoutLevel: 3 },
+  academy: { tuition: 22, accreditedTuitionPct: 150, baseSeats: 8, seatsPerStaff: 8, pay: 70, overhead: 60, overheadPerLevel: 30, leaveDiv: 8, worthPerLevel: 900, timeoutLevel: 3 },
   solo: { contractPay: 60 },
   examinerPay: 40,
-  company: { perStaff: 2, contractPay: 90, pay: 75, overhead: 90, valuePerContract: 20, worthDiv: 10, timeoutValue: 60000 },
+  company: { perStaff: 2, contractPay: 90, pay: 75, overhead: 90, valuePerContract: 20, listedGrowthPct: 3, worthDiv: 10, timeoutValue: 60000 },
 };
 
 // Stage vocabulary used only by the source action/event catalog and its adapter.

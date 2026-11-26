@@ -36,13 +36,13 @@ export function withShopIncome(prev: GameState): GameState {
 const couponPurchase = (state: GameState, id: string) => state.phase === 'action' && state.board.step === 'space'
   && ((nodeAt(state).kind === 'shop' && id.startsWith('buy:')) || id.startsWith('biz:buy:'));
 /** Existing street discount, then owned-shop discount, then the one-use coupon; floor each price. */
-export function discountedChoice(state: GameState, id: string, choice: Choice): Choice {
+export function discountedChoice(state: GameState, id: string, choice: Choice, tileAction = true): Choice {
   let cost = choice.cost ?? 0;
   if (id === 'buy:drone' || id === 'buy:gear') {
     const discount = Math.max(0, ...state.holdings.map(row => shopFor(row.id)?.equipmentDiscount ?? 0));
     cost = pct(cost, P - discount);
   }
-  if (couponPurchase(state, id) && state.flags.includes(K.coupon)) cost = pct(cost, P - R.couponPct);
+  if (tileAction && couponPurchase(state, id) && state.flags.includes(K.coupon)) cost = pct(cost, P - R.couponPct);
   const shop = id.startsWith('biz:buy:') ? shopFor(id.split(':')[2]) : undefined;
   return { ...choice, cost, ...(shop && { desc: T.shop(cost, shopIncome(state, shop.id)) }) };
 }
@@ -51,9 +51,9 @@ export const luckChanceBonus = (state: GameState, id: string) =>
   + (id === 'promo' && state.flags.includes(K.benefactor) ? R.benefactorPct : 0);
 
 /** Only actual purchases/skill rolls consume these flags, never views, dice or annual returns. */
-export function consumeLuck(prev: GameState, id: string, rolled: boolean): GameState {
+export function consumeLuck(prev: GameState, id: string, rolled: boolean, tileAction = true): GameState {
   const state = structuredClone(prev);
-  if (couponPurchase(state, id)) removeFlag(state, K.coupon);
+  if (tileAction && couponPurchase(state, id)) removeFlag(state, K.coupon);
   if (rolled) {
     removeFlag(state, K.dream);
     if (id === 'promo') removeFlag(state, K.benefactor);

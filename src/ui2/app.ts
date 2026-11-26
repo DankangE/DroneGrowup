@@ -32,8 +32,15 @@ declare global {
   }
 }
 
-export function mountLife(root: HTMLElement, seed: number, debug = false): void {
-  let state = newGame(seed), page = 0;
+export function mountLife(root: HTMLElement, seed?: number, debug = false): void {
+  let lastSeed = 0;
+  const freshGame = () => {
+    if (seed !== undefined) return newGame(seed);
+    // Random starting point, then a UI-owned counter makes every restart distinct.
+    lastSeed = lastSeed ? ((lastSeed + 1) >>> 0) || 1 : crypto.getRandomValues(new Uint32Array(1))[0] || 1;
+    return newGame(lastSeed);
+  };
+  let state = freshGame(), page = 0;
   let settings = loadLifeSettings();
   let meta: ReturnType<typeof loadLifeMeta>;
   const collection = () => mergeLifeMeta(meta, loadLifeMeta());
@@ -54,7 +61,9 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
   window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => {
     if (event.matches) sequence?.finish();
   });
-  window.addEventListener?.('resize', () => render());
+  // Only the board has measured geometry. Other screens reflow through CSS;
+  // retaining their mounted DOM also preserves gallery paging, details and focus.
+  window.addEventListener?.('resize', () => { if (root.dataset.screen === 'play') render(); });
   function takeOption(id: string) {
     if (PLATFORM) { if (!sessionOk()) return; }
     const source = id !== 'end' && menu === 'phone' ? 'phone' : 'board';
@@ -195,7 +204,7 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
   }
   function restart() {
     if (PLATFORM) { if (!sessionOk()) return; }
-    state = newGame(seed); page = 0; dismissed = false; atTitle = false; notice = false;
+    state = freshGame(); page = 0; dismissed = false; atTitle = false; notice = false;
     startedAt = performance.now(); saveLifeRun(state); render(true);
   }
   function showTitle() {
@@ -229,7 +238,8 @@ export function mountLife(root: HTMLElement, seed: number, debug = false): void 
   };
   const start = () => {
     settings = loadLifeSettings();
-    notice = migrateLifeSave(); meta = loadLifeMeta(); state = loadLifeRun() ?? newGame(seed); ready = true;
+    notice = migrateLifeSave(); meta = loadLifeMeta(); state = loadLifeRun() ?? state; ready = true;
+    if (seed === undefined) lastSeed = state.seed;
     if (notice) showTitle(); else render();
   };
   if (PLATFORM) { runStatus.onChange = refreshStatus; bootPlatform(root, start); }

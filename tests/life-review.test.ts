@@ -328,9 +328,11 @@ for (const [track, rank, stats] of [
   ['racer', 1, { skill: 330 }], ['solo', 1, { contracts: 6, rep: 105 }],
   ['company', 1, { round: 1 }], ['academy', 1, { students: 16 }], ['director', 1, { support: 60 }],
 ] as const) {
-  test(`${track}: no salary evaluation, annual rank recomputation and one year grace`, () => {
-    let state = worker(track, 0, stats); state.board.contests = track === 'racer' ? 5 : 0; state.job.perf = 0;
-    assert.equal(review(state).outcome, 'promotion');
+  test(`${track}: no salary evaluation, annual rank maintenance and one year grace`, () => {
+    // Directors enter office through elections; annual review only checks maintenance.
+    let state = worker(track, track === 'director' ? rank : 0, stats);
+    state.board.contests = track === 'racer' ? 5 : 0; state.job.perf = 0;
+    assert.equal(review(state).outcome, track === 'director' ? 'normal' : 'promotion');
     state = yearEndReview(state); assert.equal(state.job.rank, rank); assert.equal(state.s.money, 800);
     for (const key of Object.keys(stats)) state.s[key as keyof StatMap] = 0;
     state.board.contests = 0; state.turn += 4;

@@ -1,6 +1,8 @@
 // Strict JSON boundary, separated from play so neither v1 saves nor partial malformed states leak in.
 import { RULES, STAT_LABEL as V1_STAT_LABEL } from './data.ts';
 import { EVENTS } from './compat.ts';
+import { CAREER_KEYS } from './career2.ts';
+import { DIRECTOR_RULES } from './tracks.ts';
 import { ENDING_IDS, FUND_KINDS, HOLDING_LEVELS, INITIAL_STATE, KID_STAGES, LIFE_LEVELS, LIFE_RULES,
   LOG_TONES, MAP_IDS, PHASE_IDS, STAT_MAX, STATS, STATUS_IDS, STEP_IDS, TRACK_IDS } from './life-data.ts';
 import { WORLD } from './world.ts';
@@ -91,6 +93,15 @@ export function restore(raw: unknown): GameState | null {
   if (state.phase === 'event') {
     if (b.step !== 'space' || !EVENTS.some(event => event.id === state.eventId)) return null;
   } else if (state.eventId !== null) return null;
+  // Earlier v2 saves did not record election dates. Start their term at the saved
+  // season rather than guessing from job tenure, which annual reviews could reset.
+  state.timers = { ...state.timers };
+  if (state.status === 'working' && state.track === DIRECTOR_RULES.track
+    && state.job.rank === DIRECTOR_RULES.chairRank && state.flags.includes('elected')) {
+    state.timers[CAREER_KEYS.chairStarted] ??= state.turn;
+  }
+  const termStart = state.timers[CAREER_KEYS.chairStarted];
+  if (termStart !== undefined && !int(termStart, 0, state.turn)) return null;
   // Clone the validated shape: callers and future choose() calls own entirely separate graphs.
   return structuredClone(state);
 }
