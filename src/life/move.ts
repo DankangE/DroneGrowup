@@ -17,7 +17,7 @@ const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 export type StopReason = 'review' | 'exam' | 'life' | 'estate';
 /** canPromote stops on review tiles; stopFor names any other forced stop on the way. */
 export type MoveOptions = { canPromote?: (state: GameState, node: WorldNode) => boolean;
-  stopFor?: (state: GameState, node: WorldNode, spent: number) => StopReason | undefined };
+  stopFor?: (state: GameState, node: WorldNode, spent: number, passed: readonly string[]) => StopReason | undefined };
 // tolls[i] is the cumulative fare once path[i] is entered; fare === tolls.at(-1).
 type Route = { node: string; steps: number; path: string[]; tolls: number[]; fare: number; via: string | null; invite?: true };
 export type Move = Route & { passed: { pay: string[]; start: string[] }; stop?: string; stopReason?: StopReason };
@@ -28,8 +28,8 @@ export function firstStop(state: GameState, path: readonly string[], tolls: read
   for (const [index, id] of path.slice(0, -1).entries()) {
     const node = BY_ID.get(id)!;
     if (node.kind === 'rankup' && opts.canPromote?.(state, node)) return { stop: id, stopReason: 'review' };
-    // stopFor sees the fares already paid on the way to this tile.
-    const stopReason = opts.stopFor?.(state, node, tolls[index] ?? 0);
+    // stopFor sees the fares already paid and the tiles already passed on the way to this tile.
+    const stopReason = opts.stopFor?.(state, node, tolls[index] ?? 0, path.slice(0, index));
     if (stopReason) return { stop: id, stopReason };
   }
   return undefined;

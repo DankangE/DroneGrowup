@@ -39,6 +39,19 @@ test('no estate stop while single, with a tier-3 home already, without the money
   assert.equal(reachable(onTile).find(move => move.node === 'A-o24')!.stop, undefined);
 });
 
+test('the payday passed on the way is settled before deciding the estate stop', () => {
+  // A-o21 + 4 passes the payday A-o22, then the estate tile A-o24, and lands on A-o25.
+  const via = (money: number, ledger: number) => picking(s => {
+    s.board.pos = 'A-o21'; s.board.dice = [2, 2]; s.s.money = money; s.board.ledger = { test: ledger };
+  });
+  assert.equal(toLifeTile(via(2180, -1)).stop, undefined, 'the payday leaves too little for the mortgage purchase');
+  const paid = via(2179, 1);
+  assert.equal(toLifeTile(paid).stopReason, 'estate', 'the payday brings the mortgage purchase within reach');
+  const stopped = choose(paid, 'go:A-o25').state;
+  assert.equal(stopped.board.pos, 'A-o24');
+  assert.ok(options(stopped).find(o => o.id === 'home:buy:3:mortgage')!.enabled);
+});
+
 test('declining the purchase keeps money and home, ends the season, and the next pass stops again', () => {
   const stopped = choose(picking(), 'go:A-o25').state;
   const declined = choose(stopped, 'skip').state;
