@@ -44,6 +44,11 @@
 10건이고, `fork:gain`과 `ending:employee`는 main에서도 실패한다. main 실패 중 `wealth:25`, `career:top:chairman`,
 `career:top:engineer`, `ending:instructor`는 여기서 통과한다.
 
+시험장 정차 정산 반영(PR #13: 지나간 월급날·출발 칸 정산과 출발 칸 수당을 반영한 돈으로 응시료를 판단) 뒤 다시 잰 시간 점검
+(2026-11-27 15:11): 13.64초/계절, **46.37분/204계절, PASS [45..55]**. 이 기록으로 다시 돌린 `simulate:life`는 main(57d5d96)과
+같은 72 PASS / 51 FAIL, 같은 실패 항목이고 멈춤·크래시 0이다. 값 변화는 작다(`time:all` 58.04 → 58.05, `time:pilot`
+62.36 → 62.37, `time:investor` 60.98 → 60.99, `time:instructor_academy` 59.65 → 59.66, `fork:gain` 23.77 → 23.74).
+
 ## P2 리뷰 수정: 명세의 경제·직업 규칙 적용
 
 | 항목 | 적용 규칙 |
