@@ -280,27 +280,35 @@ function view(state: GameState, id: string, r: Resolved, notch: DialNotch = 'mid
   return option;
 }
 
-/** Exam site: the licence exam is enabled there after the fares paid on the way. Local life tile: a
- * marriage or birth step is open. */
+/** The paydays and start tiles passed before a tile on the way, settled as arrive() settles them. */
+function settledOnTheWay(state: GameState, passed: readonly string[]): GameState {
+  const before = passed.map(id => BY_ID.get(id)!);
+  let settled = before.some(tile => SETTLEMENT_KINDS.includes(tile.kind)) ? settleLedger(state) : state;
+  for (const tile of before) if (tile.kind === 'start') settled = passStart(settled, tile.map);
+  return settled;
+}
+
+/** Exam site: the licence exam is enabled there after the fares paid and the paydays and start tiles
+ * passed on the way. Local life tile: a marriage or birth step is open. */
 function stopFor(prev: GameState, node: WorldNode, spent: number, passed: readonly string[] = []): StopReason | undefined {
   // An extra-move card skips the tile on the first move, so a stop there would offer nothing.
   if (prev.timers[CARD_KEYS.again] === prev.turn) return undefined;
   const state = spent ? { ...prev, s: { ...prev.s, money: prev.s.money - spent } } : prev;
   // The same eligibility as the exam menu there: a jobless player who never got licensed may still sit it.
   // A licensed jobless player is not forced back to the licence exam.
-  const exam = startingAction({ ...state, board: { ...state.board, pos: node.id } }, EXAM_ACTION, true);
   const examinee = state.status === 'student' || !state.flags.includes('licensed');
-  if (node.place === exam.place && examinee && met(state, exam.when)
-    && view(state, `act:${exam.id}`, { kind: 'action', place: exam.place, choice: exam, flight: false }).enabled) return 'exam';
+  if (examinee && node.place === EXAM_ACTION.place) {
+    const settled = settledOnTheWay(state, passed);
+    const exam = startingAction({ ...settled, board: { ...settled.board, pos: node.id } }, EXAM_ACTION, true);
+    if (met(settled, exam.when)
+      && view(settled, `act:${exam.id}`, { kind: 'action', place: exam.place, choice: exam, flight: false }).enabled) return 'exam';
+  }
   if (node.map === FAMILY_RULES.localMap && node.kind === 'life' && node.place === FAMILY_RULES.localPlace
     && EVENTS_A.some(event => STOP_RULES.familyEvents.includes(event.id) && event.eligible?.(state))) return 'life';
   // Estate: only on the first map, below an owned home, and only if a tier-3 residence offer is enabled there
   // after the paydays and start tiles passed on the way are settled, as arrive() settles them.
   if (node.map === FAMILY_RULES.localMap && node.kind === 'estate' && prev.family.partnerAt !== null && (state.home?.tier ?? 0) < HOME_RULES.ownedTier) {
-    let there: GameState = { ...state, phase: 'action', board: { ...state.board, pos: node.id, step: 'space' } };
-    const before = passed.map(id => BY_ID.get(id)!);
-    if (before.some(tile => SETTLEMENT_KINDS.includes(tile.kind))) there = settleLedger(there);
-    for (const tile of before) if (tile.kind === 'start') there = passStart(there, tile.map);
+    const there = settledOnTheWay({ ...state, phase: 'action', board: { ...state.board, pos: node.id, step: 'space' } }, passed);
     if (estateOffers(there).some(home => home.action === 'buy' && home.tier === HOME_RULES.ownedTier && home.residence
       && view(there, home.id, { kind: 'action', place: node.place, choice: home.choice, flight: false, jobLocks: home.locked, home }).enabled)) return 'estate';
   }
