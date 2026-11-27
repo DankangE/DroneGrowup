@@ -374,11 +374,11 @@ test('the last racer review can earn legend just before automatic retirement wit
 });
 
 test('a real start crossing awards the map lap once; express arrival only awards the visit', () => {
-  const state = stateAt(100); state.board.pos = 'A-o27'; state.board.step = 'pick'; state.board.dice = [1, 1];
+  const state = stateAt(100); state.board.pos = 'A-o26'; state.board.step = 'pick'; state.board.dice = [1, 1];
   const next = choose(state, 'go:A-o0').state;
   assert.equal(next.board.laps, 1); assert.ok(next.feats.includes('lap:A'));
   const ready = choose(next, 'job:none').state;
-  ready.board.pos = 'A-o27'; ready.board.step = 'pick'; ready.board.dice = [1, 1];
+  ready.board.pos = 'A-o26'; ready.board.step = 'pick'; ready.board.dice = [1, 1];
   const twice = choose(ready, 'go:A-o0').state;
   assert.equal(achievementScore(twice).rows.filter(row => row.id === 'lap:A').length, 1);
   const express = stateAt(144); express.s.money = 1000;

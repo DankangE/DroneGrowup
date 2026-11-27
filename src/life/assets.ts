@@ -8,7 +8,7 @@ import { performance, special } from './jobs.ts';
 import { ASSET_KEYS as K, ASSET_RULES as R, ASSET_TEXT as T, BOARD_CHOICES,
   FUNDS, LIFE_RULES, LUCK, SHOPS } from './life-data.ts';
 import type { ShopDef } from './life-data.ts';
-import { applyMove, carLevel, randInt, reachable, rollDice, stepsFor } from './move.ts';
+import { applyMove, carLevel, firstStop, randInt, reachable, rollDice, stepsFor } from './move.ts';
 import type { Move, MoveOptions } from './move.ts';
 import { WORLD } from './world.ts';
 import type { Choice, Effect, GameState, SpaceKind } from './types.ts';
@@ -191,13 +191,10 @@ const bestMoves = (moves: Move[]): Move[] => {
   return [...best.values()].sort((a, b) => a.steps - b.steps || a.node.localeCompare(b.node));
 };
 function route(path: string[], tolls: number[], via: string | null, state: GameState, opts: MoveOptions): Move {
-  const stop = path.slice(0, -1).find(id => {
-    const node = WORLD.find(row => row.id === id)!;
-    return node.kind === 'rankup' && opts.canPromote?.(state, node);
-  });
-  const travelled = stop ? path.slice(0, path.indexOf(stop) + 1) : path;
+  const forced = firstStop(state, path, tolls, opts);
+  const travelled = forced ? path.slice(0, path.indexOf(forced.stop) + 1) : path;
   return { node: path.at(-1)!, steps: path.length, path, tolls, fare: tolls.at(-1) ?? 0, via,
-    ...(stop && { stop }), passed: {
+    ...forced, passed: {
       pay: travelled.filter(id => WORLD.find(node => node.id === id)!.kind === 'pay'),
       start: travelled.filter(id => WORLD.find(node => node.id === id)!.kind === 'start'),
     } };
@@ -206,7 +203,7 @@ function route(path: string[], tolls: number[], via: string | null, state: GameS
 /** Reuse T02 for every edge; only the first transfer's payment changes. Gate checks stay in T02. */
 function ticketEdges(state: GameState): { state: GameState; move: Move }[] {
   const probe = structuredClone(state);
-  probe.board.dice = [R.singleStep, R.singleStep]; probe.s.car = 0;
+  probe.board.dice = [R.singleStep]; probe.s.car = 0;
   probe.s.money = LIFE_RULES.statMax;
   return reachable(probe).flatMap(move => {
     const waived = !!move.via && state.flags.includes(K.transfer), fare = waived ? 0 : move.fare;
@@ -219,13 +216,8 @@ function ticketEdges(state: GameState): { state: GameState; move: Move }[] {
 }
 
 export function assetReachable(state: GameState, opts: MoveOptions = {}): Move[] {
-  if (!state.flags.includes(K.transfer)) {
-    const normal = reachable(state, opts);
-    if (state.board.dice.length !== R.tripleDice) return normal;
-    const third = state.board.dice[2];
-    return bestMoves([...normal, ...reachable({ ...state, board: { ...state.board, dice: [third, third] } }, opts)]);
-  }
-  const steps = [...new Set(state.board.dice.flatMap(die => stepsFor([die, die], carLevel(state))))];
+  if (!state.flags.includes(K.transfer)) return reachable(state, opts);
+  const steps = stepsFor(state.board.dice, carLevel(state));
   const limit = Math.max(0, ...steps), moves: Move[] = [];
   function walk(current: GameState, path: string[], tolls: number[], via: string | null) {
     if (steps.includes(path.length)) moves.push(route(path, tolls, via, state, opts));
@@ -238,7 +230,7 @@ export function assetReachable(state: GameState, opts: MoveOptions = {}): Move[]
 }
 
 export function applyAssetMove(prev: GameState, destination: string, opts: MoveOptions = {}): { state: GameState; move: Move } {
-  if (!prev.flags.includes(K.transfer) && prev.board.dice.length !== R.tripleDice) return applyMove(prev, destination, opts);
+  if (!prev.flags.includes(K.transfer)) return applyMove(prev, destination, opts);
   const move = assetReachable(prev, opts).find(row => row.node === destination);
   if (!move) throw new Error(`${T.badMove}: ${destination}`);
   let state = structuredClone(prev);

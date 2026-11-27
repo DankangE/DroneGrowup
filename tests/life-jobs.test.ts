@@ -324,10 +324,10 @@ test('self-study unlocks jobless part-time work and grants 120% pay for exactly 
 test('start crossings offer jobs after movement only to jobless or graduated students and resume the landing', () => {
   for (const [status, degree, show] of [['jobless', false, true], ['student', false, false],
     ['student', true, true], ['working', true, false], ['retired', true, false]] as const) {
-    for (const [steps, destination] of [[1, 'A-o0'], [2, 'A-o1'], [6, 'A-o5']] as const) {
+    for (const [dice, destination] of [[[1, 1], 'A-o0'], [[1, 2], 'A-o1'], [[3, 4], 'A-o5']] as const) {
       const state = at('A', {}, degree ? ['degree'] : []);
       state.status = status; if (status === 'working') state.track = 'service';
-      state.board.pos = 'A-o27'; state.board.step = 'pick'; state.board.dice = [steps, steps];
+      state.board.pos = 'A-o26'; state.board.step = 'pick'; state.board.dice = [...dice];
       state.board.ledger = { 급여: 70 };
       const { state: next, result } = choose(state, `go:${destination}`);
       assert.equal(next.board.pos, destination); assert.equal(next.s.money, state.s.money + 70);

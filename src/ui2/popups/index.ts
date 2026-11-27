@@ -1,5 +1,5 @@
 import { tileIcon } from '../icons.ts';
-import { choiceDetail, highlightChoices } from '../choice-detail.ts';
+import { choiceDetail, choicePreview, highlightChoices } from '../choice-detail.ts';
 import { button, el } from '../../ui/dom.ts';
 import { jobPortrait, placeArt } from '../art.ts';
 import { COPY, PHONE_TABS, POPUP_RULES, SETTINGS_COPY } from './data.ts';
@@ -49,6 +49,8 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     const space = sheetSpace(host) ?? Infinity;
     const compact = !model.fullscreen && space < 390;
     const tight = compact && space < 260;
+    const inlineDetails = pc && !compact;
+    let fitInspector: (() => void) | undefined;
     panel = el('section', 'life2-popup');
     if (compact) panel.dataset.compact = ''; panel.dataset.popup = model.kind; panel.dataset.phase = model.phase;
     if (tight) panel.dataset.tight = '';
@@ -150,7 +152,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
       const choices = choicePage(model.choices, page, compact ? 1 : 6); page = choices.page;
       const list = el('div', 'life2-popup-list');
       panel.style.setProperty('--life-choice-count', String(choices.items.length));
-      const inspector = choiceDetail(model.place, model.track);
+      const inspector = choiceDetail(model.place, model.track, inlineDetails);
       for (const option of choices.items) {
         const row = el('div', 'life2-popup-row');
         const control = button('', 'life2-popup-choice', () => {
@@ -161,13 +163,17 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
         control.dataset.option = option.id; control.disabled = !option.enabled;
         if (option.destination) control.dataset.dest = option.destination;
         control.setAttribute('aria-label', option.details.join('. '));
-        control.append(el('strong', '', shortTitle(option.title)), el('small', '', option.summary));
+        control.append(el('strong', '', shortTitle(option.title)),
+          el('small', inlineDetails ? 'life2-choice-figure' : '', inlineDetails ? choicePreview(option.figure ?? option.summary, 14) : option.summary));
         row.append(control); list.append(row);
       }
       if (!reading) {
+        if (inlineDetails) panel.dataset.selector = '';
         panel.append(list, inspector.pane);
         const description = el('p', 'life2-selected-description');
-        description.setAttribute('aria-live', 'polite'); copy.append(description);
+        description.setAttribute('aria-live', 'polite');
+        if (!inlineDetails) copy.append(description);
+        fitInspector = inspector.fit;
         highlightChoices(list, id => {
           const option = choices.items.find(item => item.id === id)!;
           inspector.update(option, () => { detail = option.details; copyPage = 0; render(); });
@@ -235,6 +241,7 @@ export function mountPopup(host: HTMLElement, initial: PopupModel, actions: Popu
     panel.addEventListener('keydown', handleKeys);
     host.replaceChildren(style, panel);
     placePopupSheet(host, panel);
+    fitInspector?.();
     if (focus && !model.notification) (panel.querySelector('h2') ?? panel.querySelector('button'))?.focus({ preventScroll: true });
   }
   function handleKeys(event: KeyboardEvent) {

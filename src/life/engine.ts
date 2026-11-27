@@ -22,7 +22,7 @@ import type { EstateOffer } from './home.ts';
 import { advanceFamily, applyFamilyChoice, familyAchievementPoints, familyChoices, familyRecovery, familyVisit } from './family.ts';
 import { CREATOR_VIDEO, JOB_RULES, SPECIAL_RULES as S, SPECIAL_TEXT as ST, TRACKS, TRACK_PREP, TRACK_TRAIN, TRACK_WORK } from './tracks.ts';
 import { BOARD_CHOICES, CAREER_ACTIONS, DIAL_SETTINGS, DIAL_TEXT, DIAL_ZERO_TIRE_BOLD, ENDING_KEYS, ENDING_RULES, ENDING_TEXT, FAMILY_RULES, FAMILY_TEXT, INITIAL_STATE, LIFE_RULES, MAP_IDS, SETTLEMENT_KINDS,
-  SPACE_MENU, STAT_LABEL, STAT_MAX, STATS, TEXT, WEDDINGS } from './life-data.ts';
+  HOME_RULES, SPACE_MENU, STOP_RULES, STAT_LABEL, STAT_MAX, STATS, TEXT, WEDDINGS } from './life-data.ts';
 import { answer, childFor, EVENTS_A, EVENT_KEYS as EK, EVENT_RULES as ER, EVENT_TEXT as ET,
   familyEventEffect, materialize } from './events-a.ts';
 import type { LifeChoice, LifeEffect } from './events-a.ts';
@@ -37,9 +37,9 @@ import { closeEventHealth, eventFlightPenalty, eventRecovery, EVENTS_F, healthEv
 import { eventJobChoices, EVENTS_G, travelEventEffect } from './events-g.ts';
 import { EVENTS_H, lateEventEffect, villaLocks } from './events-h.ts';
 import { randInt } from './move.ts';
-import type { Move } from './move.ts';
+import type { Move, StopReason } from './move.ts';
 import { PLACES, WORLD } from './world.ts';
-import type { ActionDef, Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId } from './types.ts';
+import type { ActionDef, Choice, Cond, Effect, EndingId, GameState, PlaceId, Stat, StatMap, Status, TrackId, WorldNode } from './types.ts';
 import { restore as restoreBase } from './restore.ts';
 import { applyCardChoice, cardChoice, cardGainText, CARD_KEYS, CARD_TEXT, grantCard, offeredCard } from './cards.ts';
 export { cards } from './cards.ts';
@@ -112,8 +112,8 @@ const seasonAt = (turn: number) => turn % LIFE_RULES.seasons.length;
 const ageCap = (turn: number) => LIFE_RULES.staminaCaps.find(row => ageAt(turn) >= row.minAge)!.cap;
 const dateLabel = (turn: number) => TEXT.date(ageAt(turn), LIFE_RULES.seasons[seasonAt(turn)]);
 
-/** Engine previews and actual travel use the same career stop predicate. */
-export const reachable = (state: GameState): Move[] => assetReachable(eventCarState(state), { canPromote });
+/** Engine previews and actual travel use the same forced-stop predicates. */
+export const reachable = (state: GameState): Move[] => assetReachable(eventCarState(state), { canPromote, stopFor });
 
 export function newGame(seed: number): GameState {
   const state = structuredClone(INITIAL_STATE);
@@ -227,6 +227,7 @@ function balanceAction(action: ActionDef): ActionDef {
     ...(action.roll && { roll: { ...action.roll, success: effect(action.roll.success), fail: effect(action.roll.fail) } }) };
 }
 const BALANCED_ACTIONS = [...TRACK_WORK, ...TRACK_TRAIN, ...TRACK_PREP, CREATOR_VIDEO, ...ACTIONS].map(balanceAction);
+const EXAM_ACTION = BALANCED_ACTIONS.find(action => action.id === STOP_RULES.examAction)!;
 function view(state: GameState, id: string, r: Resolved, notch: DialNotch = 'mid', withDial = true): OptionView {
   const dial = !!r.choice.roll && r.flight;
   const baseSetting = DIAL_SETTINGS.find(row => row.id === notch)!;
@@ -277,6 +278,33 @@ function view(state: GameState, id: string, r: Resolved, notch: DialNotch = 'mid
       spare: Math.max(0, state.s.drone - (choice.need?.min?.drone ?? 1)), settings };
   }
   return option;
+}
+
+/** Exam site: the licence exam is enabled there after the fares paid on the way. Local life tile: a
+ * marriage or birth step is open. */
+function stopFor(prev: GameState, node: WorldNode, spent: number, passed: readonly string[] = []): StopReason | undefined {
+  // An extra-move card skips the tile on the first move, so a stop there would offer nothing.
+  if (prev.timers[CARD_KEYS.again] === prev.turn) return undefined;
+  const state = spent ? { ...prev, s: { ...prev.s, money: prev.s.money - spent } } : prev;
+  // The same eligibility as the exam menu there: a jobless player who never got licensed may still sit it.
+  // A licensed jobless player is not forced back to the licence exam.
+  const exam = startingAction({ ...state, board: { ...state.board, pos: node.id } }, EXAM_ACTION, true);
+  const examinee = state.status === 'student' || !state.flags.includes('licensed');
+  if (node.place === exam.place && examinee && met(state, exam.when)
+    && view(state, `act:${exam.id}`, { kind: 'action', place: exam.place, choice: exam, flight: false }).enabled) return 'exam';
+  if (node.map === FAMILY_RULES.localMap && node.kind === 'life' && node.place === FAMILY_RULES.localPlace
+    && EVENTS_A.some(event => STOP_RULES.familyEvents.includes(event.id) && event.eligible?.(state))) return 'life';
+  // Estate: only on the first map, below an owned home, and only if a tier-3 residence offer is enabled there
+  // after the paydays and start tiles passed on the way are settled, as arrive() settles them.
+  if (node.map === FAMILY_RULES.localMap && node.kind === 'estate' && prev.family.partnerAt !== null && (state.home?.tier ?? 0) < HOME_RULES.ownedTier) {
+    let there: GameState = { ...state, phase: 'action', board: { ...state.board, pos: node.id, step: 'space' } };
+    const before = passed.map(id => BY_ID.get(id)!);
+    if (before.some(tile => SETTLEMENT_KINDS.includes(tile.kind))) there = settleLedger(there);
+    for (const tile of before) if (tile.kind === 'start') there = passStart(there, tile.map);
+    if (estateOffers(there).some(home => home.action === 'buy' && home.tier === HOME_RULES.ownedTier && home.residence
+      && view(there, home.id, { kind: 'action', place: node.place, choice: home.choice, flight: false, jobLocks: home.locked, home }).enabled)) return 'estate';
+  }
+  return undefined;
 }
 
 /** A local invitation retains the existing event's requirements, costs and opt-out. */
@@ -563,7 +591,7 @@ function land(state: GameState, result: Result): GameState {
 }
 
 function travel(state: GameState, destination: string, result: Result): GameState {
-  const applied = applyAssetMove(eventCarState(state), destination, { canPromote });
+  const applied = applyAssetMove(eventCarState(state), destination, { canPromote, stopFor });
   applied.state.s.car = state.s.car;
   return arrive(applied.state, applied.move, result, state.board.pos);
 }
@@ -729,8 +757,8 @@ function play(state: GameState, r: Resolved, v: OptionView, branch: BranchId, ru
       fare: S.expressFare, via: origin, passed: { pay: [], start: [] } }, result, origin);
   } else if (id === 'spin') {
     state = rollAssetDice(state); state.board.step = 'pick';
-    // T14 counterfactual: preserve RNG consumption, use only the first eye before auto-travel.
-    if (singleDie) state.board.dice = [state.board.dice[0]!, state.board.dice[0]!];
+    // T14 counterfactual: preserve RNG consumption, move by the first roulette alone before auto-travel.
+    if (singleDie) state.board.dice = [state.board.dice[0]!];
     const moves = reachable(state);
     if (moves.length === 1) state = travel(state, moves[0].node, result);
     else if (!moves.length) state = land(state, result);

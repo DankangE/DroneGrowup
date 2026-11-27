@@ -19,6 +19,9 @@ function stateAt(pos = 'A-o0', dice: GameState['board']['dice'] = [1, 2], stats:
   } as unknown as GameState;
 }
 
+/** Dice whose sum is exactly n steps; one step uses the single-roulette form. */
+const walk = (n: number): GameState['board']['dice'] => n === 1 ? [1] : [Math.floor(n / 2), Math.ceil(n / 2)];
+
 function freezeDeep(value: unknown): void {
   if (!value || typeof value !== 'object') return;
   Object.values(value).forEach(freezeDeep);
@@ -42,22 +45,23 @@ function withNodes(patches: Record<string, Partial<WorldNode>>, run: () => void)
   }
 }
 
-test('stepsFor uses two dice, cumulative car adjustments, and sorted unique positive steps', () => {
-  assert.deepEqual(stepsFor([2, 5], 0), [2, 5]);
-  assert.deepEqual(stepsFor([2, 5], 1), [1, 2, 4, 5]);
-  assert.deepEqual(stepsFor([2, 5], 2), [1, 2, 3, 4, 5, 6]);
-  assert.deepEqual(stepsFor([2, 5], 3), [1, 2, 3, 4, 5, 6]);
-  assert.deepEqual(stepsFor([6, 6], 2), [5, 6, 7]);
-  assert.deepEqual(stepsFor([3, 2], 2), [1, 2, 3, 4]);
+test('stepsFor moves by the sum of two dice, with cumulative car adjustments of that sum', () => {
+  assert.deepEqual(stepsFor([2, 5], 0), [7]);
+  assert.deepEqual(stepsFor([2, 5], 1), [6, 7]);
+  assert.deepEqual(stepsFor([2, 5], 2), [6, 7, 8]);
+  assert.deepEqual(stepsFor([2, 5], 3), [6, 7, 8]);
+  assert.deepEqual(stepsFor([6, 6], 2), [11, 12, 13]);
+  assert.deepEqual(stepsFor([1, 1], 1), [1, 2]);
   for (const level of [0, 1, 2, 3]) {
     assert.deepEqual(stepsFor([], level), []);
-    assert.deepEqual(stepsFor([6], level), [], 'single-roulette baseline is not part of T02');
-    assert.deepEqual(stepsFor([1, 1], level), level >= 2 ? [1, 2] : [1]);
-    assert.deepEqual(stepsFor([2, 2, 6], level), stepsFor([2, 2], level));
+    assert.deepEqual(stepsFor([6], level), stepsFor([3, 3], level), 'one die moves by its own face');
+    assert.deepEqual(stepsFor([2, 2, 6], level), [...new Set([...stepsFor([2, 2], level), ...stepsFor([2, 6], level)])].sort((a, b) => a - b),
+      'the triple card offers the sum of any two dice');
     for (const dice of dicePairs) {
       const steps = stepsFor(dice, level);
       assert.ok(steps.every(step => Number.isInteger(step) && step >= 1));
       assert.deepEqual(steps, [...new Set(steps)].sort((a, b) => a - b));
+      assert.ok(steps.includes(dice[0] + dice[1]));
     }
   }
 });
@@ -110,9 +114,9 @@ test('car trouble disables movement adjustments only before its expiry turn', ()
 });
 
 const averages = [
-  [2.22, 3.38, 2.84, 2.71, 2.57, 2.39],
-  [3.70, 5.47, 4.66, 4.46, 4.22, 3.96],
-  [5.42, 8.49, 7.04, 6.69, 6.33, 5.87],
+  [1.52, 3.28, 2.35, 2.22, 2.04, 1.75],
+  [2.93, 6.10, 4.45, 4.20, 3.88, 3.36],
+  [4.57, 9.88, 7.07, 6.72, 6.15, 5.28],
 ];
 for (const [car, expected] of averages.entries()) {
   test(`section 3.3 destination averages: car ${car}, all 212 origins × 36 ordered dice pairs`, t => {
@@ -142,7 +146,7 @@ test('both special-zone stations hide D for every dice pair when its gate is unm
     assert.ok(reachable(unlicensed).every(move => byId.get(move.node)!.map !== 'D'));
   }
   for (const station of ['B-o21', 'C-o21']) for (const stat of graded) {
-    const state = stateAt(station, [1, 1], { ...belowC, [stat]: GRADE_STEPS[stat]![3] });
+    const state = stateAt(station, walk(1), { ...belowC, [stat]: GRADE_STEPS[stat]![3] });
     const move = reachable(state).find(move => move.node === 'D-o1');
     assert.ok(move, `${station}: licensed + ${stat} at C`);
     assert.equal(move.fare, MAPS.D.fareIn);
@@ -153,7 +157,7 @@ test('both special-zone stations hide D for every dice pair when its gate is unm
 
 test('invite alone opens D for free and is consumed only by applying that transfer', () => {
   for (const station of ['B-o21', 'C-o21']) for (const licensed of [false, true]) {
-    const state = stateAt(station, [1, 1], { money: 0, theory: licensed ? gradeC : 0 });
+    const state = stateAt(station, walk(1), { money: 0, theory: licensed ? gradeC : 0 });
     state.flags = ['invite', 'kept', ...(licensed ? ['licensed'] : [])];
     const before = structuredClone(state);
     const move = reachable(state).find(move => move.node === 'D-o1')!;
@@ -173,16 +177,16 @@ test('invite alone opens D for free and is consumed only by applying that transf
 
 test('every transfer consumes one step and requires enough money for its toll', () => {
   for (const node of WORLD) for (const cross of node.cross ?? []) {
-    const poor = stateAt(node.id, [1, 1], { money: cross.fare - 1 });
+    const poor = stateAt(node.id, walk(1), { money: cross.fare - 1 });
     assert.ok(!reachable(poor).some(move => move.node === cross.to));
     assert.ok(reachable(poor).some(move => move.node === node.next[0]), 'free local exit remains');
-    const rich = stateAt(node.id, [1, 1], { money: cross.fare });
+    const rich = stateAt(node.id, walk(1), { money: cross.fare });
     assert.deepEqual(reachable(rich).find(move => move.node === cross.to), {
       node: cross.to, steps: 1, path: [cross.to], tolls: [cross.fare], fare: cross.fare, via: node.id,
       passed: { pay: [], start: [] },
     });
   }
-  const move = reachable(stateAt('A-o11', [4, 4])).find(move => move.node === 'B-o2');
+  const move = reachable(stateAt('A-o11', walk(4))).find(move => move.node === 'B-o2');
   assert.deepEqual(move, { node: 'B-o2', steps: 4, path: ['A-o12', 'A-o13', 'B-o1', 'B-o2'],
     tolls: [0, 0, 10, 10], fare: 10, via: 'A-o13', passed: { pay: [], start: [] } });
 });
@@ -192,8 +196,8 @@ test('multiple transfers accumulate tolls and check the total against money', ()
     'A-o0': { next: [], cross: [{ to: 'B-o1', fare: 10 }] },
     'B-o1': { next: [], cross: [{ to: 'C-o1', fare: 30 }] },
   }, () => {
-    assert.deepEqual(reachable(stateAt('A-o0', [2, 2], { money: 39 })), []);
-    const state = stateAt('A-o0', [2, 2], { money: 40 });
+    assert.deepEqual(reachable(stateAt('A-o0', walk(2), { money: 39 })), []);
+    const state = stateAt('A-o0', walk(2), { money: 40 });
     const result = applyMove(state, 'C-o1');
     assert.equal(result.move.fare, 40);
     assert.equal(result.move.via, 'B-o1');
@@ -209,7 +213,7 @@ test('dedupe prefers lowest fare, then shortest path, then first discovered path
     'A-o2': { next: ['A-o3'], cross: [{ to: 'B-o1', fare: 10 }] },
     'A-o3': { next: [], cross: [{ to: 'B-o1', fare: 10 }] },
   }, () => {
-    const moves = reachable(stateAt('A-o0', [1, 3], { car: 1 }));
+    const moves = reachable(stateAt('A-o0', walk(2), { car: 2 }));
     assert.equal(moves.filter(move => move.node === 'B-o1').length, 1);
     const transfer = moves.find(move => move.node === 'B-o1')!;
     assert.equal(transfer.fare, 10, 'cheaper route beats the direct one-step toll');
@@ -219,13 +223,13 @@ test('dedupe prefers lowest fare, then shortest path, then first discovered path
     assert.deepEqual(moves.find(move => move.node === 'A-o3')!.path, ['A-o1', 'A-o3']);
     assert.deepEqual(moves.map(move => [move.steps, move.node]),
       [[1, 'A-o1'], [1, 'A-o2'], [2, 'A-o3'], [2, 'B-o1'], [3, 'B-o2'], [3, 'B-o3']]);
-    assert.deepEqual(reachable(stateAt('A-o0', [1, 3], { car: 1 })), moves);
+    assert.deepEqual(reachable(stateAt('A-o0', walk(2), { car: 2 })), moves);
   });
 });
 
 test('a nonempty cycle may land on the origin, but an unrolled state has no destinations', () => {
   withNodes({ 'A-o0': { next: ['A-o1'] }, 'A-o1': { next: ['A-o0'] } }, () => {
-    const moves = reachable(stateAt('A-o0', [2, 2]));
+    const moves = reachable(stateAt('A-o0', walk(2)));
     assert.deepEqual(moves.map(move => move.path), [['A-o1', 'A-o0']]);
     assert.equal(moves[0].node, 'A-o0');
     assert.deepEqual(moves[0].passed.start, ['A-o0']);
@@ -238,7 +242,7 @@ test('gate conditions combine status, track, min/max, flags, notFlags, and neste
     flags: ['licensed'], notFlags: ['barred'], any: [{ min: { skill: gradeC } }, { flags: ['waiver'] }] };
   const cross = { to: 'D-o1', fare: 0, gate };
   withNodes({ 'B-o21': { cross: [cross] } }, () => {
-    const base = stateAt('B-o21', [1, 1], { skill: gradeC });
+    const base = stateAt('B-o21', walk(1), { skill: gradeC });
     base.status = 'working'; base.track = 'pilot';
     const opens = (state: GameState) => reachable(state).some(move => move.node === 'D-o1');
     assert.ok(opens(base), 'missing happy is zero, satisfying max');
@@ -266,7 +270,7 @@ test('gate conditions combine status, track, min/max, flags, notFlags, and neste
 });
 
 test('promotion stops preserve previews and count passed nodes only through the first eligible stop', () => {
-  const state = stateAt('A-o21', [6, 6]);
+  const state = stateAt('A-o21', walk(6));
   const plain = reachable(state).find(move => move.node === 'A-o27')!;
   const opts = { canPromote: (current: GameState, node: WorldNode) => {
     assert.equal(current, state);
@@ -282,36 +286,36 @@ test('promotion stops preserve previews and count passed nodes only through the 
   assert.equal(reachable(state, { canPromote: () => false })[0].stop, undefined);
   assert.equal(applyMove(state, plain.node, opts).state.board.pos, 'A-o26');
 
-  const beforePay = stateAt('A-o8', [4, 4]);
+  const beforePay = stateAt('A-o8', walk(4));
   assert.deepEqual(reachable(beforePay)[0].passed.pay, ['A-o11']);
   assert.deepEqual(reachable(beforePay, { canPromote: () => true })[0].passed.pay, []);
-  const beforeStart = stateAt('A-o25', [3, 3]);
+  const beforeStart = stateAt('A-o25', walk(3));
   assert.deepEqual(reachable(beforeStart)[0].passed.start, ['A-o0']);
   assert.deepEqual(reachable(beforeStart, { canPromote: () => true })[0].passed.start, []);
-  const multiple = reachable(stateAt('D-o1', [6, 6]), { canPromote: () => true });
+  const multiple = reachable(stateAt('D-o1', walk(6)), { canPromote: () => true });
   assert.equal(multiple.find(move => move.node === 'D-o7')!.stop, 'D-o2');
-  assert.equal(reachable(stateAt('A-o8', [1, 1]), { canPromote: () => true })[0].stop, undefined);
-  assert.equal(reachable(stateAt('A-o9', [1, 1]), { canPromote: () => true })[0].stop, undefined);
+  assert.equal(reachable(stateAt('A-o8', walk(1)), { canPromote: () => true })[0].stop, undefined);
+  assert.equal(reachable(stateAt('A-o9', walk(1)), { canPromote: () => true })[0].stop, undefined);
 });
 
 test('pay/start destinations count as passed, and origins do not', () => {
-  assert.deepEqual(reachable(stateAt('A-o10', [1, 1]))[0].passed, { pay: ['A-o11'], start: [] });
-  assert.deepEqual(reachable(stateAt('A-o27', [1, 1]))[0].passed, { pay: [], start: ['A-o0'] });
-  assert.deepEqual(reachable(stateAt('A-o27', [2, 2]))[0].passed, { pay: [], start: ['A-o0'] });
+  assert.deepEqual(reachable(stateAt('A-o10', walk(1)))[0].passed, { pay: ['A-o11'], start: [] });
+  assert.deepEqual(reachable(stateAt('A-o27', walk(1)))[0].passed, { pay: [], start: ['A-o0'] });
+  assert.deepEqual(reachable(stateAt('A-o27', walk(2)))[0].passed, { pay: [], start: ['A-o0'] });
   for (const origin of ['A-o0', 'A-o11']) {
-    assert.deepEqual(reachable(stateAt(origin, [1, 1]))[0].passed, { pay: [], start: [] });
+    assert.deepEqual(reachable(stateAt(origin, walk(1)))[0].passed, { pay: [], start: [] });
   }
 });
 
 test('a stop before the gated transfer preserves the invite and visits only the actual arrival map', () => {
-  const state = stateAt('B-o15', [6, 6], { car: 2 });
+  const state = stateAt('B-o15', walk(6), { car: 2 });
   state.flags = ['invite'];
   const { state: next, move } = applyMove(state, 'D-o1', { canPromote: () => true });
   assert.equal(move.stop, 'B-o16');
   assert.equal(next.board.pos, 'B-o16');
   assert.deepEqual(next.flags, ['invite']);
   assert.equal(next.board.visited, 1 | (1 << 1));
-  const entered = stateAt('B-o21', [3, 3]);
+  const entered = stateAt('B-o21', walk(3));
   entered.flags = ['invite'];
   const afterEntry = applyMove(entered, 'D-o3', { canPromote: () => true });
   assert.equal(afterEntry.state.board.pos, 'D-o2');
@@ -320,7 +324,7 @@ test('a stop before the gated transfer preserves the invite and visits only the 
 });
 
 test('reachable is read-only; applyMove returns a deep copy changing only movement fields', () => {
-  const state = stateAt('A-o13', [1, 1], { money: 10 });
+  const state = stateAt('A-o13', walk(1), { money: 10 });
   const before = structuredClone(state);
   freezeDeep(state);
   const moves = reachable(state);
@@ -335,12 +339,12 @@ test('reachable is read-only; applyMove returns a deep copy changing only moveme
   assert.throws(() => applyMove(state, 'unknown'), /Unreachable destination/);
   assert.deepEqual(state, before);
   for (const [index, map] of mapIds.entries()) {
-    assert.equal(applyMove(stateAt(`${map}-o0`, [1, 1]), `${map}-o1`).state.board.visited, 1 | (1 << index));
+    assert.equal(applyMove(stateAt(`${map}-o0`, walk(1)), `${map}-o1`).state.board.visited, 1 | (1 << index));
   }
 });
 
 test('a promotion stop before a transfer charges no toll for the unreached transfer', () => {
-  const state = stateAt('B-o15', [6, 6], { car: 2, money: 1000, theory: 150 });
+  const state = stateAt('B-o15', walk(6), { car: 2, money: 1000, theory: 150 });
   state.flags = ['licensed'];
   const stopped = applyMove(state, 'D-o1', { canPromote: () => true });
   assert.equal(stopped.move.stop, 'B-o16');

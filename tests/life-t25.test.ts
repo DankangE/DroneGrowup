@@ -137,7 +137,7 @@ test('T25: accounting copy distinguishes accrual from payment and renders its ow
     assert.equal(host.querySelector('h3')!.textContent, P.ledger);
     assert.ok(textOf(host).includes(P.accrued));
   });
-  const pick = structuredClone(closed.state); pick.board.pos = 'A-o10'; pick.board.step = 'pick'; pick.board.dice = [2, 2];
+  const pick = structuredClone(closed.state); pick.board.pos = 'A-o10'; pick.board.step = 'pick'; pick.board.dice = [1, 1];
   const paid = choose(pick, 'go:A-o12'); assert.equal(paid.state.s.money, 505);
   const paidModel = popupModel(paid.state, { kind: 'result', offered: [], result: paid.result })!;
   assert.equal(paidModel.accounting![0].title, P.record); assert.equal(paidModel.accounting![0].timing, P.paid);

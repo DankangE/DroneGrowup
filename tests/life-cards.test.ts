@@ -68,7 +68,7 @@ for (const card of CARDS) test(`card ${card.id}: use, exact effect, detached for
 
 test('all seven holdable luck draws store without activating and retain the existing result popup shape', () => {
   for (const card of CARDS.filter(card => card.kind === 'luck')) {
-    const state = ready('space'); state.board.pos = 'A-o11'; state.board.step = 'pick';
+    const state = ready('space'); state.board.pos = 'A-o10'; state.board.step = 'pick';
     state.rng = seedFor(LUCK.findIndex(row => row.id === card.id), LUCK.length);
     const next = interactiveChoose(state, 'go:A-o12');
     assert.deepEqual(next.state.hand, [{ id: card.id, at: state.turn }]);
@@ -105,7 +105,7 @@ test('full-hand luck and event offers preserve bonus/spin/event continuations ev
     if (source === 'life-event') { state.board.step = 'spin'; state.board.dice = []; }
     for (const id of ['dream', 'triple', 'discount']) state = grantCard(state, id);
     if (source === 'luck') {
-      state.board.pos = 'A-o11'; state.board.step = 'pick';
+      state.board.pos = 'A-o10'; state.board.step = 'pick';
       state.rng = seedFor(LUCK.findIndex(row => row.id === 'transfer'), LUCK.length);
     }
     const next = interactiveChoose(state, source === 'luck' ? 'go:A-o12' : 'ev:0').state;

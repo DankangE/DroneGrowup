@@ -135,7 +135,7 @@ for (const stage of ['date', 'wedding', 'baby'] as const) test(`F5.2: ${stage} h
 });
 
 test('F5.2: landing on the village start retains its eligible meeting invitation after settlement', () => {
-  const s = at('A-o27', 16); s.status = 'working'; s.track = 'service'; s.board.step = 'pick';
+  const s = at('A-o26', 16); s.status = 'working'; s.track = 'service'; s.board.step = 'pick';
   const landed = choose(s, 'go:A-o0');
   assert.equal(landed.state.turn, s.turn); assert.equal(landed.state.board.step, 'space');
   assert.ok(options(landed.state).some(row => row.id === 'family:event:blind_date' && row.enabled));

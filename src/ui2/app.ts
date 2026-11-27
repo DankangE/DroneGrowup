@@ -12,9 +12,9 @@ import { hud } from './hud.ts';
 import { townScene } from './pc-scenery.ts';
 import { choiceDetail, highlightChoices } from './choice-detail.ts';
 import { placeArt } from './art.ts';
-import { wheel, WHEEL_STYLE } from './wheel.ts';
-import { destinationDetails, destinationName, pick, PICK_STYLE } from './pick.ts';
-import { movementFrames, playback, MOVE_STYLE } from './move.ts';
+import { roulette, spinMotion, wheel, WHEEL_STYLE } from './wheel.ts';
+import { destinationDetails, destinationName, pick, PICK_STYLE, stopLabel } from './pick.ts';
+import { movementFrames, playback, MOVE_STYLE, STEP_MS } from './move.ts';
 import type { Frame } from './move.ts';
 import { transfer, TRANSFER_STYLE } from './transfer.ts';
 import { mountPopup, phoneChoices, popupModel } from './popups/index.ts';
@@ -28,6 +28,8 @@ import { PLATFORM, bootPlatform, sessionOk, runStatus } from '../platform.ts';
 const DESTINATION_PAGE_SIZE = 6;
 const PHASE_LABEL = { spin: '이번 계절', pick: '갈 곳 고르기', space: '이곳에서 할 일',
   bonus: '추가 행동', event: '사건', chapter: '인생 결산', move: '이동 중', transfer: '지도 환승' } as const;
+const MOTION_LABEL = { spin: '두 숫자를 더한 만큼 이동해요.', move: '한 칸씩 이동하고 있어요.',
+  transfer: '다음 지도로 이동하고 있어요.' } as const;
 type PendingPopup = { model: PopupModel; resume?: 'phone' };
 
 declare global {
@@ -52,18 +54,30 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
   let pending: PendingPopup[] = [], menu: 'my-life' | 'phone' | undefined, dismissed = false;
   let glowBefore: GameState | undefined;
   let frame: Frame | undefined, before: GameState | undefined, sequence: ReturnType<typeof playback> | undefined;
+  let spin: ReturnType<typeof spinMotion> | undefined, frameStartedAt = 0;
+  // Steps left on the current route; counted per move frame because a route may revisit a node.
+  let stepsLeft = 0, stopNote = '';
   root.classList.add('life2');
-  const skip = () => frame?.phase === 'spin' ? sequence?.next() : sequence?.finish();
+  const skip = (event?: MouseEvent) => {
+    // The second click of a double-click lands on the freshly rendered stop control; ignore it.
+    if ((event?.detail ?? 0) > 1) return;
+    if (frame?.phase === 'spin') { spin?.settle(); sequence?.next(); }
+    else sequence?.finish();
+  };
   root.addEventListener('keydown', event => {
+    // A held key auto-repeats onto the stop control; only a fresh press may stop or skip.
+    if (sequence && ['Enter', ' ', 'Escape'].includes(event.key) && event.repeat) {
+      event.preventDefault(); return;
+    }
     if (sequence && event.key === 'Escape') { event.preventDefault(); skip(); }
-  });
+  }, true);
   root.addEventListener('click', event => {
     const target = event.target as Element;
     // A destination click may have just replaced its board; do not skip that new animation.
-    if (sequence && root.contains(target) && target.closest('.life2-board-frame')) skip();
+    if (sequence && root.contains(target) && target.closest('.life2-board-frame')) skip(event);
   });
   window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => {
-    if (event.matches) sequence?.finish();
+    if (event.matches) { spin?.settle(); sequence?.finish(); }
   });
   // Only the board has measured geometry. Other screens reflow through CSS;
   // retaining their mounted DOM also preserves gallery paging, details and focus.
@@ -86,11 +100,19 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     pending = [...cards, ...pending];
     menu = undefined;
     const frames = movementFrames(before.board.pos, outcome.result, id === 'spin');
+    const route = outcome.result.move;
+    stepsLeft = route ? (route.stop ? route.path.indexOf(route.stop) + 1 : route.path.length) : 0;
+    stopNote = route ? stopLabel(route) : '';
     const landing = WORLD.find(node => node.id === state.board.pos)!;
     if (outcome.result.move && P.calloutKinds.includes(landing.kind)) frames.push({ phase: 'move', pos: landing.id, ms: P.calloutMs, callout: true });
-    const done = () => { frame = undefined; before = undefined; sequence = undefined; render(true); };
+    const done = () => { frame = undefined; spin = undefined; before = undefined; sequence = undefined; render(true); };
     if (!frames.length || reducedMotion()) { done(); return; }
-    sequence = playback(frames, next => { frame = next; render(true); }, done);
+    sequence = playback(frames, next => {
+      frame = next; frameStartedAt = performance.now();
+      if (next.phase === 'move' && !next.callout) stepsLeft = Math.max(0, stepsLeft - 1);
+      spin = next.phase === 'spin' ? spinMotion() : undefined;
+      render(true);
+    }, done, undefined, (next, advance) => next.phase === 'spin' ? spin?.wait(advance) : undefined);
     sequence.next();
   }
   function render(focus = false) {
@@ -117,7 +139,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
       menu = next; dismissed = false; render(true);
     }, frame ? undefined : glowBefore);
     const mode = frame?.phase ?? (!pending.length && !menu && offered.some(option => option.id === 'spin') ? 'ready' : 'idle');
-    const center = wheel(state.board.dice, mode, () => sequence ? skip() : takeOption('spin'));
+    const center = wheel(state.board.dice, mode, event => sequence ? skip(event) : takeOption('spin'));
     const end = offered.find(option => option.id === 'end' && option.enabled);
     const turnControls = end ? el('div', 'life2-turn-controls') : center;
     if (end) turnControls.append(center, button(end.title, '', () => takeOption(end.id), 'end-season'));
@@ -126,6 +148,12 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
       control.setAttribute('aria-pressed', String(menu === (control.dataset.nav === 'life' ? 'my-life' : 'phone')));
     }
     const map = board(state, shown.board.pos);
+    if (frame?.phase === 'move') {
+      map.style.setProperty('--step-ms', `${STEP_MS}ms`);
+      map.style.setProperty('--move-delay', `-${Math.min(frame.ms, performance.now() - frameStartedAt)}ms`);
+      if (!frame.callout) map.querySelector<HTMLElement>('[data-pawn]')!.dataset.hopping = '';
+      if (frame.pos === state.board.pos) map.querySelector<HTMLElement>('[aria-current=location]')!.dataset.landing = '';
+    }
     if (frame?.phase === 'transfer') {
       map.querySelector<HTMLElement>('[data-map]')!.inert = true;
       map.append(transfer(frame.from!, frame.to!));
@@ -172,7 +200,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     } else if (!choices.length) {
       const node = WORLD.find(node => node.id === shown.board.pos)!;
       list.append(el('strong', '', PLACES[node.place].name),
-        el('p', '', offered[0]?.desc ?? state.log.at(-1)?.text ?? PHASE_LABEL[phase]));
+        el('p', '', frame ? MOTION_LABEL[frame.phase] : offered[0]?.desc ?? state.log.at(-1)?.text ?? PHASE_LABEL[phase]));
     }
     const pager = el('div', 'life2-pager');
     const previous = button('이전', '', () => { page--; render(true); }, 'page-prev');
@@ -197,15 +225,14 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     // Popup docking removes the options row on mobile. Measure the tilted board
     // only after that final shell geometry is in place, including on resize.
     if (model && !dismissed) panel.classList.add('life2-popup-host');
-    const roulette = el('div', 'life2-roulette');
-    roulette.setAttribute('aria-hidden', 'true');
-    if (mode === 'spin') roulette.dataset.spinning = '';
-    roulette.append(el('strong', '', state.board.dice.length ? state.board.dice.join(' · ') : 'GO!'));
+    const remaining = frame?.phase === 'move' ? stepsLeft : undefined;
+    const display = roulette(state.board.dice, mode === 'spin', remaining, remaining === undefined ? undefined : stopNote);
     const hints = el('div', 'life2-key-hints');
     for (const hint of ['↑ ↓ 선택', 'Enter 결정', 'Esc 닫기']) hints.append(el('span', '', hint));
-    shell.append(bands.top, map, roulette, panel, bands.bottom, hints);
+    shell.append(bands.top, map, display, panel, bands.bottom, hints);
     const style = el('style', '', WHEEL_STYLE + PICK_STYLE + MOVE_STYLE + TRANSFER_STYLE + POLISH_STYLE + TILT_STYLE);
     root.replaceChildren(style, shell);
+    spin?.mount(display, center);
     setBoardTilt(map, settings.tilt);
     if (model && !dismissed) {
       mountPopup(panel, model, { choose: takeOption, returnFocus: heading, navigation: bands.bottom,
@@ -260,7 +287,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     load(raw) {
       const loaded = restore(raw);
       if (!loaded) throw new Error('Invalid life layout fixture');
-      sequence?.cancel(); sequence = undefined; frame = undefined; before = undefined;
+      sequence?.cancel(); sequence = undefined; frame = undefined; spin = undefined; before = undefined;
       state = loaded; page = 0; pending = []; menu = undefined; dismissed = false; atTitle = false; render();
     },
   };

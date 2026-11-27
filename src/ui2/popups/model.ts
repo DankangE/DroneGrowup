@@ -12,7 +12,13 @@ import type { PhoneTab, PopupKind } from './data.ts';
 import { chapterLines, lifeTabs } from './life-model.ts';
 import type { LifeSummaryView, LifeTabModel } from './life-model.ts';
 
-export type PopupChoice = { id: string; title: string; enabled: boolean; summary: string; details: string[]; destination?: string };
+export type ChoiceTone = 'good' | 'bad' | 'neutral';
+export type ChoiceChip = { text: string; tone: ChoiceTone };
+export type ChoiceOutcome = { label: string; tone: ChoiceTone; chips: ChoiceChip[]; notes: string[] };
+export type PopupChoice = {
+  id: string; title: string; enabled: boolean; summary: string; details: string[]; destination?: string;
+  desc?: string; locks?: string[]; outcomes?: ChoiceOutcome[]; figure?: string; metrics?: string[];
+};
 export type PopupModel = {
   kind: PopupKind; phase: string; title: string; lines: string[]; choices: PopupChoice[];
   place: PlaceId; track: TrackId | null; fullscreen: boolean; notification: boolean;
@@ -94,6 +100,8 @@ export function choiceSummary(option: OptionView, preview?: Forecast): string {
     ...(tire ? [COPY.staminaCost(tire)] : []), ...(chance === undefined ? [] : [COPY.chance(chance)])].join(' · ');
   return COPY.cost(cost, tire, chance);
 }
+/** Stats where a rise is bad news; tones follow HUD fundsChangeTone for debt. */
+const LOWER_IS_BETTER: ReadonlySet<string> = new Set<Stat>(['debt', 'overdue', 'crashes', 'losses']);
 function choiceModel(option: OptionView, preview?: Forecast): PopupChoice {
   const summary = choiceSummary(option, preview);
   const locks = option.locks.map(humanCopy);
@@ -107,8 +115,28 @@ function choiceModel(option: OptionView, preview?: Forecast): PopupChoice {
   }
   if (option.sure) details.push(option.sure.text);
   if (option.roll) details.push(`${COPY.success}: ${option.roll.success.text}`, `${COPY.fail}: ${option.roll.fail.text}`);
+  const cost = preview?.cost ?? option.cost, tire = preview?.tire ?? option.tire;
+  const chance = preview?.chance ?? option.roll?.chance;
+  const money = preview?.branches.length === 1 ? preview.branches[0].deltas.money : undefined;
+  const outcomes = preview?.branches.map((branch): ChoiceOutcome => ({
+    label: COPY[branch.id], tone: branch.id === 'success' ? 'good' : branch.id === 'sure' ? 'neutral' : 'bad',
+    chips: Object.entries(branch.deltas)
+      .filter(([stat]) => stat !== 'rank' || !branch.status || branch.status === 'working')
+      .map(([stat, value]) => ({ text: humanCopy(COPY.delta(STAT_LABEL[stat as Stat], value!) + (stat === 'money' || stat === 'debt' ? '만' : '')),
+        tone: value === 0 ? 'neutral' : (value! > 0) !== LOWER_IS_BETTER.has(stat) ? 'good' : 'bad' })),
+    notes: [
+      ...(branch.status ? [LIFE_COPY.status[branch.status]] : []),
+      ...(branch.endsSeason ? [COPY.endsSeason] : []),
+      ...(branch.accrual?.length ? [P.ledger, P.accrued, ...branch.accrual.map(line => `${COPY.delta(line.label, line.amount)}만`)] : []),
+    ].map(humanCopy),
+  }));
+  const figure = !option.enabled ? COPY.lockFigure(locks[0] ?? COPY.locked)
+    : chance !== undefined ? COPY.chance(chance)
+      : money !== undefined && money !== -cost ? COPY.moneyEffect(money) : COPY.costFigure(cost);
   return { id: option.id, title: humanCopy(option.title), enabled: option.enabled, summary: !option.enabled && locks.length ? option.id === 'express:D-o0' && option.locks.some(lock => lock.includes('invite'))
-      ? P.zoneLock : locks[0] : summary, details: details.map(humanCopy) };
+      ? P.zoneLock : locks[0] : summary, details: details.map(humanCopy), desc: humanCopy(option.desc), locks, outcomes, figure,
+    metrics: COPY.cost(cost, tire, chance).split(' · '),
+  };
 }
 
 /** No eligibility, salary or review rules here: everything displayed comes from engine views/state. */

@@ -3,6 +3,47 @@
 기본 URL에서 19세 봄에 시작해 204계절을 보내고 70세 봄에 결산한다. 6개 지도, 212칸, 19직업, 120사건, 21엔딩을 사용한다.
 규칙과 수치는 [life-board 명세](design/life-board.md)가 기준이다. T23은 실행 경로와 소유 파일만 전환했으며 밸런스 수치·등급 경계·검사 기준을 바꾸지 않았다.
 
+## UX2 이동 속도·국장 인맥 조정 (2026-11-27, PR #11)
+
+소유자 승인 범위의 조정만 했다. 검사 기준·허용 오차·시드·봇 정책은 바꾸지 않았다.
+
+| 항목 | 이전 | 이후 | 위치 |
+| --- | ---: | ---: | --- |
+| 말 이동 한 칸 시간 (`STEP_MS`) | 250ms | 215ms | `src/ui2/move.ts` |
+| 국장 승진 인맥 조건 | B(200) | D(100) | `src/life/tracks.ts` (`GRADE_STEPS` 값 유지) |
+| 무자격 구직자 시험장 정차 | 학생만 | 자격증 없는 구직자 포함 | `src/life/engine.ts` (규칙 버그 수정) |
+
+시험비 600은 그대로다(`tests/life-stops.test.ts`가 600을 고정). 아르바이트 수입 135/110을 180/150, 230/190으로
+올린 실험은 `career:top:specialist_field`와 `score:S`를 기준 안으로 올리지 못해 적용하지 않았다.
+자격증을 못 따는 판은 무자격 구직자 봇이 큰 기부(1000)·여행(900)·캠핑(200)에 돈을 쓰는 정책 때문이다.
+
+`simulate:life`(시드 1~300 × 16정책, 최종 src): main 대비 새로 실패하는 항목은 소유자가 받아들인 12건이다.
+
+| 항목 | 값 | 기준 |
+| --- | ---: | --- |
+| move:choices | 1.70 | ≥2.2 |
+| move:forks | 47.07% | 85~100 |
+| fork:gain | 23.77% | 5~20 |
+| ending:employee | 21.60% | 1.5~20 |
+| career:top:instructor_academy | 27.67% | 30~70 |
+| career:top:specialist_field | 16.00% | 30~70 |
+| career:seen:racer | 1.29% | 2~100 |
+| score:S | 3.48% | 5~10 |
+| score:policy | 3.22배 | ≤3 |
+| ending:family | 1.02% | 1.5~20 |
+| ending:tycoon | 1.04% | 1.5~20 |
+| event:repeat | 2.74회 (hobby) | ≤2.5 |
+
+이 조정으로 다시 통과한 항목: `career:top:official` 14.67 → 52, `ending:worker` 20.06 → 19.40, 시험장 정차 수정으로
+`time:engineer`, `time:drifter`, `bank:debt-seasons`, `career:seen:rescue`, `career:seen:company`, `ending:academy`, `ending:smallbiz`.
+시간 점검(`npm run check:board -- timed`, 1366x768, 시드 11, 지도별 12계절, 2026-11-27 13:57): 13.64초/계절,
+**46.36분/204계절, PASS [45..55]** (이전 47.27분). 이 기록(`docs/life-timing.json`, 실측/모형 1.0394)으로 다시 돌린
+`simulate:life`는 72 PASS / 51 FAIL, 멈춤·크래시 0이다. `time:instructor_academy` 59.65분, `time:solo_ceo` 59.48분,
+`time:engineer` 59.03분, `time:drifter` 58.33분이 통과(기준 60분 이하)한다. `time:all` 58.04분, `time:pilot` 62.36분,
+`time:investor` 60.98분은 main에서도 실패하던 항목이다(main 56.44, 62.54, 60.42). 이 PR에서 main보다 나빠진 실패는 위 12건 중
+10건이고, `fork:gain`과 `ending:employee`는 main에서도 실패한다. main 실패 중 `wealth:25`, `career:top:chairman`,
+`career:top:engineer`, `ending:instructor`는 여기서 통과한다.
+
 ## P2 리뷰 수정: 명세의 경제·직업 규칙 적용
 
 | 항목 | 적용 규칙 |

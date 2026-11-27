@@ -76,7 +76,8 @@ test('F1 an unresolved popup can close and reopen without choosing or consuming 
 }));
 
 test('F1 tile descriptions and forecast branches are readable through real mounted detail pages', () => app((root, api) => {
-  const state = choose(started(), 'spin').state; api.load(state);
+  // Seed 27 spins 3 + 1 = 4 and lands on a single tile.
+  const state = choose(choose(newGame(27), 'start:school').state, 'spin').state; api.load(state);
   assert.equal(panelAt(root).dataset.popup, 'space');
   const option = options(state)[0], preview = forecast(state, option.id);
   assert.equal(visible(root)[0].querySelector('small')!.textContent, COPY.cost(preview.cost, preview.tire, preview.chance));
@@ -133,7 +134,7 @@ for (const kind of ['rankup', 'jobfair'] as const) test(`F1 ${kind} quitting req
 test('F1 pick uses career-aware engine paths, marks review stops and lands at that stop', () => app((root, api) => {
   const state = working(), rankup = state.board.pos;
   state.board.pos = WORLD.find(node => node.map === 'A' && node.next.includes(rankup))!.id;
-  state.board.step = 'pick'; state.board.dice = [4, 4]; api.load(state);
+  state.board.step = 'pick'; state.board.dice = [2, 2]; api.load(state);
   const move = reachable(state).find(row => row.stop === rankup)!; assert.ok(move);
   const tile = root.querySelector(`[data-space="${move.node}"][data-dest]`)!;
   assert.equal(tile.dataset.reviewStop, rankup); assert.match(tile.attributes['aria-label'], /심사 정차/);
