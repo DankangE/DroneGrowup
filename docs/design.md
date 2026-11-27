@@ -36,7 +36,13 @@
 
 이 조정으로 다시 통과한 항목: `career:top:official` 14.67 → 52, `ending:worker` 20.06 → 19.40, 시험장 정차 수정으로
 `time:engineer`, `time:drifter`, `bank:debt-seasons`, `career:seen:rescue`, `career:seen:company`, `ending:academy`, `ending:smallbiz`.
-시간 항목은 아래 시간 점검 기록(`docs/life-timing.json`)으로 판정한다.
+시간 점검(`npm run check:board -- timed`, 1366x768, 시드 11, 지도별 12계절, 2026-11-27 13:57): 13.64초/계절,
+**46.36분/204계절, PASS [45..55]** (이전 47.27분). 이 기록(`docs/life-timing.json`, 실측/모형 1.0394)으로 다시 돌린
+`simulate:life`는 72 PASS / 51 FAIL, 멈춤·크래시 0이다. `time:instructor_academy` 59.65분, `time:solo_ceo` 59.48분,
+`time:engineer` 59.03분, `time:drifter` 58.33분이 통과(기준 60분 이하)한다. `time:all` 58.04분, `time:pilot` 62.36분,
+`time:investor` 60.98분은 main에서도 실패하던 항목이다(main 56.44, 62.54, 60.42). 이 PR에서 main보다 나빠진 실패는 위 12건 중
+10건이고, `fork:gain`과 `ending:employee`는 main에서도 실패한다. main 실패 중 `wealth:25`, `career:top:chairman`,
+`career:top:engineer`, `ending:instructor`는 여기서 통과한다.
 
 ## P2 리뷰 수정: 명세의 경제·직업 규칙 적용
 
