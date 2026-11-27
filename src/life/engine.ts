@@ -287,8 +287,10 @@ function stopFor(prev: GameState, node: WorldNode, spent: number, passed: readon
   if (prev.timers[CARD_KEYS.again] === prev.turn) return undefined;
   const state = spent ? { ...prev, s: { ...prev.s, money: prev.s.money - spent } } : prev;
   // The same eligibility as the exam menu there: a jobless player who never got licensed may still sit it.
+  // A licensed jobless player is not forced back to the licence exam.
   const exam = startingAction({ ...state, board: { ...state.board, pos: node.id } }, EXAM_ACTION, true);
-  if (node.place === exam.place && met(state, exam.when)
+  const examinee = state.status === 'student' || !state.flags.includes('licensed');
+  if (node.place === exam.place && examinee && met(state, exam.when)
     && view(state, `act:${exam.id}`, { kind: 'action', place: exam.place, choice: exam, flight: false }).enabled) return 'exam';
   if (node.map === FAMILY_RULES.localMap && node.kind === 'life' && node.place === FAMILY_RULES.localPlace
     && EVENTS_A.some(event => STOP_RULES.familyEvents.includes(event.id) && event.eligible?.(state))) return 'life';

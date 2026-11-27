@@ -61,3 +61,13 @@ test('destination labels name the reason for a stop; moves without a reason are 
   assert.equal(stopLabel({ stop: 'A-o9' }), '심사 정차');
   assert.equal(stopLabel({}), '');
 });
+
+test('a jobless player who left school without a licence still stops at the exam site', () => {
+  const state = picking('A-o6', [2, 3], s => { examReady(s); s.status = 'jobless'; });
+  assert.ok(!state.flags.includes('licensed'));
+  const move = target(state, 'A-o11');
+  assert.equal(move.stop, 'A-o8'); assert.equal(move.stopReason, 'exam');
+  // Once licensed the exam is no longer offered, so the same route passes by.
+  const licensed = picking('A-o6', [2, 3], s => { examReady(s); s.status = 'jobless'; s.flags.push('licensed'); });
+  assert.equal(target(licensed, 'A-o11').stop, undefined);
+});
