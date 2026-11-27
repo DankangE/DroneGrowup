@@ -43,6 +43,9 @@ Node 22.18+ runs TypeScript scripts/tests directly. Browser checks use Playwrigh
 - `node scripts/trace-life.ts <policy> [seed]` — one deterministic bot run.
 - `npm run dev` / `npm run preview` — local Vite server. Browser gates also open a local preview port.
 - `VITE_NG_PLATFORM=1 npm run build` — optional platform client bundle.
+- `?seed=N` and `?debug=1` (`window.__life`) exist only on the dev server and in builds made by
+  `scripts/*` checks (`__LIFE_DEV_HOOKS__` in `vite.config.ts`). CLI builds (`npm run build`, `npx vite build`)
+  are release builds without them; a check build in `dist/` must never be deployed.
 
 ## Working rules
 

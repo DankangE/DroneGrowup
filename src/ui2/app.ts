@@ -32,6 +32,10 @@ const MOTION_LABEL = { spin: '두 숫자를 더한 만큼 이동해요.', move: 
   transfer: '다음 지도로 이동하고 있어요.' } as const;
 type PendingPopup = { model: PopupModel; resume?: 'phone' };
 
+// vite.config.ts sets this: false in release builds, so the __life hook below is compiled out.
+declare const __LIFE_DEV_HOOKS__: boolean | undefined;
+const devHooks = typeof __LIFE_DEV_HOOKS__ === 'undefined' || __LIFE_DEV_HOOKS__;
+
 declare global {
   interface Window {
     __life?: { state: () => GameState; options: () => OptionView[]; load: (raw: unknown) => void };
@@ -282,7 +286,7 @@ export function mountLife(root: HTMLElement, seed?: number, debug = false): void
     const status = el('p', 'platform-status', runStatus.text); status.setAttribute('aria-live', 'polite');
     root.querySelector('.life2-ending-copy')?.append(status);
   }
-  if (debug) window.__life = {
+  if (devHooks && debug) window.__life = {
     state: () => structuredClone(state), options: () => options(state),
     load(raw) {
       const loaded = restore(raw);
