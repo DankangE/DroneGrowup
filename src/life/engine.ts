@@ -285,8 +285,10 @@ function view(state: GameState, id: string, r: Resolved, notch: DialNotch = 'mid
 function stopFor(prev: GameState, node: WorldNode, spent: number, passed: readonly string[] = []): StopReason | undefined {
   // An extra-move card skips the tile on the first move, so a stop there would offer nothing.
   if (prev.timers[CARD_KEYS.again] === prev.turn) return undefined;
-  const exam = EXAM_ACTION, state = spent ? { ...prev, s: { ...prev.s, money: prev.s.money - spent } } : prev;
-  if (node.place === exam.place && state.status === 'student' && met(state, exam.when)
+  const state = spent ? { ...prev, s: { ...prev.s, money: prev.s.money - spent } } : prev;
+  // The same eligibility as the exam menu there: a jobless player who never got licensed may still sit it.
+  const exam = startingAction({ ...state, board: { ...state.board, pos: node.id } }, EXAM_ACTION, true);
+  if (node.place === exam.place && met(state, exam.when)
     && view(state, `act:${exam.id}`, { kind: 'action', place: exam.place, choice: exam, flight: false }).enabled) return 'exam';
   if (node.map === FAMILY_RULES.localMap && node.kind === 'life' && node.place === FAMILY_RULES.localPlace
     && EVENTS_A.some(event => STOP_RULES.familyEvents.includes(event.id) && event.eligible?.(state))) return 'life';
