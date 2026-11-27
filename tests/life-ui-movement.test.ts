@@ -42,7 +42,7 @@ test('every die pair at every tile animates exactly the supplied path and map cr
       frozen(move);
       const frames = movementFrames(node.id, { move });
       assert.deepEqual(frames.filter(frame => frame.phase === 'move').map(frame => frame.pos), move.path);
-      assert.ok(frames.filter(frame => frame.phase === 'move').every(frame => frame.ms === 250));
+      assert.ok(frames.filter(frame => frame.phase === 'move').every(frame => frame.ms === 215));
       const route = [node.id, ...move.path];
       const crossings = route.slice(1).filter((id, index) => nodeAt(id).map !== nodeAt(route[index]).map);
       assert.deepEqual(frames.filter(frame => frame.phase === 'transfer').map(frame => frame.to), crossings.map(id => nodeAt(id).map));
@@ -53,20 +53,20 @@ test('every die pair at every tile animates exactly the supplied path and map cr
 test('transfer lasts 600ms before the next map tile, including a transfer on the first step', () => {
   const move = reachable(fixture('A-o11', [2, 2])).find(move => move.node === 'B-o2')!;
   assert.deepEqual(movementFrames('A-o11', { move }), [
-    { phase: 'move', pos: 'A-o12', ms: 250 }, { phase: 'move', pos: 'A-o13', ms: 250 },
+    { phase: 'move', pos: 'A-o12', ms: 215 }, { phase: 'move', pos: 'A-o13', ms: 215 },
     { phase: 'transfer', pos: 'A-o13', from: 'A', to: 'B', ms: 600 },
-    { phase: 'move', pos: 'B-o1', ms: 250 }, { phase: 'move', pos: 'B-o2', ms: 250 },
+    { phase: 'move', pos: 'B-o1', ms: 215 }, { phase: 'move', pos: 'B-o2', ms: 215 },
   ]);
   const first = reachable(fixture('A-o13', [1, 1])).find(move => move.node === 'B-o2')!;
   assert.equal(movementFrames('A-o13', { move: first })[0].phase, 'transfer');
-  assert.equal(TRANSFER_MS, 600); assert.equal(STEP_MS, 250); assert.equal(SPIN_MS, 700);
+  assert.equal(TRANSFER_MS, 600); assert.equal(STEP_MS, 215); assert.equal(SPIN_MS, 700);
 });
 
 test('review stops truncate travel, retain the dotted preview and do not animate unreached transfers', () => {
   const state = fixture('B-o15', [3, 3]); state.s.car = 2; state.flags = ['invite'];
   const move = reachable(state, { canPromote: () => true }).find(move => move.node === 'D-o1')!;
   assert.equal(move.stop, 'B-o16');
-  assert.deepEqual(movementFrames(state.board.pos, { move }), [{ phase: 'move', pos: 'B-o16', ms: 250 }]);
+  assert.deepEqual(movementFrames(state.board.pos, { move }), [{ phase: 'move', pos: 'B-o16', ms: 215 }]);
   assert.equal(destinationDetails(move), '7걸음 · 심사 정차');
   assert.equal(pathSegments(state.board.pos, move.path, 'B').length, 6);
 });
@@ -93,7 +93,7 @@ test('payment popup uses the engine settlement total once at the first passed sa
   const outcome = choose(state, 'go:A-o12');
   assert.equal(outcome.result.upkeep!.total, 105);
   assert.deepEqual(movementFrames(state.board.pos, frozen(outcome.result)), [
-    { phase: 'move', pos: 'A-o11', ms: 250, payment: 105 }, { phase: 'move', pos: 'A-o12', ms: 250 },
+    { phase: 'move', pos: 'A-o11', ms: 215, payment: 105 }, { phase: 'move', pos: 'A-o12', ms: 215 },
   ]);
   const move = { ...outcome.result.move!, passed: { pay: ['A-o11', 'A-o12'], start: [] } };
   assert.deepEqual(movementFrames(state.board.pos, { move, upkeep: { total: -20, lines: [] } })
@@ -117,7 +117,7 @@ const sequence = (): Frame[] => [
 test('playback schedules all three durations and finishes once after the last tile', () => {
   const clock = clocked(sequence()); clock.control.next();
   for (let i = 0; i < 3; i++) { assert.equal(clock.completed(), 0); clock.jobs[i].run(); }
-  assert.deepEqual(clock.jobs.map(job => job.ms), [700, 600, 250]);
+  assert.deepEqual(clock.jobs.map(job => job.ms), [700, 600, 215]);
   assert.deepEqual(clock.shown, sequence());
   clock.control.finish(); clock.control.next();
   assert.equal(clock.completed(), 1);

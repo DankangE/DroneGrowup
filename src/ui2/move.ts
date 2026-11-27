@@ -4,7 +4,7 @@ import { WORLD } from '../life/world.ts';
 import { SPIN_MS } from './wheel.ts';
 import { TRANSFER_MS } from './transfer.ts';
 
-export const STEP_MS = 250;
+export const STEP_MS = 215;
 const BY_ID = new Map(WORLD.map(node => [node.id, node]));
 export type Frame = { phase: 'spin' | 'move' | 'transfer'; pos: string; ms: number;
   from?: MapId; to?: MapId; payment?: number; callout?: boolean };

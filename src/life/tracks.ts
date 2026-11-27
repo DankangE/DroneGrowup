@@ -64,7 +64,7 @@ export const TRACKS: TrackDef[] = [
       rank('주무관', 115), rank('주사', 225, { min: { xp: 210 } }, 10),
       rank('사무관', 300, { min: { xp: 420, theory: 180 } }, 14),
       rank('서기관', 405, { min: { xp: 480, net: 100 } }, 16),
-      rank('국장', 540, { min: { xp: 630, net: 200, rep: 105 } }, 16),
+      rank('국장', 540, { min: { xp: 630, net: 100, rep: 105 } }, 16),
     ] },
   { id: 'rescue', name: '소방 드론 대원', tier: 2, maps: ['C'], ...salaried,
     entry: { flags: ['licensed'], min: { skill: 150 } }, ranks: [
