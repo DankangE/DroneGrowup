@@ -290,15 +290,15 @@ async function movementChecks(page, load, check) {
   await load(paid); await press('[data-space="A-o12"][data-dest]');
   assert.equal(await phase(), 'move'); assert.equal(await pawn(), 'A-o11');
   assert.equal(await page.locator('[data-payment]').getAttribute('data-payment'), '105'); await check('salary while moving');
-  await page.clock.runFor(249); assert.equal(await pawn(), 'A-o11');
+  await page.clock.runFor(214); assert.equal(await pawn(), 'A-o11');
   await page.clock.runFor(1); assert.equal(await pawn(), 'A-o12');
-  await page.clock.runFor(250);
+  await page.clock.runFor(215);
   assert.deepEqual(await actual(), choose(paid, 'go:A-o12').state);
 
   const crossing = fixture('A-o11', [2, 2]);
   await load(crossing); await keys.checkPages('transfer destinations');
   assert.equal(await page.locator('.life2-transfer-badge[data-dest="B-o2"]').count(), 1);
-  await keys.clickChoice('go:B-o2'); await page.clock.runFor(500);
+  await keys.clickChoice('go:B-o2'); await page.clock.runFor(430);
   assert.equal(await phase(), 'transfer');
   assert.equal(await page.locator('[data-map]').getAttribute('data-map'), 'A');
   assert.equal(await page.locator('.life2-map-overview span').count(), 6); await check('transfer overview');
