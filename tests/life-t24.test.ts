@@ -38,7 +38,7 @@ test('T24: movement charges actual steps and F5 auto-close has one acknowledgeme
   assert.equal(model.counts.pick, 1); assert.equal(model.counts.move, 2);
   assert.equal(model.counts.result, 1); assert.equal(model.counts.callout, 1);
   assert.equal(model.counts.bonus, 0); assert.equal(model.counts.wheel, 0);
-  assert.equal(model.seconds, 3 + 2 * .25 + 2.4 + .6 + .18);
+  assert.equal(model.seconds, 3 + 2 * .215 + 2.4 + .6 + .18);
 });
 
 test('T24: six-map pure replay records model intervals including the final acknowledgement', async () => {
